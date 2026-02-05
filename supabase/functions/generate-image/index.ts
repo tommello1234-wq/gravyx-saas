@@ -44,7 +44,7 @@ serve(async (req) => {
       );
     }
 
-    const { prompt, aspectRatio, quantity = 1, referenceUrl, projectId } = await req.json();
+    const { prompt, aspectRatio, quantity = 1, imageUrls = [], projectId } = await req.json();
 
     if (!prompt) {
       return new Response(
@@ -95,10 +95,11 @@ serve(async (req) => {
         { type: "text", text: fullPrompt }
       ];
       
-      if (referenceUrl) {
+      // Add ALL connected images to the request
+      for (const url of imageUrls) {
         messageContent.push({
           type: "image_url",
-          image_url: { url: referenceUrl }
+          image_url: { url }
         });
       }
 
