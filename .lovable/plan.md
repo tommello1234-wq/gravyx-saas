@@ -1,61 +1,58 @@
 
-# Correção: Suporte a Múltiplas Imagens de Mídia
+# Correção: Timeout na Geração de Múltiplas Imagens
 
-## Problema
+## O Problema
 
-O sistema está ignorando imagens adicionais conectadas. Atualmente:
-- **Editor.tsx (linha 210-212)**: Só pega `mediaNodes[0]` - a primeira imagem
-- **Edge Function (linha 98-103)**: Só adiciona uma única `referenceUrl`
+A Edge Function processa imagens **sequencialmente** (uma por uma). Cada chamada à API Gemini leva 15-30 segundos:
 
-## Solução Simples
+| Quantidade | Tempo Sequencial | Timeout (60s) |
+|------------|------------------|---------------|
+| 1 imagem   | 15-30s           | OK            |
+| 2 imagens  | 30-60s           | No limite     |
+| 3 imagens  | 45-90s           | TIMEOUT       |
+| 4 imagens  | 60-120s          | TIMEOUT       |
 
-Como você já explica no prompt o que é cada imagem, a correção é apenas:
+## A Solução
 
-1. Coletar **todas** as URLs das imagens conectadas
-2. Enviar como array para a Edge Function
-3. Anexar **todas** as imagens ao request da IA
+Usar **`Promise.all()`** para processar todas as imagens **em paralelo**:
 
-## Mudanças
+| Quantidade | Tempo Paralelo | Timeout (60s) |
+|------------|----------------|---------------|
+| 1-4 imagens | 15-30s        | OK            |
 
-### 1. Editor.tsx - Coletar todas as imagens
+## Mudança Técnica
 
-```typescript
-// ANTES (só primeira)
-const referenceUrl = mediaNodes[0]?.data.url;
-
-// DEPOIS (todas)
-const imageUrls = mediaNodes
-  .map(n => (n.data as { url: string | null }).url)
-  .filter(Boolean) as string[];
-```
-
-Enviar `imageUrls` (array) ao invés de `referenceUrl` (string).
-
-### 2. Edge Function - Anexar todas as imagens
+**Arquivo**: `supabase/functions/generate-image/index.ts`
 
 ```typescript
-// ANTES (uma imagem)
-if (referenceUrl) {
-  messageContent.push({ type: "image_url", image_url: { url: referenceUrl } });
+// ANTES: Loop sequencial (lento)
+for (let i = 0; i < quantity; i++) {
+  const response = await fetch(...);  // Espera cada um terminar
+  // ...
 }
 
-// DEPOIS (todas as imagens)
-for (const url of imageUrls) {
-  messageContent.push({ type: "image_url", image_url: { url } });
-}
+// DEPOIS: Processamento paralelo (rápido)
+const generateOne = async () => {
+  const response = await fetch(...);
+  // ...
+  return imageUrl;
+};
+
+const promises = Array.from({ length: quantity }, () => generateOne());
+const results = await Promise.all(promises);
+const images = results.filter(Boolean);
 ```
 
-## Arquivos a Modificar
+## Detalhes da Implementação
 
-| Arquivo | Mudança |
-|---------|---------|
-| `src/pages/Editor.tsx` | Coletar array de URLs e enviar `imageUrls` |
-| `supabase/functions/generate-image/index.ts` | Receber array e anexar todas ao request |
+1. Criar função `generateSingleImage()` que faz uma única chamada à API
+2. Criar array de Promises para todas as imagens
+3. Usar `Promise.all()` para executar todas simultaneamente
+4. Filtrar resultados válidos
+5. Salvar todas as gerações no banco
 
-## Resultado
+## Benefício
 
-Conectando 3 nós de mídia + prompt explicando cada um, a IA receberá:
-- O texto do prompt (você explicando o que é cada coisa)
-- Todas as 3 imagens anexadas
-
-A IA seguirá suas instruções do prompt para usar cada imagem corretamente.
+- **4 imagens em ~20 segundos** ao invés de ~80 segundos
+- Elimina os erros 504 de timeout
+- Experiência muito mais rápida para o usuário
