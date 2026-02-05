@@ -1,5 +1,4 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,7 +6,6 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -16,12 +14,12 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    // Get auth token from request
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(
@@ -30,13 +28,14 @@ serve(async (req) => {
       );
     }
 
-    // Create Supabase clients
+    // Import Supabase client dynamically
+    const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.49.1");
+    
     const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    const supabaseClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
+    const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       global: { headers: { Authorization: authHeader } }
     });
 
-    // Get current user
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
     if (userError || !user) {
       return new Response(
@@ -54,7 +53,7 @@ serve(async (req) => {
       );
     }
 
-    // Check user credits
+    // Check credits
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
       .select('credits')
@@ -77,31 +76,25 @@ serve(async (req) => {
     }
 
     // Deduct credits
-    const { error: deductError } = await supabaseAdmin
+    await supabaseAdmin
       .from('profiles')
       .update({ credits: profile.credits - creditsNeeded })
       .eq('user_id', user.id);
 
-    if (deductError) {
-      console.error("Error deducting credits:", deductError);
-      throw new Error("Failed to deduct credits");
-    }
+    console.log(`Generating ${quantity} images for user ${user.id}`);
 
-    console.log(`Generating ${quantity} images for user ${user.id} with prompt: ${prompt.substring(0, 50)}...`);
-
-    // Build prompt with aspect ratio info
     let fullPrompt = prompt;
     if (aspectRatio) {
       fullPrompt = `${prompt}. Aspect ratio: ${aspectRatio}`;
     }
 
-    // Generate images using the most advanced model
     const images: string[] = [];
     
     for (let i = 0; i < quantity; i++) {
-      const messageContent: any[] = [{ type: "text", text: fullPrompt }];
+      const messageContent: { type: string; text?: string; image_url?: { url: string } }[] = [
+        { type: "text", text: fullPrompt }
+      ];
       
-      // Add reference image if provided
       if (referenceUrl) {
         messageContent.push({
           type: "image_url",
@@ -116,13 +109,8 @@ serve(async (req) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-3-pro-image-preview", // Most advanced image generation model
-          messages: [
-            {
-              role: "user",
-              content: messageContent
-            }
-          ],
+          model: "google/gemini-3-pro-image-preview",
+          messages: [{ role: "user", content: messageContent }],
           modalities: ["image", "text"]
         }),
       });
@@ -131,7 +119,7 @@ serve(async (req) => {
         const errorText = await response.text();
         console.error("AI Gateway error:", response.status, errorText);
         
-        // Refund credits on failure
+        // Refund credits
         await supabaseAdmin
           .from('profiles')
           .update({ credits: profile.credits })
@@ -153,7 +141,7 @@ serve(async (req) => {
       if (imageUrl) {
         images.push(imageUrl);
         
-        // Save to generations table
+        // Save generation
         await supabaseAdmin.from('generations').insert({
           user_id: user.id,
           project_id: projectId,
@@ -165,7 +153,7 @@ serve(async (req) => {
       }
     }
 
-    console.log(`Successfully generated ${images.length} images`);
+    console.log(`Generated ${images.length} images`);
 
     return new Response(
       JSON.stringify({ images, creditsRemaining: profile.credits - creditsNeeded }),
@@ -173,7 +161,7 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error("Error in generate-image:", error);
+    console.error("Error:", error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
