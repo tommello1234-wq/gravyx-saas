@@ -182,10 +182,15 @@ export default function Editor() {
       return;
     }
 
-    // Find connected prompt nodes
-    const promptEdges = edges.filter(e => e.target === settingsNode.id);
-    const promptNodes = promptEdges
+    // Find all connected input nodes (prompts and media)
+    const inputEdges = edges.filter(e => e.target === settingsNode.id);
+    
+    const promptNodes = inputEdges
       .map(e => nodes.find(n => n.id === e.source && n.type === 'prompt'))
+      .filter(Boolean) as Node[];
+
+    const mediaNodes = inputEdges
+      .map(e => nodes.find(n => n.id === e.source && n.type === 'media'))
       .filter(Boolean) as Node[];
 
     if (promptNodes.length === 0) {
@@ -200,6 +205,11 @@ export default function Editor() {
     const prompt = promptNodes.map(n => (n.data as { value: string }).value).join(' ');
     const aspectRatio = (settingsNode.data as { aspectRatio: string }).aspectRatio;
     const quantity = (settingsNode.data as { quantity: number }).quantity;
+    
+    // Get reference image URL from connected media node
+    const referenceUrl = mediaNodes.length > 0 
+      ? (mediaNodes[0].data as { url: string | null }).url 
+      : null;
 
     // Set loading state on output node
     setNodes(nds => nds.map(n => 
@@ -214,6 +224,7 @@ export default function Editor() {
           prompt, 
           aspectRatio, 
           quantity,
+          referenceUrl,
           projectId,
         },
       });
