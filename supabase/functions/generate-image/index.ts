@@ -81,80 +81,111 @@ serve(async (req) => {
       .update({ credits: profile.credits - creditsNeeded })
       .eq('user_id', user.id);
 
-    console.log(`Generating ${quantity} images for user ${user.id}`);
+    console.log(`Generating ${quantity} images in parallel for user ${user.id}`);
 
     let fullPrompt = prompt;
     if (aspectRatio) {
       fullPrompt = `${prompt}. Aspect ratio: ${aspectRatio}`;
     }
 
-    const images: string[] = [];
+    // Build message content once (same for all parallel requests)
+    const messageContent: { type: string; text?: string; image_url?: { url: string } }[] = [
+      { type: "text", text: fullPrompt }
+    ];
     
-    for (let i = 0; i < quantity; i++) {
-      const messageContent: { type: string; text?: string; image_url?: { url: string } }[] = [
-        { type: "text", text: fullPrompt }
-      ];
-      
-      // Add ALL connected images to the request
-      for (const url of imageUrls) {
-        messageContent.push({
-          type: "image_url",
-          image_url: { url }
-        });
-      }
-
-      const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "google/gemini-3-pro-image-preview",
-          messages: [{ role: "user", content: messageContent }],
-          modalities: ["image", "text"]
-        }),
+    for (const url of imageUrls) {
+      messageContent.push({
+        type: "image_url",
+        image_url: { url }
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("AI Gateway error:", response.status, errorText);
-        
-        // Refund credits
-        await supabaseAdmin
-          .from('profiles')
-          .update({ credits: profile.credits })
-          .eq('user_id', user.id);
-        
-        if (response.status === 429) {
-          return new Response(
-            JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
-            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
-        
-        throw new Error(`AI generation failed: ${response.status}`);
-      }
-
-      const data = await response.json();
-      const imageUrl = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-      
-      if (imageUrl) {
-        images.push(imageUrl);
-        
-        // Save generation
-        await supabaseAdmin.from('generations').insert({
-          user_id: user.id,
-          project_id: projectId,
-          prompt: prompt,
-          aspect_ratio: aspectRatio || '1:1',
-          image_url: imageUrl,
-          status: 'completed'
-        });
-      }
     }
 
-    console.log(`Generated ${images.length} images`);
+    // Function to generate a single image
+    const generateSingleImage = async (): Promise<string | null> => {
+      try {
+        const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "google/gemini-3-pro-image-preview",
+            messages: [{ role: "user", content: messageContent }],
+            modalities: ["image", "text"]
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error("AI Gateway error:", response.status, errorText);
+          
+          if (response.status === 429) {
+            throw new Error("RATE_LIMIT");
+          }
+          
+          return null;
+        }
+
+        const data = await response.json();
+        return data.choices?.[0]?.message?.images?.[0]?.image_url?.url || null;
+      } catch (error) {
+        console.error("Single image generation error:", error);
+        if (error instanceof Error && error.message === "RATE_LIMIT") {
+          throw error;
+        }
+        return null;
+      }
+    };
+
+    // Generate all images in parallel
+    const promises = Array.from({ length: quantity }, () => generateSingleImage());
+    
+    let results: (string | null)[];
+    try {
+      results = await Promise.all(promises);
+    } catch (error) {
+      // Refund credits on rate limit
+      await supabaseAdmin
+        .from('profiles')
+        .update({ credits: profile.credits })
+        .eq('user_id', user.id);
+      
+      if (error instanceof Error && error.message === "RATE_LIMIT") {
+        return new Response(
+          JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      throw error;
+    }
+
+    const images = results.filter((url): url is string => url !== null);
+    
+    // Refund credits for failed generations
+    const failedCount = quantity - images.length;
+    if (failedCount > 0) {
+      await supabaseAdmin
+        .from('profiles')
+        .update({ credits: profile.credits - images.length })
+        .eq('user_id', user.id);
+    }
+
+    // Save all successful generations
+    if (images.length > 0) {
+      const generations = images.map(imageUrl => ({
+        user_id: user.id,
+        project_id: projectId,
+        prompt: prompt,
+        aspect_ratio: aspectRatio || '1:1',
+        image_url: imageUrl,
+        status: 'completed'
+      }));
+      
+      await supabaseAdmin.from('generations').insert(generations);
+    }
+
+    console.log(`Generated ${images.length}/${quantity} images in parallel`);
 
     return new Response(
       JSON.stringify({ images, creditsRemaining: profile.credits - creditsNeeded }),
