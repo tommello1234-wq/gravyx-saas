@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Header } from '@/components/layout/Header';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,7 +40,9 @@ import {
   Images,
   LayoutTemplate,
   Users,
-  Coins
+  Coins,
+  Upload,
+  X
 } from 'lucide-react';
 
 const categories = [
@@ -61,6 +63,9 @@ export default function Admin() {
   // References state
   const [refDialogOpen, setRefDialogOpen] = useState(false);
   const [newRef, setNewRef] = useState({ title: '', prompt: '', category: 'photography', image_url: '' });
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch references
   const { data: references, isLoading: refsLoading } = useQuery({
@@ -106,6 +111,7 @@ export default function Admin() {
       queryClient.invalidateQueries({ queryKey: ['admin-references'] });
       setRefDialogOpen(false);
       setNewRef({ title: '', prompt: '', category: 'photography', image_url: '' });
+      setPreviewUrl(null);
       toast({ title: 'Referência criada!' });
     },
     onError: (error) => {
@@ -124,6 +130,54 @@ export default function Admin() {
       toast({ title: 'Referência excluída!' });
     },
   });
+
+  // Handle image upload
+  const handleImageUpload = async (file: File) => {
+    if (!user) return;
+    setUploadingImage(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `admin/${Date.now()}.${fileExt}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from('reference-images')
+        .upload(fileName, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from('reference-images')
+        .getPublicUrl(fileName);
+
+      setNewRef({ ...newRef, image_url: urlData.publicUrl });
+      setPreviewUrl(urlData.publicUrl);
+      toast({ title: 'Imagem enviada!' });
+    } catch (error) {
+      console.error('Upload error:', error);
+      toast({
+        title: 'Erro no upload',
+        description: (error as Error).message,
+        variant: 'destructive',
+      });
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleImageUpload(file);
+    }
+  };
+
+  const clearImage = () => {
+    setNewRef({ ...newRef, image_url: '' });
+    setPreviewUrl(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   // Update credits mutation
   const updateCreditsMutation = useMutation({
@@ -218,18 +272,50 @@ export default function Admin() {
                         </Select>
                       </div>
                       <div>
-                        <Label>URL da Imagem</Label>
-                        <Input
-                          value={newRef.image_url}
-                          onChange={(e) => setNewRef({ ...newRef, image_url: e.target.value })}
-                          placeholder="https://..."
+                        <Label>Imagem</Label>
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          onChange={handleFileChange}
+                          accept="image/*"
+                          className="hidden"
                         />
+                        {previewUrl ? (
+                          <div className="relative mt-2">
+                            <img 
+                              src={previewUrl} 
+                              alt="Preview" 
+                              className="w-full h-40 object-cover rounded-lg"
+                            />
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="icon"
+                              className="absolute top-2 right-2 h-8 w-8"
+                              onClick={clearImage}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={uploadingImage}
+                            className="w-full mt-2 border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary/50 transition-colors"
+                          >
+                            <Upload className={`h-8 w-8 mx-auto text-muted-foreground mb-2 ${uploadingImage ? 'animate-pulse' : ''}`} />
+                            <p className="text-sm text-muted-foreground">
+                              {uploadingImage ? 'Enviando...' : 'Clique para upload'}
+                            </p>
+                          </button>
+                        )}
                       </div>
                     </div>
                     <DialogFooter>
                       <Button
                         onClick={() => createRefMutation.mutate(newRef)}
-                        disabled={createRefMutation.isPending}
+                        disabled={createRefMutation.isPending || !newRef.image_url}
                       >
                         {createRefMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                         Criar
