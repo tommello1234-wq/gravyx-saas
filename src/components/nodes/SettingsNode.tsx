@@ -1,15 +1,9 @@
 import { memo, useState } from 'react';
-import { Handle, Position, NodeProps } from '@xyflow/react';
+import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Settings, Sparkles } from 'lucide-react';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Settings, Sparkles, Pencil, Copy, Trash2, Square, RectangleVertical, Smartphone } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { cn } from '@/lib/utils';
 
 interface SettingsNodeData {
   label: string;
@@ -19,85 +13,156 @@ interface SettingsNodeData {
 }
 
 const aspectRatios = [
-  { value: '1:1', label: '1:1 (Quadrado)' },
-  { value: '4:5', label: '4:5 (Retrato)' },
-  { value: '9:16', label: '9:16 (Stories)' },
-  { value: '16:9', label: '16:9 (Paisagem)' },
+  { value: '1:1', label: '1:1', icon: Square },
+  { value: '4:5', label: '4:5', icon: RectangleVertical },
+  { value: '9:16', label: '9:16', icon: Smartphone },
+  { value: '16:9', label: '16:9', icon: RectangleVertical },
 ];
 
-const quantities = [
-  { value: 1, label: '1 imagem' },
-  { value: 2, label: '2 imagens' },
-  { value: 4, label: '4 imagens' },
-];
+const quantities = [1, 2, 4];
 
-export const SettingsNode = memo(({ data }: NodeProps) => {
+export const SettingsNode = memo(({ data, id }: NodeProps) => {
   const nodeData = data as unknown as SettingsNodeData;
   const [aspectRatio, setAspectRatio] = useState(nodeData.aspectRatio || '1:1');
   const [quantity, setQuantity] = useState(nodeData.quantity || 1);
+  const { profile } = useAuth();
+  const { deleteElements, setNodes, getNodes } = useReactFlow();
 
   const handleAspectChange = (value: string) => {
     setAspectRatio(value);
     (data as Record<string, unknown>).aspectRatio = value;
   };
 
-  const handleQuantityChange = (value: string) => {
-    const num = parseInt(value);
-    setQuantity(num);
-    (data as Record<string, unknown>).quantity = num;
+  const handleQuantityChange = (value: number) => {
+    setQuantity(value);
+    (data as Record<string, unknown>).quantity = value;
   };
 
+  const handleDelete = () => {
+    deleteElements({ nodes: [{ id }] });
+  };
+
+  const handleDuplicate = () => {
+    const nodes = getNodes();
+    const currentNode = nodes.find(n => n.id === id);
+    if (currentNode) {
+      const newNode = {
+        ...currentNode,
+        id: `settings-${Date.now()}`,
+        position: {
+          x: currentNode.position.x + 50,
+          y: currentNode.position.y + 50,
+        },
+        data: { ...currentNode.data },
+      };
+      setNodes([...nodes, newNode]);
+    }
+  };
+
+  const creditsNeeded = quantity;
+  const credits = profile?.credits || 0;
+
   return (
-    <div className="glass-card node-settings min-w-[240px] p-4">
+    <div className="bg-card/95 backdrop-blur-sm border border-border/50 rounded-2xl min-w-[300px] shadow-xl">
       <Handle
         type="target"
         position={Position.Left}
-        className="!w-3 !h-3 !bg-node-settings !border-2 !border-background"
+        className="!w-4 !h-4 !bg-violet-500 !border-4 !border-background !-left-2"
       />
       
-      <div className="flex items-center gap-2 mb-4">
-        <Settings className="h-4 w-4 text-node-settings" />
-        <span className="font-medium text-sm">Configurações</span>
+      {/* Header */}
+      <div className="flex items-center justify-between p-4 border-b border-border/30">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-slate-500/20 flex items-center justify-center">
+            <Settings className="h-5 w-5 text-slate-400" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-foreground">Configurações</h3>
+            <p className="text-xs text-muted-foreground">Configure a saída</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+            <Pencil className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={handleDuplicate}>
+            <Copy className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={handleDelete}>
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
       
-      <div className="space-y-4">
-        <div className="space-y-2">
-          <Label className="text-xs">Proporção</Label>
-          <Select value={aspectRatio} onValueChange={handleAspectChange}>
-            <SelectTrigger className="bg-muted/50 border-muted">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {aspectRatios.map((ar) => (
-                <SelectItem key={ar.value} value={ar.value}>
-                  {ar.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      {/* Content */}
+      <div className="p-4 space-y-5">
+        {/* Aspect Ratio */}
+        <div className="space-y-3">
+          <label className="text-sm text-muted-foreground">Proporção</label>
+          <div className="grid grid-cols-4 gap-2">
+            {aspectRatios.map((ar) => {
+              const Icon = ar.icon;
+              return (
+                <button
+                  key={ar.value}
+                  onClick={() => handleAspectChange(ar.value)}
+                  className={cn(
+                    "flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all",
+                    aspectRatio === ar.value
+                      ? "bg-violet-500/20 border-violet-500 text-violet-400"
+                      : "bg-muted/30 border-border/50 text-muted-foreground hover:border-border"
+                  )}
+                >
+                  <Icon className={cn(
+                    "h-5 w-5",
+                    ar.value === '16:9' && "rotate-90"
+                  )} />
+                  <span className="text-xs font-medium">{ar.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
         
-        <div className="space-y-2">
-          <Label className="text-xs">Quantidade</Label>
-          <Select value={quantity.toString()} onValueChange={handleQuantityChange}>
-            <SelectTrigger className="bg-muted/50 border-muted">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {quantities.map((q) => (
-                <SelectItem key={q.value} value={q.value.toString()}>
-                  {q.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        {/* Quantity */}
+        <div className="space-y-3">
+          <label className="text-sm text-muted-foreground">Quantidade de imagens</label>
+          <div className="flex gap-2">
+            {quantities.map((q) => (
+              <button
+                key={q}
+                onClick={() => handleQuantityChange(q)}
+                className={cn(
+                  "flex-1 py-2.5 px-4 rounded-xl border text-sm font-medium transition-all",
+                  quantity === q
+                    ? "bg-violet-500/20 border-violet-500 text-violet-400"
+                    : "bg-muted/30 border-border/50 text-muted-foreground hover:border-border"
+                )}
+              >
+                {q} {q === 1 ? 'imagem' : 'imagens'}
+              </button>
+            ))}
+          </div>
         </div>
+
+        {/* Generate Button */}
+        <Button 
+          className="w-full h-12 rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-violet-400 text-white font-semibold shadow-lg shadow-violet-500/25"
+          onClick={() => nodeData.onGenerate?.()}
+        >
+          <Sparkles className="h-5 w-5 mr-2" />
+          Gerar ({creditsNeeded} créditos)
+        </Button>
+        
+        <p className="text-center text-xs text-muted-foreground">
+          {credits} créditos disponíveis
+        </p>
       </div>
       
       <Handle
         type="source"
         position={Position.Right}
-        className="!w-3 !h-3 !bg-node-settings !border-2 !border-background"
+        className="!w-4 !h-4 !bg-violet-500 !border-4 !border-background !-right-2"
       />
     </div>
   );
