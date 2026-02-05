@@ -206,10 +206,10 @@ export default function Editor() {
     const aspectRatio = (settingsNode.data as { aspectRatio: string }).aspectRatio;
     const quantity = (settingsNode.data as { quantity: number }).quantity;
     
-    // Get reference image URL from connected media node
-    const referenceUrl = mediaNodes.length > 0 
-      ? (mediaNodes[0].data as { url: string | null }).url 
-      : null;
+    // Get ALL image URLs from connected media nodes
+    const imageUrls = mediaNodes
+      .map(n => (n.data as { url: string | null }).url)
+      .filter(Boolean) as string[];
 
     // Set loading state on output node
     setNodes(nds => nds.map(n => 
@@ -224,7 +224,7 @@ export default function Editor() {
           prompt, 
           aspectRatio, 
           quantity,
-          referenceUrl,
+          imageUrls,
           projectId,
         },
       });
