@@ -42,8 +42,26 @@ import {
   Users,
   Coins,
   Upload,
-  X
+  X,
+  Send,
+  MoreHorizontal
 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 const categories = [
   { value: 'photography', label: 'Fotografia' },
@@ -66,6 +84,10 @@ export default function Admin() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // User management state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<{ id: string; email: string } | null>(null);
 
   // Fetch references
   const { data: references, isLoading: refsLoading } = useQuery({
@@ -192,6 +214,53 @@ export default function Admin() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-profiles'] });
       toast({ title: 'Créditos atualizados!' });
+    },
+  });
+
+  // Resend invite mutation
+  const resendInviteMutation = useMutation({
+    mutationFn: async ({ userId, email }: { userId: string; email: string }) => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const response = await supabase.functions.invoke('admin-users', {
+        body: { action: 'resend-invite', userId, email },
+        headers: {
+          Authorization: `Bearer ${sessionData.session?.access_token}`,
+        },
+      });
+      if (response.error) throw new Error(response.error.message);
+      if (response.data?.error) throw new Error(response.data.error);
+      return response.data;
+    },
+    onSuccess: () => {
+      toast({ title: 'Convite reenviado!', description: 'O usuário receberá um email de acesso.' });
+    },
+    onError: (error) => {
+      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  // Delete user mutation
+  const deleteUserMutation = useMutation({
+    mutationFn: async ({ userId }: { userId: string }) => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const response = await supabase.functions.invoke('admin-users', {
+        body: { action: 'delete-user', userId },
+        headers: {
+          Authorization: `Bearer ${sessionData.session?.access_token}`,
+        },
+      });
+      if (response.error) throw new Error(response.error.message);
+      if (response.data?.error) throw new Error(response.data.error);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-profiles'] });
+      setDeleteDialogOpen(false);
+      setUserToDelete(null);
+      toast({ title: 'Usuário removido!', description: 'O acesso foi revogado com sucesso.' });
+    },
+    onError: (error) => {
+      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
     },
   });
 
@@ -431,6 +500,35 @@ export default function Admin() {
                                   }
                                 }}
                               />
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem
+                                    onClick={() => resendInviteMutation.mutate({ 
+                                      userId: profile.user_id, 
+                                      email: profile.email 
+                                    })}
+                                    disabled={resendInviteMutation.isPending}
+                                  >
+                                    <Send className="h-4 w-4 mr-2" />
+                                    Reenviar acesso
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    className="text-destructive focus:text-destructive"
+                                    onClick={() => {
+                                      setUserToDelete({ id: profile.user_id, email: profile.email });
+                                      setDeleteDialogOpen(true);
+                                    }}
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Remover acesso
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -443,6 +541,39 @@ export default function Admin() {
           </TabsContent>
         </Tabs>
       </main>
+
+      {/* Delete User Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remover acesso do usuário?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação irá remover permanentemente o acesso de{' '}
+              <strong>{userToDelete?.email}</strong> à plataforma. 
+              Todos os dados do usuário serão excluídos. Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (userToDelete) {
+                  deleteUserMutation.mutate({ userId: userToDelete.id });
+                }
+              }}
+              disabled={deleteUserMutation.isPending}
+            >
+              {deleteUserMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-2" />
+              )}
+              Remover
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
