@@ -1,7 +1,7 @@
 import { memo, useState } from 'react';
 import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react';
 import { Button } from '@/components/ui/button';
-import { Settings, Sparkles, Pencil, Copy, Trash2, Square, RectangleVertical, Smartphone } from 'lucide-react';
+import { Settings, Sparkles, Copy, Trash2, Square, RectangleVertical, Smartphone } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 
@@ -19,23 +19,15 @@ const aspectRatios = [
   { value: '16:9', label: '16:9', icon: RectangleVertical },
 ];
 
-const quantities = [1, 2, 4];
-
 export const SettingsNode = memo(({ data, id }: NodeProps) => {
   const nodeData = data as unknown as SettingsNodeData;
   const [aspectRatio, setAspectRatio] = useState(nodeData.aspectRatio || '1:1');
-  const [quantity, setQuantity] = useState(nodeData.quantity || 1);
   const { profile } = useAuth();
   const { deleteElements, setNodes, getNodes } = useReactFlow();
 
   const handleAspectChange = (value: string) => {
     setAspectRatio(value);
     (data as Record<string, unknown>).aspectRatio = value;
-  };
-
-  const handleQuantityChange = (value: number) => {
-    setQuantity(value);
-    (data as Record<string, unknown>).quantity = value;
   };
 
   const handleDelete = () => {
@@ -59,7 +51,7 @@ export const SettingsNode = memo(({ data, id }: NodeProps) => {
     }
   };
 
-  const creditsNeeded = quantity;
+  const creditsNeeded = 1; // Always 1 image
   const credits = profile?.credits || 0;
 
   return (
@@ -82,9 +74,6 @@ export const SettingsNode = memo(({ data, id }: NodeProps) => {
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-            <Pencil className="h-4 w-4" />
-          </Button>
           <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={handleDuplicate}>
             <Copy className="h-4 w-4" />
           </Button>
@@ -121,27 +110,6 @@ export const SettingsNode = memo(({ data, id }: NodeProps) => {
                 </button>
               );
             })}
-          </div>
-        </div>
-        
-        {/* Quantity */}
-        <div className="space-y-3">
-          <label className="text-sm text-muted-foreground">Quantidade de imagens</label>
-          <div className="flex gap-2">
-            {quantities.map((q) => (
-              <button
-                key={q}
-                onClick={() => handleQuantityChange(q)}
-                className={cn(
-                  "flex-1 py-2.5 px-4 rounded-xl border text-sm font-medium transition-all",
-                  quantity === q
-                    ? "bg-violet-500/20 border-violet-500 text-violet-400"
-                    : "bg-muted/30 border-border/50 text-muted-foreground hover:border-border"
-                )}
-              >
-                {q} {q === 1 ? 'imagem' : 'imagens'}
-              </button>
-            ))}
           </div>
         </div>
 

@@ -30,7 +30,6 @@ import {
   Image, 
   Settings, 
   Sparkles,
-  Save,
   Loader2
 } from 'lucide-react';
 import {
@@ -123,42 +122,6 @@ export default function Editor() {
     [setEdges]
   );
 
-  const addNode = useCallback((type: string) => {
-    const id = `${type}-${Date.now()}`;
-    const position = { x: 100 + Math.random() * 200, y: 100 + Math.random() * 200 };
-    
-    let data: Record<string, unknown> = {};
-    
-    switch (type) {
-      case 'prompt':
-        data = { label: 'Prompt', value: '' };
-        break;
-      case 'media':
-        data = { label: 'Mídia', url: null };
-        break;
-      case 'settings':
-        data = { 
-          label: 'Configurações', 
-          aspectRatio: '1:1', 
-          quantity: 1,
-          onGenerate: () => handleGenerate(),
-        };
-        break;
-      case 'output':
-        data = { label: 'Resultado', images: [], isLoading: false };
-        break;
-    }
-
-    const newNode: Node = {
-      id,
-      type,
-      position,
-      data,
-    };
-
-    setNodes((nds) => [...nds, newNode]);
-  }, [setNodes]);
-
   const handleGenerate = useCallback(async () => {
     if (!profile || profile.credits < 1) {
       toast({
@@ -204,7 +167,6 @@ export default function Editor() {
 
     const prompt = promptNodes.map(n => (n.data as { value: string }).value).join(' ');
     const aspectRatio = (settingsNode.data as { aspectRatio: string }).aspectRatio;
-    const quantity = (settingsNode.data as { quantity: number }).quantity;
     
     // Get ALL image URLs from connected media nodes
     const imageUrls = mediaNodes
@@ -223,7 +185,7 @@ export default function Editor() {
         body: { 
           prompt, 
           aspectRatio, 
-          quantity,
+          quantity: 1, // Always generate 1 image
           imageUrls,
           projectId,
         },
@@ -238,7 +200,7 @@ export default function Editor() {
           : n
       ));
 
-      toast({ title: 'Imagens geradas com sucesso!' });
+      toast({ title: 'Imagem gerada com sucesso!' });
     } catch (error) {
       console.error('Generation error:', error);
       setNodes(nds => nds.map(n => 
@@ -253,6 +215,55 @@ export default function Editor() {
       });
     }
   }, [nodes, edges, profile, projectId, setNodes, toast]);
+
+  const addNode = useCallback((type: string) => {
+    // Prevent adding more than one settings node
+    if (type === 'settings') {
+      const existingSettings = nodes.find(n => n.type === 'settings');
+      if (existingSettings) {
+        toast({
+          title: 'Limite atingido',
+          description: 'Só é permitido um nó de configurações por projeto.',
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
+
+    const id = `${type}-${Date.now()}`;
+    const position = { x: 100 + Math.random() * 200, y: 100 + Math.random() * 200 };
+    
+    let data: Record<string, unknown> = {};
+    
+    switch (type) {
+      case 'prompt':
+        data = { label: 'Prompt', value: '' };
+        break;
+      case 'media':
+        data = { label: 'Mídia', url: null };
+        break;
+      case 'settings':
+        data = { 
+          label: 'Configurações', 
+          aspectRatio: '1:1', 
+          quantity: 1,
+          onGenerate: handleGenerate,
+        };
+        break;
+      case 'output':
+        data = { label: 'Resultado', images: [], isLoading: false };
+        break;
+    }
+
+    const newNode: Node = {
+      id,
+      type,
+      position,
+      data,
+    };
+
+    setNodes((nds) => [...nds, newNode]);
+  }, [nodes, setNodes, toast, handleGenerate]);
 
   // Memoize nodeTypes to prevent React Flow warnings
   const memoizedNodeTypes = useMemo(() => nodeTypes, []);
@@ -308,15 +319,6 @@ export default function Editor() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-
-          <Button 
-            size="sm" 
-            className="rounded-full glow-primary"
-            onClick={handleGenerate}
-          >
-            <Sparkles className="h-4 w-4 mr-2" />
-            Gerar
-          </Button>
         </div>
       </div>
 

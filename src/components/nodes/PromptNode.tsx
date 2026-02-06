@@ -36,7 +36,7 @@ export const PromptNode = memo(({ data, id }: NodeProps) => {
   };
 
   return (
-    <div className="bg-card/95 backdrop-blur-sm border border-border/50 rounded-2xl min-w-[320px] shadow-xl">
+    <div className="bg-card/95 backdrop-blur-sm border border-border/50 rounded-2xl min-w-[320px] shadow-xl nodrag-content">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-border/30">
         <div className="flex items-center gap-3">
@@ -71,7 +71,9 @@ export const PromptNode = memo(({ data, id }: NodeProps) => {
             (data as Record<string, unknown>).value = e.target.value;
           }}
           placeholder="Crie um cachorro voador..."
-          className="min-h-[100px] bg-muted/30 border-border/50 resize-none text-sm rounded-xl focus:ring-violet-500/50"
+          className="min-h-[100px] bg-muted/30 border-border/50 resize-none text-sm rounded-xl focus:ring-violet-500/50 nodrag"
+          onMouseDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
         />
       </div>
       
