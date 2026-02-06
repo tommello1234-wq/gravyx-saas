@@ -49,6 +49,7 @@ export type Database = {
           image_url: string | null
           project_id: string | null
           prompt: string
+          saved_to_gallery: boolean | null
           status: string
           user_id: string
         }
@@ -59,6 +60,7 @@ export type Database = {
           image_url?: string | null
           project_id?: string | null
           prompt: string
+          saved_to_gallery?: boolean | null
           status?: string
           user_id: string
         }
@@ -69,6 +71,7 @@ export type Database = {
           image_url?: string | null
           project_id?: string | null
           prompt?: string
+          saved_to_gallery?: boolean | null
           status?: string
           user_id?: string
         }
