@@ -162,7 +162,7 @@ export const OutputNode = memo(({ data, id }: NodeProps) => {
             <div>
               <h3 className="font-semibold text-foreground">Resultado</h3>
               <p className="text-xs text-muted-foreground">
-                {images.length > 0 ? `${images.length} imagen${images.length > 1 ? 's' : ''}` : 'Salva automaticamente'}
+                {images.length > 0 ? `${images.length} imagen${images.length > 1 ? 's' : ''}` : 'Clique para salvar'}
               </p>
             </div>
           </div>
