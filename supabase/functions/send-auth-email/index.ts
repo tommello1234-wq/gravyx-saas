@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
   console.log('Received auth email webhook')
   
   try {
-    const wh = new Webhook(hookSecret)
+    const wh = new Webhook(getWebhookSecret(hookSecret))
     const {
       user,
       email_data: { token, token_hash, redirect_to, email_action_type },
