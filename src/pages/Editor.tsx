@@ -296,7 +296,7 @@ export default function Editor() {
 
       {/* Canvas */}
       <div className="flex-1">
-        <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} nodeTypes={memoizedNodeTypes} fitView className="bg-popover-foreground">
+        <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} nodeTypes={memoizedNodeTypes} fitView className="bg-destructive-foreground">
           <Controls className="!bg-card/80 !backdrop-blur-sm !border-border" />
           <MiniMap className="!bg-card/80 !backdrop-blur-sm" nodeColor={() => 'hsl(var(--primary))'} />
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="hsl(var(--border))" />
