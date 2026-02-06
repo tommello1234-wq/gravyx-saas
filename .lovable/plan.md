@@ -1,26 +1,33 @@
 
 
-## Atualização do Secret do Webhook de Email
+## Correção do Formato do Secret do Webhook
 
-### Objetivo
-Atualizar o `SEND_EMAIL_HOOK_SECRET` com o valor correto gerado pelo Supabase para que o Auth Hook funcione corretamente.
-
-### Ação Necessária
-
-**Atualizar o secret** `SEND_EMAIL_HOOK_SECRET` com o valor:
+### Problema Identificado
+Os logs mostram o erro:
 ```
-v1,whsec_ooKCR6OaNh5Skv69BlHHhQWkUrznfDv3i9G0haGebOwRre316Usxv2fIg9O3bH2UQOVPhEGTDtFRwiTg
+Error: Base64Coder: incorrect characters for decoding
 ```
 
-### Próximos Passos (após aprovação)
+Isso acontece porque a biblioteca `standardwebhooks` espera o secret no formato **apenas Base64** (`whsec_...`), mas o valor configurado inclui o prefixo `v1,`.
 
-1. Atualizar o secret no projeto
-2. Aguardar o deploy da edge function
-3. Salvar o Auth Hook no Supabase Dashboard com:
-   - **Hook type**: HTTPS
-   - **URL**: `https://oruslrvpmdhtnrsgoght.supabase.co/functions/v1/send-auth-email`
-   - **Signing secret**: O mesmo valor acima
+### Causa
+- **Formato do Supabase Dashboard**: `v1,whsec_ooKCR6OaNh5Skv69BlHHhQWkUrznfDv3...`
+- **Formato esperado pela biblioteca**: `whsec_ooKCR6OaNh5Skv69BlHHhQWkUrznfDv3...`
+
+### Solução
+
+Atualizar o `SEND_EMAIL_HOOK_SECRET` removendo o prefixo `v1,`:
+
+**Valor correto:**
+```
+whsec_ooKCR6OaNh5Skv69BlHHhQWkUrznfDv3i9G0haGebOwRre316Usxv2fIg9O3bH2UQOVPhEGTDtFRwiTg
+```
+
+### Passos
+1. Atualizar o secret `SEND_EMAIL_HOOK_SECRET` com o valor sem o prefixo `v1,`
+2. Aguardar o redeploy da Edge Function
+3. Testar novamente criando uma conta ou solicitando redefinição de senha
 
 ### Resultado Esperado
-Os emails de autenticação (confirmação, recuperação de senha, magic link) serão enviados usando os templates customizados via Resend.
+Após a correção, a Edge Function conseguirá verificar a assinatura do webhook corretamente e os emails serão enviados via Resend com os templates customizados.
 
