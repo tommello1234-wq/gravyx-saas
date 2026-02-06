@@ -3,21 +3,28 @@ import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react';
 import { Textarea } from '@/components/ui/textarea';
 import { Type, Pencil, Copy, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-
 interface PromptNodeData {
   label: string;
   value: string;
 }
-
-export const PromptNode = memo(({ data, id }: NodeProps) => {
+export const PromptNode = memo(({
+  data,
+  id
+}: NodeProps) => {
   const nodeData = data as unknown as PromptNodeData;
   const [value, setValue] = useState(nodeData.value || '');
-  const { deleteElements, setNodes, getNodes } = useReactFlow();
-
+  const {
+    deleteElements,
+    setNodes,
+    getNodes
+  } = useReactFlow();
   const handleDelete = () => {
-    deleteElements({ nodes: [{ id }] });
+    deleteElements({
+      nodes: [{
+        id
+      }]
+    });
   };
-
   const handleDuplicate = () => {
     const nodes = getNodes();
     const currentNode = nodes.find(n => n.id === id);
@@ -27,16 +34,16 @@ export const PromptNode = memo(({ data, id }: NodeProps) => {
         id: `prompt-${Date.now()}`,
         position: {
           x: currentNode.position.x + 50,
-          y: currentNode.position.y + 50,
+          y: currentNode.position.y + 50
         },
-        data: { ...currentNode.data },
+        data: {
+          ...currentNode.data
+        }
       };
       setNodes([...nodes, newNode]);
     }
   };
-
-  return (
-    <div className="bg-card/95 backdrop-blur-sm border border-border/50 rounded-2xl min-w-[320px] shadow-xl nodrag-content">
+  return <div className="backdrop-blur-sm border border-border/50 rounded-2xl min-w-[320px] shadow-xl nodrag-content bg-popover-foreground">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-border/30">
         <div className="flex items-center gap-3">
@@ -62,28 +69,15 @@ export const PromptNode = memo(({ data, id }: NodeProps) => {
       </div>
       
       {/* Content */}
-      <div className="p-4 space-y-3">
+      <div className="p-4 space-y-3 bg-warning-foreground">
         <label className="text-sm text-muted-foreground">Prompt</label>
-        <Textarea
-          value={value}
-          onChange={(e) => {
-            setValue(e.target.value);
-            (data as Record<string, unknown>).value = e.target.value;
-          }}
-          placeholder="Crie um cachorro voador..."
-          className="min-h-[100px] bg-muted/30 border-border/50 resize-none text-sm rounded-xl focus:ring-violet-500/50 nodrag"
-          onMouseDown={(e) => e.stopPropagation()}
-          onPointerDown={(e) => e.stopPropagation()}
-        />
+        <Textarea value={value} onChange={e => {
+        setValue(e.target.value);
+        (data as Record<string, unknown>).value = e.target.value;
+      }} placeholder="Crie um cachorro voador..." className="min-h-[100px] bg-muted/30 border-border/50 resize-none text-sm rounded-xl focus:ring-violet-500/50 nodrag" onMouseDown={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()} />
       </div>
       
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!w-4 !h-4 !bg-violet-500 !border-4 !border-background !-right-2"
-      />
-    </div>
-  );
+      <Handle type="source" position={Position.Right} className="!w-4 !h-4 !bg-violet-500 !border-4 !border-background !-right-2" />
+    </div>;
 });
-
 PromptNode.displayName = 'PromptNode';
