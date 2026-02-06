@@ -9,8 +9,9 @@
 */
 
 @layer base {
-  :root {
-    /* Dark theme is default */
+  :root,
+  .dark {
+    /* Dark cyberpunk theme */
     --background: 240 10% 4%;
     --foreground: 0 0% 98%;
 
