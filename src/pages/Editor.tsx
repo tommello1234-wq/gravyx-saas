@@ -24,6 +24,9 @@ const nodeTypes = {
 const initialNodes: Node[] = [];
 const initialEdges: Edge[] = [];
 
+// Custom event for triggering generation
+export const GENERATE_IMAGE_EVENT = 'editor:generate-image';
+
 export default function Editor() {
   const [searchParams] = useSearchParams();
   const projectId = searchParams.get('project');
@@ -125,6 +128,19 @@ export default function Editor() {
     [setEdges]
   );
 
+  // Ref to store current nodes/edges for generation without causing re-renders
+  const nodesRef = useRef<Node[]>(nodes);
+  const edgesRef = useRef<Edge[]>(edges);
+  
+  // Keep refs in sync
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+  
+  useEffect(() => {
+    edgesRef.current = edges;
+  }, [edges]);
+
   const handleGenerate = useCallback(async () => {
     if (!profile || profile.credits < 1) {
       toast({
@@ -135,8 +151,12 @@ export default function Editor() {
       return;
     }
 
-    const settingsNode = nodes.find((n) => n.type === 'settings');
-    const outputNode = nodes.find((n) => n.type === 'output');
+    // Use refs to access current state without depending on them
+    const currentNodes = nodesRef.current;
+    const currentEdges = edgesRef.current;
+
+    const settingsNode = currentNodes.find((n) => n.type === 'settings');
+    const outputNode = currentNodes.find((n) => n.type === 'output');
 
     if (!settingsNode || !outputNode) {
       toast({
@@ -147,12 +167,12 @@ export default function Editor() {
       return;
     }
 
-    const inputEdges = edges.filter((e) => e.target === settingsNode.id);
+    const inputEdges = currentEdges.filter((e) => e.target === settingsNode.id);
     const promptNodes = inputEdges
-      .map((e) => nodes.find((n) => n.id === e.source && n.type === 'prompt'))
+      .map((e) => currentNodes.find((n) => n.id === e.source && n.type === 'prompt'))
       .filter(Boolean) as Node[];
     const mediaNodes = inputEdges
-      .map((e) => nodes.find((n) => n.id === e.source && n.type === 'media'))
+      .map((e) => currentNodes.find((n) => n.id === e.source && n.type === 'media'))
       .filter(Boolean) as Node[];
 
     if (promptNodes.length === 0) {
@@ -221,7 +241,7 @@ export default function Editor() {
           return n;
         });
         // Force save after generation
-        setTimeout(() => saveProject(updated, edges), 100);
+        setTimeout(() => saveProject(updated, currentEdges), 100);
         return updated;
       });
 
@@ -241,16 +261,17 @@ export default function Editor() {
         variant: 'destructive'
       });
     }
-  }, [nodes, edges, profile, projectId, setNodes, toast, saveProject]);
+  }, [profile, projectId, setNodes, toast, saveProject]); // NO nodes/edges dependency!
 
-  // Inject onGenerate into settings nodes
+  // Listen for generate events from SettingsNode
   useEffect(() => {
-    setNodes((nds) =>
-      nds.map((n) =>
-        n.type === 'settings' ? { ...n, data: { ...n.data, onGenerate: handleGenerate } } : n
-      )
-    );
-  }, [handleGenerate, setNodes]);
+    const handler = () => {
+      handleGenerate();
+    };
+    
+    window.addEventListener(GENERATE_IMAGE_EVENT, handler);
+    return () => window.removeEventListener(GENERATE_IMAGE_EVENT, handler);
+  }, [handleGenerate]);
 
   const addNode = useCallback(
     (type: string) => {
@@ -281,7 +302,7 @@ export default function Editor() {
           data = { label: 'Mídia', url: null };
           break;
         case 'settings':
-          data = { label: 'Configurações', aspectRatio: '1:1', quantity: 1, onGenerate: handleGenerate };
+          data = { label: 'Configurações', aspectRatio: '1:1', quantity: 1 };
           break;
         case 'output':
           data = { label: 'Resultado', images: [], isLoading: false };
@@ -291,7 +312,7 @@ export default function Editor() {
       const newNode: Node = { id, type, position, data };
       setNodes((nds) => [...nds, newNode]);
     },
-    [nodes, setNodes, toast, handleGenerate]
+    [nodes, setNodes, toast]
   );
 
   const memoizedNodeTypes = useMemo(() => nodeTypes, []);

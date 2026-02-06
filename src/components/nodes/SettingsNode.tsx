@@ -4,12 +4,12 @@ import { Button } from '@/components/ui/button';
 import { Settings, Sparkles, Copy, Trash2, Square, RectangleVertical, Smartphone } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
+import { GENERATE_IMAGE_EVENT } from '@/pages/Editor';
 
 interface SettingsNodeData {
   label: string;
   aspectRatio: string;
   quantity: number;
-  onGenerate?: () => void;
 }
 
 const aspectRatios = [
@@ -123,7 +123,7 @@ export const SettingsNode = memo(({ data, id }: NodeProps) => {
         {/* Generate Button */}
         <Button
           className="w-full h-12 rounded-xl bg-gradient-to-r from-violet-600 via-purple-600 to-violet-600 hover:from-violet-500 hover:via-purple-500 hover:to-violet-500 text-white font-semibold shadow-lg shadow-violet-500/30 transition-all hover:shadow-xl hover:shadow-violet-500/40"
-          onClick={() => nodeData.onGenerate?.()}
+          onClick={() => window.dispatchEvent(new CustomEvent(GENERATE_IMAGE_EVENT))}
         >
           <Sparkles className="h-5 w-5 mr-2" />
           Gerar Imagem
