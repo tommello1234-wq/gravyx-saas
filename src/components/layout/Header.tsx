@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
@@ -9,7 +10,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useAuth } from '@/contexts/AuthContext';
-import { Sparkles, User, LogOut, Settings, LayoutGrid, Images, Library, Shield, Coins } from 'lucide-react';
+import { Sparkles, User, LogOut, Settings, LayoutGrid, Images, Library, Shield, Coins, CreditCard } from 'lucide-react';
+import { BuyCreditsModal } from '@/components/BuyCreditsModal';
 
 const navItems = [
   { path: '/projects', label: 'Projetos', icon: LayoutGrid },
@@ -21,6 +23,7 @@ export function Header() {
   const { user, profile, isAdmin, signOut } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const [showBuyCredits, setShowBuyCredits] = useState(false);
 
   const handleSignOut = async () => {
     await signOut();
@@ -66,12 +69,6 @@ export function Header() {
         <div className="flex items-center gap-4">
           {user ? (
             <>
-              {/* Credits */}
-              <div className="flex items-center gap-2 rounded-full bg-muted/50 px-4 py-2">
-                <Coins className="h-4 w-4 text-primary" />
-                <span className="text-sm font-medium">{profile?.credits ?? 0}</span>
-              </div>
-
               {/* User Menu */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -112,10 +109,23 @@ export function Header() {
                       Galeria
                     </Link>
                   </DropdownMenuItem>
-                  <DropdownMenuItem>
-                    <Settings className="mr-2 h-4 w-4" />
-                    Configurações
-                  </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                  <div className="px-2 py-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Coins className="h-4 w-4 text-primary" />
+                        <span className="text-sm font-medium">{profile?.credits ?? 0} créditos</span>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="w-full"
+                      onClick={() => setShowBuyCredits(true)}
+                    >
+                      <CreditCard className="mr-2 h-4 w-4" />
+                      Comprar créditos
+                    </Button>
+                  </div>
                   {isAdmin && (
                     <>
                       <DropdownMenuSeparator />
@@ -127,7 +137,7 @@ export function Header() {
                       </DropdownMenuItem>
                     </>
                   )}
-                  <DropdownMenuSeparator />
+                <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
                     <LogOut className="mr-2 h-4 w-4" />
                     Sair
@@ -145,6 +155,8 @@ export function Header() {
           )}
         </div>
       </div>
+
+      <BuyCreditsModal open={showBuyCredits} onOpenChange={setShowBuyCredits} />
     </header>
   );
 }
