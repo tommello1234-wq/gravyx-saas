@@ -51,7 +51,7 @@ export const PromptNode = memo(({
             <Type className="h-5 w-5 text-violet-400" />
           </div>
           <div>
-            <h3 className="font-semibold text-foreground">Seu Prompt</h3>
+            <h3 className="font-semibold text-primary-foreground">Seu Prompt</h3>
             <p className="text-xs text-muted-foreground">Descreva sua imagem</p>
           </div>
         </div>
