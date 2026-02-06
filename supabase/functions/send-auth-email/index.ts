@@ -6,6 +6,15 @@ import { ConfirmationEmail } from './_templates/confirmation.tsx'
 import { RecoveryEmail } from './_templates/recovery.tsx'
 import { MagicLinkEmail } from './_templates/magic-link.tsx'
 
+// Helper para extrair o secret no formato correto
+// Supabase gera "v1,whsec_..." mas a biblioteca espera apenas "whsec_..."
+function getWebhookSecret(secret: string): string {
+  if (secret.startsWith('v1,')) {
+    return secret.substring(3)
+  }
+  return secret
+}
+
 const resend = new Resend(Deno.env.get('RESEND_API_KEY') as string)
 const hookSecret = Deno.env.get('SEND_EMAIL_HOOK_SECRET') as string
 
@@ -30,7 +39,7 @@ Deno.serve(async (req) => {
   console.log('Received auth email webhook')
   
   try {
-    const wh = new Webhook(hookSecret)
+    const wh = new Webhook(getWebhookSecret(hookSecret))
     const {
       user,
       email_data: { token, token_hash, redirect_to, email_action_type },
