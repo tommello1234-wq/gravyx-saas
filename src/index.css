@@ -226,50 +226,74 @@
   }
 }
 
-/* React Flow custom styles */
+/* React Flow custom styles - FORCE dark mode */
 .react-flow {
-  background-color: hsl(var(--background)) !important;
+  background-color: hsl(240 10% 4%) !important;
 }
 
 .react-flow__background {
-  background-color: hsl(var(--background)) !important;
+  background-color: hsl(240 10% 4%) !important;
+}
+
+.react-flow__background pattern {
+  stroke: hsl(240 10% 16%) !important;
+}
+
+.react-flow__pane {
+  background-color: hsl(240 10% 4%) !important;
+}
+
+/* Force dark background on React Flow container */
+.react-flow__renderer {
+  background-color: hsl(240 10% 4%) !important;
 }
 
 .react-flow__node {
   @apply shadow-lg;
+  background: transparent !important;
+}
+
+/* Force card background on all nodes */
+.react-flow__node > div {
+  background-color: hsl(240 10% 6%) !important;
 }
 
 .react-flow__edge-path {
-  stroke: hsl(var(--muted-foreground));
+  stroke: hsl(240 5% 60%);
   stroke-width: 2;
 }
 
 .react-flow__edge.selected .react-flow__edge-path {
-  stroke: hsl(var(--primary));
+  stroke: hsl(263 70% 70%);
   stroke-width: 3;
 }
 
 .react-flow__handle {
   @apply w-3 h-3 border-2 border-background;
-  background: hsl(var(--primary));
+  background: hsl(263 70% 70%);
 }
 
 .react-flow__minimap {
   @apply bg-card/80 backdrop-blur-sm rounded-lg border border-border;
+  background-color: hsl(240 10% 6% / 0.8) !important;
 }
 
 .react-flow__controls {
   @apply bg-card/80 backdrop-blur-sm rounded-lg border border-border;
+  background-color: hsl(240 10% 6% / 0.8) !important;
 }
 
 .react-flow__controls-button {
   @apply bg-transparent border-none text-foreground;
+  background-color: transparent !important;
+  color: hsl(0 0% 98%) !important;
 }
 
 .react-flow__controls-button:hover {
   @apply bg-muted;
+  background-color: hsl(240 10% 12%) !important;
 }
 
 .react-flow__controls-button svg {
-  fill: hsl(var(--foreground));
+  fill: hsl(0 0% 98%) !important;
 }
