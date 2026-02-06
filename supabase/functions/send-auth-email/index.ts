@@ -129,7 +129,19 @@ Deno.serve(async (req) => {
       }
 
       case 'recovery': {
-        const recoveryRedirectUrl = ensurePath(baseRedirectUrl, '/reset-password')
+        // Force /reset-password path for password recovery flow
+        const recoveryBaseUrl = normalizeRedirectUrl(rawRedirect) || DEFAULT_SITE_URL
+        let recoveryRedirectUrl: string
+        try {
+          const u = new URL(recoveryBaseUrl)
+          u.pathname = '/reset-password'
+          u.search = ''
+          u.hash = ''
+          recoveryRedirectUrl = u.toString()
+        } catch {
+          recoveryRedirectUrl = `${DEFAULT_SITE_URL}/reset-password`
+        }
+        console.log('[send-auth-email] Recovery redirect URL:', recoveryRedirectUrl)
         const resetUrl = `${supabaseUrl}/auth/v1/verify?token=${token_hash}&type=recovery&redirect_to=${encodeURIComponent(recoveryRedirectUrl)}`
         html = await renderAsync(
           React.createElement(PasswordResetEmail, {
