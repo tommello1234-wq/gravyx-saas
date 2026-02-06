@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -28,11 +28,12 @@ export default function Auth() {
 
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/projects';
 
-  // Redirect if already logged in
-  if (user) {
-    navigate(from, { replace: true });
-    return null;
-  }
+  // Handle redirect if already logged in
+  useEffect(() => {
+    if (user) {
+      navigate(from, { replace: true });
+    }
+  }, [user, navigate, from]);
 
   const {
     register,

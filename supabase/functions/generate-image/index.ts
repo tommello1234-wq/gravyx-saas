@@ -67,7 +67,7 @@ serve(async (req) => {
       );
     }
 
-    const creditsNeeded = quantity;
+    const creditsNeeded = 1; // Always generate 1 image
     if (profile.credits < creditsNeeded) {
       return new Response(
         JSON.stringify({ error: "Insufficient credits", required: creditsNeeded, available: profile.credits }),
@@ -75,13 +75,22 @@ serve(async (req) => {
       );
     }
 
-    // Deduct credits
-    await supabaseAdmin
-      .from('profiles')
-      .update({ credits: profile.credits - creditsNeeded })
-      .eq('user_id', user.id);
+    // Deduct credits atomically using RPC to prevent race conditions
+    const { data: updateResult, error: updateError } = await supabaseAdmin
+      .rpc('decrement_credits', { uid: user.id, amount: creditsNeeded });
 
-    console.log(`Generating ${quantity} images in parallel for user ${user.id}`);
+    if (updateError) {
+      console.error("Error decrementing credits:", updateError);
+      // Fallback to direct update if RPC doesn't exist
+      await supabaseAdmin
+        .from('profiles')
+        .update({ credits: profile.credits - creditsNeeded })
+        .eq('user_id', user.id);
+    }
+
+    console.log(`Credit deduction result:`, updateResult);
+
+    console.log(`Generating 1 image for user ${user.id}`);
 
     let fullPrompt = prompt;
     if (aspectRatio) {
@@ -138,14 +147,12 @@ serve(async (req) => {
       }
     };
 
-    // Generate all images in parallel
-    const promises = Array.from({ length: quantity }, () => generateSingleImage());
-    
-    let results: (string | null)[];
+    // Generate single image
+    let imageUrl: string | null = null;
     try {
-      results = await Promise.all(promises);
+      imageUrl = await generateSingleImage();
     } catch (error) {
-      // Refund credits on rate limit
+      // Refund credit on rate limit
       await supabaseAdmin
         .from('profiles')
         .update({ credits: profile.credits })
@@ -160,35 +167,40 @@ serve(async (req) => {
       throw error;
     }
 
-    const images = results.filter((url): url is string => url !== null);
-    
-    // Refund credits for failed generations
-    const failedCount = quantity - images.length;
-    if (failedCount > 0) {
+    // If generation failed, refund credit
+    if (!imageUrl) {
       await supabaseAdmin
         .from('profiles')
-        .update({ credits: profile.credits - images.length })
+        .update({ credits: profile.credits })
         .eq('user_id', user.id);
-    }
-
-    // Save all successful generations
-    if (images.length > 0) {
-      const generations = images.map(imageUrl => ({
-        user_id: user.id,
-        project_id: projectId,
-        prompt: prompt,
-        aspect_ratio: aspectRatio || '1:1',
-        image_url: imageUrl,
-        status: 'completed'
-      }));
       
-      await supabaseAdmin.from('generations').insert(generations);
+      return new Response(
+        JSON.stringify({ error: "Image generation failed", images: [] }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    console.log(`Generated ${images.length}/${quantity} images in parallel`);
+    // Save successful generation
+    await supabaseAdmin.from('generations').insert({
+      user_id: user.id,
+      project_id: projectId,
+      prompt: prompt,
+      aspect_ratio: aspectRatio || '1:1',
+      image_url: imageUrl,
+      status: 'completed'
+    });
+
+    console.log(`Generated 1 image successfully for user ${user.id}`);
+
+    // Get updated credits
+    const { data: updatedProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('credits')
+      .eq('user_id', user.id)
+      .single();
 
     return new Response(
-      JSON.stringify({ images, creditsRemaining: profile.credits - creditsNeeded }),
+      JSON.stringify({ images: [imageUrl], creditsRemaining: updatedProfile?.credits ?? profile.credits - 1 }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 

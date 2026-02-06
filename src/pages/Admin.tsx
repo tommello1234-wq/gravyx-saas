@@ -137,7 +137,8 @@ export default function Admin() {
     setUploadingImage(true);
     try {
       const fileExt = file.name.split('.').pop();
-      const fileName = `admin/${Date.now()}.${fileExt}`;
+      // Use user.id as folder name to match RLS policy
+      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
       
       const { error: uploadError } = await supabase.storage
         .from('reference-images')
