@@ -1,33 +1,45 @@
 
 
-## Correção do Formato do Secret do Webhook
+## Correção do Parsing do Secret do Webhook
 
-### Problema Identificado
-Os logs mostram o erro:
-```
-Error: Base64Coder: incorrect characters for decoding
-```
-
-Isso acontece porque a biblioteca `standardwebhooks` espera o secret no formato **apenas Base64** (`whsec_...`), mas o valor configurado inclui o prefixo `v1,`.
-
-### Causa
-- **Formato do Supabase Dashboard**: `v1,whsec_ooKCR6OaNh5Skv69BlHHhQWkUrznfDv3...`
-- **Formato esperado pela biblioteca**: `whsec_ooKCR6OaNh5Skv69BlHHhQWkUrznfDv3...`
+### Problema
+O Supabase sempre gera o secret no formato `v1,whsec_...`, mas a biblioteca `standardwebhooks` espera apenas a parte `whsec_...` (base64 puro).
 
 ### Solução
+Modificar a Edge Function `send-auth-email` para automaticamente extrair a parte correta do secret, suportando ambos os formatos:
+- `v1,whsec_XXXXX` (formato do Supabase)
+- `whsec_XXXXX` (formato esperado pela biblioteca)
 
-Atualizar o `SEND_EMAIL_HOOK_SECRET` removendo o prefixo `v1,`:
+### Alteração no Código
 
-**Valor correto:**
+**Arquivo:** `supabase/functions/send-auth-email/index.ts`
+
+Adicionar uma função helper que processa o secret:
+
+```typescript
+// Helper para extrair o secret no formato correto
+function getWebhookSecret(secret: string): string {
+  // Se começa com "v1,", remover o prefixo
+  if (secret.startsWith('v1,')) {
+    return secret.substring(3)
+  }
+  return secret
+}
 ```
-whsec_ooKCR6OaNh5Skv69BlHHhQWkUrznfDv3i9G0haGebOwRre316Usxv2fIg9O3bH2UQOVPhEGTDtFRwiTg
+
+E usar essa função ao criar o Webhook:
+
+```typescript
+const hookSecret = Deno.env.get('SEND_EMAIL_HOOK_SECRET') as string
+// ...
+const wh = new Webhook(getWebhookSecret(hookSecret))
 ```
 
-### Passos
-1. Atualizar o secret `SEND_EMAIL_HOOK_SECRET` com o valor sem o prefixo `v1,`
-2. Aguardar o redeploy da Edge Function
-3. Testar novamente criando uma conta ou solicitando redefinição de senha
+### Próximos Passos
+1. Atualizar o `SEND_EMAIL_HOOK_SECRET` com o secret completo do Supabase (incluindo `v1,`)
+2. Fazer deploy da Edge Function atualizada
+3. Testar o envio de email
 
-### Resultado Esperado
-Após a correção, a Edge Function conseguirá verificar a assinatura do webhook corretamente e os emails serão enviados via Resend com os templates customizados.
+### Resultado
+Isso permitirá usar o secret exatamente como o Supabase gera, sem precisar remover manualmente o prefixo `v1,`.
 
