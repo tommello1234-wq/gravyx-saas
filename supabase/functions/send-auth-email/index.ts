@@ -9,6 +9,15 @@ import { MagicLinkEmail } from './_templates/magic-link.tsx'
 const resend = new Resend(Deno.env.get('RESEND_API_KEY') as string)
 const hookSecret = Deno.env.get('SEND_EMAIL_HOOK_SECRET') as string
 
+// Helper para extrair o secret no formato correto
+// O Supabase gera no formato "v1,whsec_..." mas a biblioteca standardwebhooks espera apenas "whsec_..."
+function getWebhookSecret(secret: string): string {
+  if (secret.startsWith('v1,')) {
+    return secret.substring(3)
+  }
+  return secret
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
