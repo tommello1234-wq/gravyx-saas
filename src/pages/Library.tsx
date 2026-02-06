@@ -5,13 +5,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import { 
   Loader2, 
-  Copy,
   Library as LibraryIcon,
-  Check
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { useToast } from '@/hooks/use-toast';
+import { ImageViewerModal } from '@/components/ImageViewerModal';
 
 interface ReferenceImage {
   id: string;
@@ -34,8 +31,7 @@ const categories = [
 
 export default function Library() {
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const { toast } = useToast();
+  const [selectedImage, setSelectedImage] = useState<ReferenceImage | null>(null);
 
   const { data: references, isLoading } = useQuery({
     queryKey: ['references', selectedCategory],
@@ -54,13 +50,6 @@ export default function Library() {
       return data as ReferenceImage[];
     },
   });
-
-  const copyPrompt = (ref: ReferenceImage) => {
-    navigator.clipboard.writeText(ref.prompt);
-    setCopiedId(ref.id);
-    toast({ title: 'Prompt copiado!' });
-    setTimeout(() => setCopiedId(null), 2000);
-  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -108,57 +97,49 @@ export default function Library() {
             </p>
           </motion.div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-4 space-y-4">
             {references?.map((ref, index) => (
               <motion.div
                 key={ref.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
-                className="glass-card overflow-hidden group"
+                transition={{ delay: index * 0.03 }}
+                className="break-inside-avoid"
               >
-                <div className="relative aspect-video">
+                <div
+                  className="group relative rounded-xl overflow-hidden border border-border/50 cursor-pointer hover:border-primary/50 transition-all bg-card"
+                  onClick={() => setSelectedImage(ref)}
+                >
                   <img
                     src={ref.image_url}
                     alt={ref.title}
-                    className="w-full h-full object-cover"
+                    className="w-full object-cover"
+                    loading="lazy"
                   />
-                  <Badge 
-                    variant="secondary" 
-                    className="absolute top-3 left-3 capitalize"
-                  >
-                    {categories.find(c => c.value === ref.category)?.label || ref.category}
-                  </Badge>
-                </div>
-                <div className="p-4 space-y-3">
-                  <h3 className="font-semibold">{ref.title}</h3>
-                  <p className="text-sm text-muted-foreground line-clamp-2">
-                    {ref.prompt}
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full rounded-full"
-                    onClick={() => copyPrompt(ref)}
-                  >
-                    {copiedId === ref.id ? (
-                      <>
-                        <Check className="h-4 w-4 mr-2" />
-                        Copiado!
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-4 w-4 mr-2" />
-                        Copiar prompt
-                      </>
-                    )}
-                  </Button>
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <div className="absolute bottom-0 left-0 right-0 p-4 translate-y-full group-hover:translate-y-0 transition-transform">
+                    <p className="text-white font-medium truncate">{ref.title}</p>
+                    <p className="text-white/70 text-sm capitalize">
+                      {categories.find(c => c.value === ref.category)?.label || ref.category}
+                    </p>
+                  </div>
                 </div>
               </motion.div>
             ))}
           </div>
         )}
       </main>
+
+      <ImageViewerModal
+        open={!!selectedImage}
+        onOpenChange={() => setSelectedImage(null)}
+        image={selectedImage ? {
+          url: selectedImage.image_url,
+          title: selectedImage.title,
+          prompt: selectedImage.prompt,
+          category: categories.find(c => c.value === selectedImage.category)?.label || selectedImage.category,
+        } : null}
+      />
     </div>
   );
 }

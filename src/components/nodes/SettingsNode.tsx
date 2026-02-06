@@ -36,7 +36,7 @@ export const SettingsNode = memo(({ data, id }: NodeProps) => {
 
   const handleDuplicate = () => {
     const nodes = getNodes();
-    const currentNode = nodes.find(n => n.id === id);
+    const currentNode = nodes.find((n) => n.id === id);
     if (currentNode) {
       const newNode = {
         ...currentNode,
@@ -51,22 +51,22 @@ export const SettingsNode = memo(({ data, id }: NodeProps) => {
     }
   };
 
-  const creditsNeeded = 1; // Always 1 image
+  const creditsNeeded = 1;
   const credits = profile?.credits || 0;
 
   return (
-    <div className="bg-card/95 backdrop-blur-sm border border-border/50 rounded-2xl min-w-[300px] shadow-xl">
+    <div className="bg-card border border-slate-500/30 rounded-2xl min-w-[300px] shadow-2xl shadow-slate-500/10">
       <Handle
         type="target"
         position={Position.Left}
-        className="!w-4 !h-4 !bg-violet-500 !border-4 !border-background !-left-2"
+        className="!w-4 !h-4 !bg-gradient-to-br !from-violet-500 !to-purple-600 !border-4 !border-card !-left-2 !shadow-lg"
       />
-      
+
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-border/30">
+      <div className="flex items-center justify-between p-4 border-b border-border/30 bg-gradient-to-r from-slate-500/10 to-transparent rounded-t-2xl">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-slate-500/20 flex items-center justify-center">
-            <Settings className="h-5 w-5 text-slate-400" />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-500 to-slate-600 flex items-center justify-center shadow-lg shadow-slate-500/30">
+            <Settings className="h-5 w-5 text-white" />
           </div>
           <div>
             <h3 className="font-semibold text-foreground">Configurações</h3>
@@ -74,20 +74,30 @@ export const SettingsNode = memo(({ data, id }: NodeProps) => {
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={handleDuplicate}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50"
+            onClick={handleDuplicate}
+          >
             <Copy className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={handleDelete}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+            onClick={handleDelete}
+          >
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
       </div>
-      
+
       {/* Content */}
       <div className="p-4 space-y-5">
         {/* Aspect Ratio */}
         <div className="space-y-3">
-          <label className="text-sm text-muted-foreground">Proporção</label>
+          <label className="text-sm font-medium text-muted-foreground">Proporção</label>
           <div className="grid grid-cols-4 gap-2">
             {aspectRatios.map((ar) => {
               const Icon = ar.icon;
@@ -96,16 +106,13 @@ export const SettingsNode = memo(({ data, id }: NodeProps) => {
                   key={ar.value}
                   onClick={() => handleAspectChange(ar.value)}
                   className={cn(
-                    "flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all",
+                    'flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all',
                     aspectRatio === ar.value
-                      ? "bg-violet-500/20 border-violet-500 text-violet-400"
-                      : "bg-muted/30 border-border/50 text-muted-foreground hover:border-border"
+                      ? 'bg-primary/20 border-primary text-primary shadow-lg shadow-primary/20'
+                      : 'bg-muted/20 border-border/50 text-muted-foreground hover:border-border hover:bg-muted/40'
                   )}
                 >
-                  <Icon className={cn(
-                    "h-5 w-5",
-                    ar.value === '16:9' && "rotate-90"
-                  )} />
+                  <Icon className={cn('h-5 w-5', ar.value === '16:9' && 'rotate-90')} />
                   <span className="text-xs font-medium">{ar.label}</span>
                 </button>
               );
@@ -114,23 +121,23 @@ export const SettingsNode = memo(({ data, id }: NodeProps) => {
         </div>
 
         {/* Generate Button */}
-        <Button 
-          className="w-full h-12 rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-violet-400 text-white font-semibold shadow-lg shadow-violet-500/25"
+        <Button
+          className="w-full h-12 rounded-xl bg-gradient-to-r from-violet-600 via-purple-600 to-violet-600 hover:from-violet-500 hover:via-purple-500 hover:to-violet-500 text-white font-semibold shadow-lg shadow-violet-500/30 transition-all hover:shadow-xl hover:shadow-violet-500/40"
           onClick={() => nodeData.onGenerate?.()}
         >
           <Sparkles className="h-5 w-5 mr-2" />
-          Gerar ({creditsNeeded} créditos)
+          Gerar Imagem
         </Button>
-        
+
         <p className="text-center text-xs text-muted-foreground">
-          {credits} créditos disponíveis
+          {creditsNeeded} crédito por geração • {credits} disponíveis
         </p>
       </div>
-      
+
       <Handle
         type="source"
         position={Position.Right}
-        className="!w-4 !h-4 !bg-violet-500 !border-4 !border-background !-right-2"
+        className="!w-4 !h-4 !bg-gradient-to-br !from-violet-500 !to-purple-600 !border-4 !border-card !-right-2 !shadow-lg"
       />
     </div>
   );
