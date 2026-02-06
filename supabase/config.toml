@@ -2,3 +2,6 @@ project_id = "oruslrvpmdhtnrsgoght"
 
 [functions.generate-image]
 verify_jwt = false
+
+[functions.send-auth-email]
+verify_jwt = false
