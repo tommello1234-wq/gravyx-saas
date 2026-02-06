@@ -17,6 +17,29 @@ const hookSecret = rawHookSecret?.startsWith('v1,')
 
 console.log('[send-auth-email] Function initialized')
 
+const DEFAULT_SITE_URL = 'https://node-artistry-12.lovable.app'
+
+const normalizeRedirectUrl = (value: string) => {
+  const v = (value ?? '').trim()
+  if (!v) return ''
+  if (v.startsWith('http://') || v.startsWith('https://')) return v
+  if (v.startsWith('//')) return `https:${v}`
+  // If the value is just a domain (common misconfig), prefix https://
+  return `https://${v}`
+}
+
+const ensurePath = (rawUrl: string, defaultPath: string) => {
+  try {
+    const u = new URL(rawUrl)
+    if (!u.pathname || u.pathname === '/') {
+      u.pathname = defaultPath
+    }
+    return u.toString()
+  } catch {
+    return rawUrl
+  }
+}
+
 interface EmailPayload {
   user: {
     email: string
@@ -70,12 +93,19 @@ Deno.serve(async (req) => {
     let html: string
     let subject: string
 
-    // Construir URL base para ações
-    const baseRedirectUrl = redirect_to || site_url || 'https://node-artistry-12.lovable.app'
+    // Construir URL base para ações (garantir URL absoluta e válida)
+    const rawRedirect = redirect_to || site_url || DEFAULT_SITE_URL
+    const baseRedirectUrl = normalizeRedirectUrl(rawRedirect) || DEFAULT_SITE_URL
+
+    console.log('[send-auth-email] Redirect resolved:', {
+      redirect_to,
+      site_url,
+      resolved: baseRedirectUrl,
+    })
 
     switch (email_action_type) {
       case 'signup': {
-        const confirmationUrl = `${supabaseUrl}/auth/v1/verify?token=${token_hash}&type=signup&redirect_to=${baseRedirectUrl}`
+        const confirmationUrl = `${supabaseUrl}/auth/v1/verify?token=${token_hash}&type=signup&redirect_to=${encodeURIComponent(baseRedirectUrl)}`
         html = await renderAsync(
           React.createElement(WelcomeEmail, {
             confirmationUrl,
@@ -87,7 +117,7 @@ Deno.serve(async (req) => {
       }
 
       case 'magiclink': {
-        const magicLinkUrl = `${supabaseUrl}/auth/v1/verify?token=${token_hash}&type=magiclink&redirect_to=${baseRedirectUrl}`
+        const magicLinkUrl = `${supabaseUrl}/auth/v1/verify?token=${token_hash}&type=magiclink&redirect_to=${encodeURIComponent(baseRedirectUrl)}`
         html = await renderAsync(
           React.createElement(MagicLinkEmail, {
             magicLinkUrl,
@@ -99,7 +129,8 @@ Deno.serve(async (req) => {
       }
 
       case 'recovery': {
-        const resetUrl = `${supabaseUrl}/auth/v1/verify?token=${token_hash}&type=recovery&redirect_to=${baseRedirectUrl}`
+        const recoveryRedirectUrl = ensurePath(baseRedirectUrl, '/reset-password')
+        const resetUrl = `${supabaseUrl}/auth/v1/verify?token=${token_hash}&type=recovery&redirect_to=${encodeURIComponent(recoveryRedirectUrl)}`
         html = await renderAsync(
           React.createElement(PasswordResetEmail, {
             resetUrl,
@@ -111,7 +142,7 @@ Deno.serve(async (req) => {
       }
 
       case 'email_change': {
-        const confirmationUrl = `${supabaseUrl}/auth/v1/verify?token=${token_hash}&type=email_change&redirect_to=${baseRedirectUrl}`
+        const confirmationUrl = `${supabaseUrl}/auth/v1/verify?token=${token_hash}&type=email_change&redirect_to=${encodeURIComponent(baseRedirectUrl)}`
         html = await renderAsync(
           React.createElement(EmailChangeEmail, {
             confirmationUrl,
