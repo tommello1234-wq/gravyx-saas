@@ -1,81 +1,250 @@
 
-# Plano: Corrigir Botão Gerar e Dark Mode no Editor
+# Plano: Melhorias de Autenticação e Sistema de Galeria no OutputNode
 
-## Problema 1: Botão "Gerar" não funciona
+## Visão Geral
+Este plano aborda três áreas principais:
+1. Tratamento de erros de autenticação mais específicos
+2. Sistema de galeria acumulativa no OutputNode com popup de ações
+3. Garantir funcionamento para todos os usuários
 
-### Diagnóstico
-O `SettingsNode` recebe a função `onGenerate` via `data.onGenerate`, porém:
+---
 
-1. **Projetos carregados do banco**: Quando o `canvas_state` é carregado do Supabase, os nós são objetos JSON puros. Funções JavaScript não podem ser serializadas, então `onGenerate` fica `undefined`.
+## 1. Melhorias na Autenticação
 
-2. **Referência desatualizada**: Mesmo em nós recém-criados, o `handleGenerate` é definido com `useCallback` e captura o estado atual de `nodes`. Se o usuário adicionar mais nós, a função ainda terá a referência antiga.
+### 1.1 Criar Conta com Email Já Cadastrado
+**Arquivo:** `src/pages/Auth.tsx`
 
-### Solução
-Remover a dependência de passar `onGenerate` via props e usar um **sistema de eventos ou contexto**:
+**Situação Atual:** Já existe tratamento parcial (linha 66-71) que verifica se a mensagem contém "already registered".
 
-```text
-Opção escolhida: Criar função handleGenerate global via useCallback 
-que é chamada diretamente no SettingsNode via React Flow
-```
-
-**Mudanças em Editor.tsx:**
-1. Criar um efeito que atualiza os nós carregados para incluir a referência `onGenerate`
-2. Usar `setNodes` para injetar a função nos nós de settings após carregar/criar
-
-**Mudanças em SettingsNode.tsx:**
-1. Receber a função via um hook customizado ou buscar do nó atualizado
-
-### Implementação técnica
-A abordagem mais limpa é atualizar os nós depois de carregados para injetar a função:
+**Melhoria:** Tornar a mensagem mais clara e adicionar um link para alternar para o modo login.
 
 ```tsx
-// Em Editor.tsx - após carregar o projeto
-useEffect(() => {
-  setNodes(nds => nds.map(n => 
-    n.type === 'settings' 
-      ? { ...n, data: { ...n.data, onGenerate: handleGenerate } }
-      : n
-  ));
-}, [handleGenerate, setNodes]);
+if (error.message.includes('already registered') || error.message.includes('User already registered')) {
+  toast({
+    title: 'Email já cadastrado',
+    description: 'Este email já está em uso. Clique em "Entrar" para fazer login.',
+    variant: 'destructive',
+  });
+  setIsLogin(true); // Automaticamente muda para modo login
+}
+```
+
+### 1.2 Recuperar Senha com Email Não Cadastrado
+**Arquivo:** `src/pages/ResetPassword.tsx`
+
+**Problema:** O Supabase não retorna erro quando o email não existe por questões de segurança (evitar enumeration attack). Porém, podemos verificar primeiro se o email existe antes de enviar.
+
+**Solução:** Adicionar verificação prévia consultando a tabela de profiles e exibir mensagem apropriada.
+
+```tsx
+// Antes de enviar o reset, verificar se email existe
+const { data: existingUser } = await supabase
+  .from('profiles')
+  .select('email')
+  .eq('email', data.email)
+  .maybeSingle();
+
+if (!existingUser) {
+  toast({
+    title: 'Email não encontrado',
+    description: 'Este email não está cadastrado. Crie uma conta primeiro.',
+    variant: 'destructive',
+  });
+  return;
+}
 ```
 
 ---
 
-## Problema 2: Dark Mode quebrado nos Nodes
+## 2. Sistema de Galeria Acumulativa no OutputNode
 
-### Diagnóstico
-Classes Tailwind incorretas estão sendo usadas:
+### 2.1 Problema Atual
+- Cada nova geração **substitui** as imagens anteriores no node
+- Não há opção de salvar na galeria permanente, excluir ou baixar individualmente
+- Quando o usuário sai e volta, apenas a última geração aparece
 
-| Arquivo | Linha | Classe atual | Problema |
-|---------|-------|--------------|----------|
-| Editor.tsx | 299 | `bg-destructive-foreground` | Foreground = branco |
-| PromptNode.tsx | 46 | `bg-popover-foreground` | Foreground = branco |
-| PromptNode.tsx | 72 | `bg-warning-foreground` | Foreground = preto |
+### 2.2 Solução: Acumular Imagens
 
-### Solução
-Substituir pelas classes corretas de background:
+**Arquivo:** `src/pages/Editor.tsx`
 
-| Arquivo | Correção |
-|---------|----------|
-| Editor.tsx | Remover classe ou usar `bg-background` |
-| PromptNode.tsx linha 46 | `bg-card/95` (igual aos outros nós) |
-| PromptNode.tsx linha 72 | `bg-card` ou remover (já tem bg-card no pai) |
+Modificar o `handleGenerate` para **acumular** imagens ao invés de substituir:
+
+```tsx
+// Linha ~190-198 - Mudança de lógica
+setNodes((nds) => {
+  const updated = nds.map((n) =>
+    n.id === outputNode.id
+      ? { 
+          ...n, 
+          data: { 
+            ...n.data, 
+            // ACUMULAR ao invés de substituir
+            images: [...(n.data.images || []), ...data.images], 
+            isLoading: false 
+          } 
+        }
+      : n
+  );
+  setTimeout(() => saveProject(updated, edges), 100);
+  return updated;
+});
+```
+
+### 2.3 Criar Modal de Ações para Imagens
+
+**Novo Arquivo:** `src/components/nodes/OutputImageModal.tsx`
+
+Modal que aparece ao clicar em uma imagem no OutputNode com opções:
+
+```text
+┌─────────────────────────────────────────┐
+│  [X]                                    │
+│                                         │
+│         [Imagem Grande]                 │
+│                                         │
+│  ┌─────────────────────────────────────┐│
+│  │ Prompt utilizado...                 ││
+│  └─────────────────────────────────────┘│
+│                                         │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐│
+│  │ Salvar   │ │ Baixar   │ │ Excluir  ││
+│  │ Galeria  │ │          │ │          ││
+│  └──────────┘ └──────────┘ └──────────┘│
+└─────────────────────────────────────────┘
+```
+
+**Funcionalidades:**
+- **Salvar na Galeria:** Insere na tabela `generations` com `saved_to_gallery: true`
+- **Baixar:** Download direto da imagem
+- **Excluir:** Remove a imagem do array de imagens do node
+
+### 2.4 Modificar OutputNode
+
+**Arquivo:** `src/components/nodes/OutputNode.tsx`
+
+Adicionar:
+1. Estado para controlar o modal
+2. Clique nas imagens abre o modal
+3. Funções para salvar/excluir/baixar
+4. Exibir todas as imagens acumuladas
+
+```tsx
+interface OutputNodeData {
+  label: string;
+  images: Array<{
+    url: string;
+    prompt: string;  // Guardar o prompt de cada imagem
+    savedToGallery?: boolean;
+  }>;
+  isLoading: boolean;
+}
+```
+
+### 2.5 Atualizar Estrutura de Dados
+
+Para que cada imagem tenha seu próprio prompt e estado, precisamos mudar como salvamos as imagens:
+
+**No Editor.tsx (handleGenerate):**
+```tsx
+// Ao invés de apenas URLs, salvar objetos com metadata
+const newImage = {
+  url: data.images[0],
+  prompt: prompt,
+  aspectRatio: aspectRatio,
+  savedToGallery: false,
+  generatedAt: new Date().toISOString()
+};
+```
 
 ---
 
-## Arquivos a modificar
+## 3. Migração de Banco de Dados
 
-1. **src/pages/Editor.tsx**
-   - Linha 299: Remover `bg-destructive-foreground` do ReactFlow
-   - Adicionar `useEffect` para injetar `onGenerate` nos settings nodes carregados
+Adicionar coluna `saved_to_gallery` na tabela `generations` (se ainda não existir):
 
-2. **src/components/nodes/PromptNode.tsx**
-   - Linha 46: Trocar `bg-popover-foreground` por `bg-card/95`
-   - Linha 72: Remover `bg-warning-foreground` ou usar classe de background escuro
+```sql
+ALTER TABLE generations 
+ADD COLUMN IF NOT EXISTS saved_to_gallery boolean DEFAULT false;
+```
 
 ---
 
-## Resultado esperado
+## Arquivos a Criar/Modificar
 
-- **Gerar funciona**: O botão "Gerar" funcionará tanto em nós recém-criados quanto em projetos carregados do banco
-- **Dark mode**: Todo o editor (canvas, nós, backgrounds) seguirá a estética dark cyberpunk definida no design system
+| Arquivo | Ação | Descrição |
+|---------|------|-----------|
+| `src/pages/Auth.tsx` | Modificar | Mudar para modo login ao detectar email já cadastrado |
+| `src/pages/ResetPassword.tsx` | Modificar | Verificar se email existe antes de enviar reset |
+| `src/pages/Editor.tsx` | Modificar | Acumular imagens no output, salvar metadata |
+| `src/components/nodes/OutputNode.tsx` | Modificar | Grid de imagens com clique para abrir modal |
+| `src/components/nodes/OutputImageModal.tsx` | Criar | Modal com ações (salvar, baixar, excluir) |
+
+---
+
+## Fluxo do Usuário (Após Implementação)
+
+1. Usuário gera uma imagem → Aparece no OutputNode
+2. Usuário gera outra imagem → **Acumula** junto com a anterior
+3. Usuário clica em uma imagem → Abre popup grande
+4. No popup pode:
+   - **Salvar na Galeria** → Marca `saved_to_gallery: true` e aparece em `/gallery`
+   - **Baixar** → Download do arquivo
+   - **Excluir** → Remove do node (não vai para galeria)
+5. Ao sair e voltar → Todas as imagens acumuladas permanecem visíveis
+
+---
+
+## Detalhes Técnicos
+
+### Estrutura do Novo Formato de Imagens no Node
+
+```typescript
+interface NodeImage {
+  url: string;           // URL da imagem (base64 ou hosted)
+  prompt: string;        // Prompt usado para gerar
+  aspectRatio: string;   // Ex: "1:1", "16:9"
+  savedToGallery: boolean;
+  generatedAt: string;   // ISO timestamp
+}
+
+interface OutputNodeData {
+  label: string;
+  images: NodeImage[];
+  isLoading: boolean;
+}
+```
+
+### Função Salvar na Galeria
+
+```typescript
+const saveToGallery = async (image: NodeImage) => {
+  await supabase.from('generations').insert({
+    user_id: user.id,
+    project_id: projectId,
+    prompt: image.prompt,
+    aspect_ratio: image.aspectRatio,
+    image_url: image.url,
+    status: 'completed',
+    saved_to_gallery: true
+  });
+  
+  // Atualizar estado local do node
+  setNodes(nds => nds.map(n => 
+    n.id === id ? {
+      ...n,
+      data: {
+        ...n.data,
+        images: n.data.images.map(img => 
+          img.url === image.url ? { ...img, savedToGallery: true } : img
+        )
+      }
+    } : n
+  ));
+};
+```
+
+### Compatibilidade com Dados Existentes
+
+O código será retro-compatível:
+- Se `images` for array de strings (formato antigo), converter para novo formato
+- Se já for array de objetos, usar diretamente
