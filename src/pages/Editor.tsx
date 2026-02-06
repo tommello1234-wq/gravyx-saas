@@ -186,13 +186,40 @@ export default function Editor() {
 
       if (error) throw error;
 
-      // Update output node with images and save immediately
+      // Create new image objects with metadata
+      const newImages = data.images.map((url: string) => ({
+        url,
+        prompt,
+        aspectRatio,
+        savedToGallery: false,
+        generatedAt: new Date().toISOString(),
+      }));
+
+      // Update output node - ACCUMULATE images instead of replacing
       setNodes((nds) => {
-        const updated = nds.map((n) =>
-          n.id === outputNode.id
-            ? { ...n, data: { ...n.data, images: data.images, isLoading: false } }
-            : n
-        );
+        const updated = nds.map((n) => {
+          if (n.id === outputNode.id) {
+            const existingImages = (n.data as { images?: unknown[] }).images || [];
+            // Normalize existing images to new format if needed
+            const normalizedExisting = Array.isArray(existingImages) 
+              ? existingImages.map((img: unknown) => 
+                  typeof img === 'string' 
+                    ? { url: img, prompt: '', aspectRatio: '1:1', savedToGallery: false, generatedAt: new Date().toISOString() }
+                    : img
+                )
+              : [];
+            
+            return {
+              ...n,
+              data: {
+                ...n.data,
+                images: [...normalizedExisting, ...newImages],
+                isLoading: false,
+              },
+            };
+          }
+          return n;
+        });
         // Force save after generation
         setTimeout(() => saveProject(updated, edges), 100);
         return updated;

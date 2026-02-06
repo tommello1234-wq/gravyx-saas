@@ -54,6 +54,23 @@ export default function ResetPassword() {
     setIsLoading(true);
 
     try {
+      // Verificar se o email existe antes de enviar reset
+      const { data: existingUser } = await supabase
+        .from('profiles')
+        .select('email')
+        .eq('email', data.email)
+        .maybeSingle();
+
+      if (!existingUser) {
+        toast({
+          title: 'Email não encontrado',
+          description: 'Este email não está cadastrado. Crie uma conta primeiro.',
+          variant: 'destructive',
+        });
+        setIsLoading(false);
+        return;
+      }
+
       const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
@@ -64,8 +81,6 @@ export default function ResetPassword() {
         // Mensagens amigáveis para erros comuns
         if (error.message.includes('rate limit') || error.message.includes('Rate limit')) {
           errorMessage = 'Muitas tentativas. Aguarde alguns minutos e tente novamente.';
-        } else if (error.message.includes('not found') || error.message.includes('User not found')) {
-          errorMessage = 'Não encontramos uma conta com este email.';
         }
         
         toast({

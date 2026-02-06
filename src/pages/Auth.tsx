@@ -63,12 +63,13 @@ export default function Auth() {
       } else {
         const { error } = await signUp(data.email, data.password);
         if (error) {
-          if (error.message.includes('already registered')) {
+          if (error.message.includes('already registered') || error.message.includes('User already registered')) {
             toast({
               title: 'Email já cadastrado',
-              description: 'Este email já está em uso. Tente fazer login.',
+              description: 'Este email já está em uso. Clique em "Entrar" abaixo para fazer login.',
               variant: 'destructive',
             });
+            setIsLogin(true); // Automaticamente muda para modo login
           } else {
             toast({
               title: 'Erro ao criar conta',
