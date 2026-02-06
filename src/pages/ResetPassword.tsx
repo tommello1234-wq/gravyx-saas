@@ -59,20 +59,11 @@ export default function ResetPassword() {
       });
 
       if (error) {
-        // Handle rate limit error with a friendly message
-        if (error.message.includes('rate limit') || error.message.includes('429')) {
-          toast({
-            title: 'Muitas tentativas',
-            description: 'Você já solicitou a redefinição recentemente. Aguarde alguns minutos antes de tentar novamente.',
-            variant: 'destructive',
-          });
-        } else {
-          toast({
-            title: 'Erro',
-            description: error.message,
-            variant: 'destructive',
-          });
-        }
+        toast({
+          title: 'Erro',
+          description: error.message,
+          variant: 'destructive',
+        });
       } else {
         setEmailSent(true);
       }

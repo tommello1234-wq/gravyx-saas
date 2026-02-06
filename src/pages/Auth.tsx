@@ -21,8 +21,6 @@ type AuthFormData = z.infer<typeof authSchema>;
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
-  const [emailSent, setEmailSent] = useState(false);
-  const [sentEmail, setSentEmail] = useState('');
   const { signIn, signUp, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -79,50 +77,16 @@ export default function Auth() {
             });
           }
         } else {
-          setSentEmail(data.email);
-          setEmailSent(true);
+          toast({
+            title: 'Conta criada!',
+            description: 'Verifique seu email para confirmar o cadastro.',
+          });
         }
       }
     } finally {
       setIsLoading(false);
     }
   };
-
-  // Email confirmation sent screen
-  if (emailSent) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background grid-pattern relative overflow-hidden">
-        <div className="orb w-96 h-96 bg-primary/30 -top-48 -left-48" />
-        <div className="orb w-80 h-80 bg-secondary/30 -bottom-40 -right-40" style={{ animationDelay: '2s' }} />
-        
-        <Card className="w-full max-w-md mx-4 glass-card">
-          <CardContent className="pt-8 text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/20 mx-auto mb-4">
-              <Mail className="h-8 w-8 text-primary" />
-            </div>
-            <h2 className="text-2xl font-bold mb-2 gradient-text">Verifique seu email</h2>
-            <p className="text-muted-foreground mb-2">
-              Enviamos um link de confirmação para:
-            </p>
-            <p className="text-foreground font-medium mb-6">{sentEmail}</p>
-            <p className="text-sm text-muted-foreground mb-6">
-              Clique no link no email para ativar sua conta e começar a criar imagens incríveis.
-            </p>
-            <Button 
-              variant="outline" 
-              className="rounded-full"
-              onClick={() => {
-                setEmailSent(false);
-                setIsLogin(true);
-              }}
-            >
-              Voltar ao login
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background grid-pattern relative overflow-hidden">

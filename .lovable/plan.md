@@ -1,45 +1,58 @@
 
+# Correção: Timeout na Geração de Múltiplas Imagens
 
-## Correção do Parsing do Secret do Webhook
+## O Problema
 
-### Problema
-O Supabase sempre gera o secret no formato `v1,whsec_...`, mas a biblioteca `standardwebhooks` espera apenas a parte `whsec_...` (base64 puro).
+A Edge Function processa imagens **sequencialmente** (uma por uma). Cada chamada à API Gemini leva 15-30 segundos:
 
-### Solução
-Modificar a Edge Function `send-auth-email` para automaticamente extrair a parte correta do secret, suportando ambos os formatos:
-- `v1,whsec_XXXXX` (formato do Supabase)
-- `whsec_XXXXX` (formato esperado pela biblioteca)
+| Quantidade | Tempo Sequencial | Timeout (60s) |
+|------------|------------------|---------------|
+| 1 imagem   | 15-30s           | OK            |
+| 2 imagens  | 30-60s           | No limite     |
+| 3 imagens  | 45-90s           | TIMEOUT       |
+| 4 imagens  | 60-120s          | TIMEOUT       |
 
-### Alteração no Código
+## A Solução
 
-**Arquivo:** `supabase/functions/send-auth-email/index.ts`
+Usar **`Promise.all()`** para processar todas as imagens **em paralelo**:
 
-Adicionar uma função helper que processa o secret:
+| Quantidade | Tempo Paralelo | Timeout (60s) |
+|------------|----------------|---------------|
+| 1-4 imagens | 15-30s        | OK            |
+
+## Mudança Técnica
+
+**Arquivo**: `supabase/functions/generate-image/index.ts`
 
 ```typescript
-// Helper para extrair o secret no formato correto
-function getWebhookSecret(secret: string): string {
-  // Se começa com "v1,", remover o prefixo
-  if (secret.startsWith('v1,')) {
-    return secret.substring(3)
-  }
-  return secret
+// ANTES: Loop sequencial (lento)
+for (let i = 0; i < quantity; i++) {
+  const response = await fetch(...);  // Espera cada um terminar
+  // ...
 }
+
+// DEPOIS: Processamento paralelo (rápido)
+const generateOne = async () => {
+  const response = await fetch(...);
+  // ...
+  return imageUrl;
+};
+
+const promises = Array.from({ length: quantity }, () => generateOne());
+const results = await Promise.all(promises);
+const images = results.filter(Boolean);
 ```
 
-E usar essa função ao criar o Webhook:
+## Detalhes da Implementação
 
-```typescript
-const hookSecret = Deno.env.get('SEND_EMAIL_HOOK_SECRET') as string
-// ...
-const wh = new Webhook(getWebhookSecret(hookSecret))
-```
+1. Criar função `generateSingleImage()` que faz uma única chamada à API
+2. Criar array de Promises para todas as imagens
+3. Usar `Promise.all()` para executar todas simultaneamente
+4. Filtrar resultados válidos
+5. Salvar todas as gerações no banco
 
-### Próximos Passos
-1. Atualizar o `SEND_EMAIL_HOOK_SECRET` com o secret completo do Supabase (incluindo `v1,`)
-2. Fazer deploy da Edge Function atualizada
-3. Testar o envio de email
+## Benefício
 
-### Resultado
-Isso permitirá usar o secret exatamente como o Supabase gera, sem precisar remover manualmente o prefixo `v1,`.
-
+- **4 imagens em ~20 segundos** ao invés de ~80 segundos
+- Elimina os erros 504 de timeout
+- Experiência muito mais rápida para o usuário
