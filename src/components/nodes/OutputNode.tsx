@@ -225,7 +225,11 @@ export const OutputNode = memo(({ data, id }: NodeProps) => {
               </div>
 
               {images.length > 1 && (
-                <Button variant="outline" className="w-full rounded-xl border-border/50" onClick={downloadAll}>
+                <Button 
+                  variant="outline" 
+                  className="w-full rounded-xl border-border/50 bg-card text-foreground hover:bg-muted" 
+                  onClick={downloadAll}
+                >
                   <Download className="h-4 w-4 mr-2" />
                   Baixar Todas ({images.length})
                 </Button>
