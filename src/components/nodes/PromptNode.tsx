@@ -43,7 +43,7 @@ export const PromptNode = memo(({
       setNodes([...nodes, newNode]);
     }
   };
-  return <div className="backdrop-blur-sm border border-border/50 rounded-2xl min-w-[320px] shadow-xl nodrag-content bg-popover-foreground">
+  return <div className="bg-card/95 backdrop-blur-sm border border-border/50 rounded-2xl min-w-[320px] shadow-xl nodrag-content">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-border/30">
         <div className="flex items-center gap-3">
@@ -69,7 +69,7 @@ export const PromptNode = memo(({
       </div>
       
       {/* Content */}
-      <div className="p-4 space-y-3 bg-warning-foreground">
+      <div className="p-4 space-y-3">
         <label className="text-sm text-muted-foreground">Prompt</label>
         <Textarea value={value} onChange={e => {
         setValue(e.target.value);

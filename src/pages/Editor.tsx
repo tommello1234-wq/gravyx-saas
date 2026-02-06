@@ -187,6 +187,16 @@ export default function Editor() {
       });
     }
   }, [nodes, edges, profile, projectId, setNodes, toast]);
+
+  // Inject onGenerate into settings nodes (fixes loaded projects and stale references)
+  useEffect(() => {
+    setNodes(nds => nds.map(n => 
+      n.type === 'settings' 
+        ? { ...n, data: { ...n.data, onGenerate: handleGenerate } }
+        : n
+    ));
+  }, [handleGenerate, setNodes]);
+
   const addNode = useCallback((type: string) => {
     // Prevent adding more than one settings node
     if (type === 'settings') {
@@ -296,7 +306,7 @@ export default function Editor() {
 
       {/* Canvas */}
       <div className="flex-1">
-        <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} nodeTypes={memoizedNodeTypes} fitView className="bg-destructive-foreground">
+        <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} nodeTypes={memoizedNodeTypes} fitView className="bg-background">
           <Controls className="!bg-card/80 !backdrop-blur-sm !border-border" />
           <MiniMap className="!bg-card/80 !backdrop-blur-sm" nodeColor={() => 'hsl(var(--primary))'} />
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="hsl(var(--border))" />
