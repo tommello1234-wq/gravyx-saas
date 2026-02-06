@@ -1,95 +1,81 @@
 
-# Configuração de Emails Transacionais com Resend
+# Plano: Corrigir Botão Gerar e Dark Mode no Editor
 
-Vou criar uma Edge Function completa para enviar emails estilizados no tema dark cyberpunk do Avion.
+## Problema 1: Botão "Gerar" não funciona
 
-## O que será criado
+### Diagnóstico
+O `SettingsNode` recebe a função `onGenerate` via `data.onGenerate`, porém:
 
-### 1. Edge Function `send-auth-email`
-Uma função que recebe webhooks do Supabase Auth e envia emails personalizados via Resend.
+1. **Projetos carregados do banco**: Quando o `canvas_state` é carregado do Supabase, os nós são objetos JSON puros. Funções JavaScript não podem ser serializadas, então `onGenerate` fica `undefined`.
 
-### 2. Templates React Email
+2. **Referência desatualizada**: Mesmo em nós recém-criados, o `handleGenerate` é definido com `useCallback` e captura o estado atual de `nodes`. Se o usuário adicionar mais nós, a função ainda terá a referência antiga.
 
-| Tipo | Quando é enviado |
-|------|------------------|
-| **Welcome** | Ao criar nova conta (confirmação de email) |
-| **Magic Link** | Login sem senha |
-| **Password Reset** | Recuperação de senha |
-| **Email Change** | Mudança de email |
-
-### 3. Design dos Emails
-
-Cada template terá:
-- **Header**: Logo Avion com gradiente violet/purple
-- **Corpo**: Fundo dark (#0a0a0f) com cards glass effect
-- **Botão CTA**: Gradiente primary com glow effect
-- **Footer**: Links e copyright
+### Solução
+Remover a dependência de passar `onGenerate` via props e usar um **sistema de eventos ou contexto**:
 
 ```text
-┌─────────────────────────────────┐
-│      ✨ Avion                   │  ← Logo com gradiente
-├─────────────────────────────────┤
-│                                 │
-│   Bem-vindo ao Avion!           │  ← Título gradient-text
-│                                 │
-│   ┌───────────────────────┐     │
-│   │                       │     │
-│   │   Confirme seu email  │     │  ← Card glass
-│   │   para começar a      │     │
-│   │   criar imagens       │     │
-│   │                       │     │
-│   │  [ Confirmar Email ]  │     │  ← Botão com glow
-│   │                       │     │
-│   └───────────────────────┘     │
-│                                 │
-│   Se você não criou esta conta, │
-│   ignore este email.            │
-│                                 │
-├─────────────────────────────────┤
-│   © 2024 Avion · Termos         │  ← Footer
-└─────────────────────────────────┘
+Opção escolhida: Criar função handleGenerate global via useCallback 
+que é chamada diretamente no SettingsNode via React Flow
 ```
 
-## Estrutura de Arquivos
+**Mudanças em Editor.tsx:**
+1. Criar um efeito que atualiza os nós carregados para incluir a referência `onGenerate`
+2. Usar `setNodes` para injetar a função nos nós de settings após carregar/criar
 
-```
-supabase/functions/
-├── send-auth-email/
-│   ├── index.ts              # Handler principal
-│   └── _templates/
-│       ├── base-layout.tsx   # Layout compartilhado
-│       ├── welcome.tsx       # Confirmação de conta
-│       ├── magic-link.tsx    # Login sem senha
-│       ├── password-reset.tsx # Recuperação
-│       └── email-change.tsx  # Mudança de email
-```
+**Mudanças em SettingsNode.tsx:**
+1. Receber a função via um hook customizado ou buscar do nó atualizado
 
-## Configuração Necessária no Supabase
+### Implementação técnica
+A abordagem mais limpa é atualizar os nós depois de carregados para injetar a função:
 
-Após criar a Edge Function, você precisará configurar um **Auth Hook** no Supabase Dashboard:
-
-1. Acessar **Authentication** → **Hooks**
-2. Criar hook do tipo **Send Email**
-3. Apontar para: `https://oruslrvpmdhtnrsgoght.supabase.co/functions/v1/send-auth-email`
-
-## Detalhes Técnicos
-
-### Cores do Tema (inline CSS para emails)
-```css
-background: #0a0a0f          /* --background */
-card: #0f0f14                /* --card */
-primary: #a78bfa             /* violet-400 */
-secondary: #c084fc           /* purple-400 */
-accent: #818cf8              /* indigo-400 */
-text: #fafafa                /* --foreground */
-muted: #71717a               /* --muted-foreground */
+```tsx
+// Em Editor.tsx - após carregar o projeto
+useEffect(() => {
+  setNodes(nds => nds.map(n => 
+    n.type === 'settings' 
+      ? { ...n, data: { ...n.data, onGenerate: handleGenerate } }
+      : n
+  ));
+}, [handleGenerate, setNodes]);
 ```
 
-### Verificação de Webhook
-A função usará `standardwebhooks` para validar a assinatura do request usando o secret `SEND_EMAIL_HOOK_SECRET`.
+---
 
-### Tipos de Email Suportados
-- `signup` → Template Welcome
-- `magiclink` → Template Magic Link  
-- `recovery` → Template Password Reset
-- `email_change` → Template Email Change
+## Problema 2: Dark Mode quebrado nos Nodes
+
+### Diagnóstico
+Classes Tailwind incorretas estão sendo usadas:
+
+| Arquivo | Linha | Classe atual | Problema |
+|---------|-------|--------------|----------|
+| Editor.tsx | 299 | `bg-destructive-foreground` | Foreground = branco |
+| PromptNode.tsx | 46 | `bg-popover-foreground` | Foreground = branco |
+| PromptNode.tsx | 72 | `bg-warning-foreground` | Foreground = preto |
+
+### Solução
+Substituir pelas classes corretas de background:
+
+| Arquivo | Correção |
+|---------|----------|
+| Editor.tsx | Remover classe ou usar `bg-background` |
+| PromptNode.tsx linha 46 | `bg-card/95` (igual aos outros nós) |
+| PromptNode.tsx linha 72 | `bg-card` ou remover (já tem bg-card no pai) |
+
+---
+
+## Arquivos a modificar
+
+1. **src/pages/Editor.tsx**
+   - Linha 299: Remover `bg-destructive-foreground` do ReactFlow
+   - Adicionar `useEffect` para injetar `onGenerate` nos settings nodes carregados
+
+2. **src/components/nodes/PromptNode.tsx**
+   - Linha 46: Trocar `bg-popover-foreground` por `bg-card/95`
+   - Linha 72: Remover `bg-warning-foreground` ou usar classe de background escuro
+
+---
+
+## Resultado esperado
+
+- **Gerar funciona**: O botão "Gerar" funcionará tanto em nós recém-criados quanto em projetos carregados do banco
+- **Dark mode**: Todo o editor (canvas, nós, backgrounds) seguirá a estética dark cyberpunk definida no design system
