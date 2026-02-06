@@ -1,250 +1,92 @@
 
-# Plano: Melhorias de Autenticação e Sistema de Galeria no OutputNode
 
-## Visão Geral
-Este plano aborda três áreas principais:
-1. Tratamento de erros de autenticação mais específicos
-2. Sistema de galeria acumulativa no OutputNode com popup de ações
-3. Garantir funcionamento para todos os usuários
+# Plano: Corrigir Loop Infinito de Requisições no Editor
 
----
+## Problema Identificado
 
-## 1. Melhorias na Autenticação
-
-### 1.1 Criar Conta com Email Já Cadastrado
-**Arquivo:** `src/pages/Auth.tsx`
-
-**Situação Atual:** Já existe tratamento parcial (linha 66-71) que verifica se a mensagem contém "already registered".
-
-**Melhoria:** Tornar a mensagem mais clara e adicionar um link para alternar para o modo login.
-
-```tsx
-if (error.message.includes('already registered') || error.message.includes('User already registered')) {
-  toast({
-    title: 'Email já cadastrado',
-    description: 'Este email já está em uso. Clique em "Entrar" para fazer login.',
-    variant: 'destructive',
-  });
-  setIsLogin(true); // Automaticamente muda para modo login
-}
-```
-
-### 1.2 Recuperar Senha com Email Não Cadastrado
-**Arquivo:** `src/pages/ResetPassword.tsx`
-
-**Problema:** O Supabase não retorna erro quando o email não existe por questões de segurança (evitar enumeration attack). Porém, podemos verificar primeiro se o email existe antes de enviar.
-
-**Solução:** Adicionar verificação prévia consultando a tabela de profiles e exibir mensagem apropriada.
-
-```tsx
-// Antes de enviar o reset, verificar se email existe
-const { data: existingUser } = await supabase
-  .from('profiles')
-  .select('email')
-  .eq('email', data.email)
-  .maybeSingle();
-
-if (!existingUser) {
-  toast({
-    title: 'Email não encontrado',
-    description: 'Este email não está cadastrado. Crie uma conta primeiro.',
-    variant: 'destructive',
-  });
-  return;
-}
-```
-
----
-
-## 2. Sistema de Galeria Acumulativa no OutputNode
-
-### 2.1 Problema Atual
-- Cada nova geração **substitui** as imagens anteriores no node
-- Não há opção de salvar na galeria permanente, excluir ou baixar individualmente
-- Quando o usuário sai e volta, apenas a última geração aparece
-
-### 2.2 Solução: Acumular Imagens
-
-**Arquivo:** `src/pages/Editor.tsx`
-
-Modificar o `handleGenerate` para **acumular** imagens ao invés de substituir:
-
-```tsx
-// Linha ~190-198 - Mudança de lógica
-setNodes((nds) => {
-  const updated = nds.map((n) =>
-    n.id === outputNode.id
-      ? { 
-          ...n, 
-          data: { 
-            ...n.data, 
-            // ACUMULAR ao invés de substituir
-            images: [...(n.data.images || []), ...data.images], 
-            isLoading: false 
-          } 
-        }
-      : n
-  );
-  setTimeout(() => saveProject(updated, edges), 100);
-  return updated;
-});
-```
-
-### 2.3 Criar Modal de Ações para Imagens
-
-**Novo Arquivo:** `src/components/nodes/OutputImageModal.tsx`
-
-Modal que aparece ao clicar em uma imagem no OutputNode com opções:
+Encontrei um **bug crítico** no código do Editor que está causando um loop infinito de requisições ao Supabase:
 
 ```text
-┌─────────────────────────────────────────┐
-│  [X]                                    │
-│                                         │
-│         [Imagem Grande]                 │
-│                                         │
-│  ┌─────────────────────────────────────┐│
-│  │ Prompt utilizado...                 ││
-│  └─────────────────────────────────────┘│
-│                                         │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐│
-│  │ Salvar   │ │ Baixar   │ │ Excluir  ││
-│  │ Galeria  │ │          │ │          ││
-│  └──────────┘ └──────────┘ └──────────┘│
-└─────────────────────────────────────────┘
++------------------+     depende de      +------------------+
+|  handleGenerate  | <------------------ |      nodes       |
++------------------+                      +------------------+
+         |                                       ^
+         | quando muda                           |
+         v                                       |
++------------------+     atualiza                |
+|    useEffect     | -------------------------->-+
+| (injeta onGenerate)  
++------------------+
 ```
 
-**Funcionalidades:**
-- **Salvar na Galeria:** Insere na tabela `generations` com `saved_to_gallery: true`
-- **Baixar:** Download direto da imagem
-- **Excluir:** Remove a imagem do array de imagens do node
+**O ciclo funciona assim:**
+1. `handleGenerate` tem `nodes` nas dependências (linha 244)
+2. Quando `handleGenerate` muda, o `useEffect` (linha 247) injeta a função nos nodes
+3. Isso muda `nodes`, que recria `handleGenerate`, que dispara o `useEffect` novamente
+4. Isso acontece continuamente, disparando o auto-save a cada 1.5s
 
-### 2.4 Modificar OutputNode
-
-**Arquivo:** `src/components/nodes/OutputNode.tsx`
-
-Adicionar:
-1. Estado para controlar o modal
-2. Clique nas imagens abre o modal
-3. Funções para salvar/excluir/baixar
-4. Exibir todas as imagens acumuladas
-
-```tsx
-interface OutputNodeData {
-  label: string;
-  images: Array<{
-    url: string;
-    prompt: string;  // Guardar o prompt de cada imagem
-    savedToGallery?: boolean;
-  }>;
-  isLoading: boolean;
-}
-```
-
-### 2.5 Atualizar Estrutura de Dados
-
-Para que cada imagem tenha seu próprio prompt e estado, precisamos mudar como salvamos as imagens:
-
-**No Editor.tsx (handleGenerate):**
-```tsx
-// Ao invés de apenas URLs, salvar objetos com metadata
-const newImage = {
-  url: data.images[0],
-  prompt: prompt,
-  aspectRatio: aspectRatio,
-  savedToGallery: false,
-  generatedAt: new Date().toISOString()
-};
-```
+Este loop está gerando as milhares de requisições que você viu no dashboard (3.9k requests).
 
 ---
 
-## 3. Migração de Banco de Dados
+## Solução
 
-Adicionar coluna `saved_to_gallery` na tabela `generations` (se ainda não existir):
+### 1. Usar `useRef` para armazenar `handleGenerate`
 
-```sql
-ALTER TABLE generations 
-ADD COLUMN IF NOT EXISTS saved_to_gallery boolean DEFAULT false;
-```
+Em vez de colocar a função no estado dos nodes (que dispara re-renders), vou usar uma referência estável que não causa re-renderização.
 
----
-
-## Arquivos a Criar/Modificar
-
-| Arquivo | Ação | Descrição |
-|---------|------|-----------|
-| `src/pages/Auth.tsx` | Modificar | Mudar para modo login ao detectar email já cadastrado |
-| `src/pages/ResetPassword.tsx` | Modificar | Verificar se email existe antes de enviar reset |
-| `src/pages/Editor.tsx` | Modificar | Acumular imagens no output, salvar metadata |
-| `src/components/nodes/OutputNode.tsx` | Modificar | Grid de imagens com clique para abrir modal |
-| `src/components/nodes/OutputImageModal.tsx` | Criar | Modal com ações (salvar, baixar, excluir) |
-
----
-
-## Fluxo do Usuário (Após Implementação)
-
-1. Usuário gera uma imagem → Aparece no OutputNode
-2. Usuário gera outra imagem → **Acumula** junto com a anterior
-3. Usuário clica em uma imagem → Abre popup grande
-4. No popup pode:
-   - **Salvar na Galeria** → Marca `saved_to_gallery: true` e aparece em `/gallery`
-   - **Baixar** → Download do arquivo
-   - **Excluir** → Remove do node (não vai para galeria)
-5. Ao sair e voltar → Todas as imagens acumuladas permanecem visíveis
-
----
-
-## Detalhes Técnicos
-
-### Estrutura do Novo Formato de Imagens no Node
+**Mudanças no `Editor.tsx`:**
 
 ```typescript
-interface NodeImage {
-  url: string;           // URL da imagem (base64 ou hosted)
-  prompt: string;        // Prompt usado para gerar
-  aspectRatio: string;   // Ex: "1:1", "16:9"
-  savedToGallery: boolean;
-  generatedAt: string;   // ISO timestamp
-}
+// Adicionar ref para armazenar handleGenerate
+const handleGenerateRef = useRef<() => Promise<void>>();
 
-interface OutputNodeData {
-  label: string;
-  images: NodeImage[];
-  isLoading: boolean;
-}
+// Atualizar a ref quando handleGenerate mudar (sem causar re-render dos nodes)
+useEffect(() => {
+  handleGenerateRef.current = handleGenerate;
+}, [handleGenerate]);
+
+// REMOVER o useEffect que injeta onGenerate nos nodes (linhas 247-253)
+// Em vez disso, passar a ref diretamente nos dados iniciais
 ```
 
-### Função Salvar na Galeria
+### 2. Modificar o SettingsNode para usar a ref
+
+**Mudanças no `SettingsNode.tsx`:**
+
+Ao invés de receber `onGenerate` como prop direta, o node vai receber uma função wrapper estável ou usar um evento customizado.
+
+### 3. Remover `nodes` das dependências de `handleGenerate`
+
+Usar `setNodes` com callback funcional para acessar o estado atual dos nodes sem depender deles:
 
 ```typescript
-const saveToGallery = async (image: NodeImage) => {
-  await supabase.from('generations').insert({
-    user_id: user.id,
-    project_id: projectId,
-    prompt: image.prompt,
-    aspect_ratio: image.aspectRatio,
-    image_url: image.url,
-    status: 'completed',
-    saved_to_gallery: true
-  });
+const handleGenerate = useCallback(async () => {
+  // Em vez de: const settingsNode = nodes.find(...)
+  // Usar: setNodes(currentNodes => { const settingsNode = currentNodes.find(...) })
   
-  // Atualizar estado local do node
-  setNodes(nds => nds.map(n => 
-    n.id === id ? {
-      ...n,
-      data: {
-        ...n.data,
-        images: n.data.images.map(img => 
-          img.url === image.url ? { ...img, savedToGallery: true } : img
-        )
-      }
-    } : n
-  ));
-};
+  setNodes((currentNodes) => {
+    // Lógica de validação usando currentNodes
+    // Retorna os nodes sem modificação ou com loading state
+  });
+}, [edges, profile, projectId, toast, saveProject]); // SEM nodes!
 ```
 
-### Compatibilidade com Dados Existentes
+---
 
-O código será retro-compatível:
-- Se `images` for array de strings (formato antigo), converter para novo formato
-- Se já for array de objetos, usar diretamente
+## Arquivos a Modificar
+
+| Arquivo | Mudança |
+|---------|---------|
+| `src/pages/Editor.tsx` | Refatorar para usar ref e remover loop |
+| `src/components/nodes/SettingsNode.tsx` | Adaptar para novo padrão |
+
+---
+
+## Benefícios
+
+- Elimina o loop infinito de requisições
+- Reduz drasticamente o uso de rede
+- Melhora a performance do editor
+- Resolve os erros de "Failed to fetch" causados por rate limiting
+
