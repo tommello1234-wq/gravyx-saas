@@ -59,9 +59,18 @@ export default function ResetPassword() {
       });
 
       if (error) {
+        let errorMessage = error.message;
+        
+        // Mensagens amigáveis para erros comuns
+        if (error.message.includes('rate limit') || error.message.includes('Rate limit')) {
+          errorMessage = 'Muitas tentativas. Aguarde alguns minutos e tente novamente.';
+        } else if (error.message.includes('not found') || error.message.includes('User not found')) {
+          errorMessage = 'Não encontramos uma conta com este email.';
+        }
+        
         toast({
           title: 'Erro',
-          description: error.message,
+          description: errorMessage,
           variant: 'destructive',
         });
       } else {
