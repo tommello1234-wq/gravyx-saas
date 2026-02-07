@@ -36,6 +36,13 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSavedDataRef = useRef<string>('');
+  const toastRef = useRef(toast);
+
+  // Keep toast ref in sync
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
 
   // Load project
   useEffect(() => {
@@ -72,35 +79,41 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     loadProject();
   }, [projectId, user, setNodes, setEdges, toast]);
 
-  // Save function with error handling
+  // Save function with error handling - uses ref for toast to avoid dependency issues
   const saveProject = useCallback(async (nodesToSave: Node[], edgesToSave: Edge[]) => {
     if (!projectId || !user || isLoading) return;
     
+    // Create a clean copy without functions
+    const cleanNodes = nodesToSave.map(node => ({
+      ...node,
+      data: {
+        ...node.data,
+        onGenerate: undefined,
+      }
+    }));
+
+    // Check if data actually changed before saving
+    let dataString: string;
+    try {
+      dataString = JSON.stringify({ nodes: cleanNodes, edges: edgesToSave });
+    } catch (serializationError) {
+      console.error('Serialization error:', serializationError);
+      toastRef.current({
+        title: 'Erro ao salvar',
+        description: 'Não foi possível serializar os dados do canvas.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Skip save if data hasn't changed
+    if (dataString === lastSavedDataRef.current) {
+      return;
+    }
+
     setIsSaving(true);
     try {
-      // Create a clean copy without functions
-      const cleanNodes = nodesToSave.map(node => ({
-        ...node,
-        data: {
-          ...node.data,
-          onGenerate: undefined,
-        }
-      }));
-
-      // Wrap serialization in try-catch to prevent crashes
-      let canvasData;
-      try {
-        canvasData = JSON.parse(JSON.stringify({ nodes: cleanNodes, edges: edgesToSave }));
-      } catch (serializationError) {
-        console.error('Serialization error:', serializationError);
-        toast({
-          title: 'Erro ao salvar',
-          description: 'Não foi possível serializar os dados do canvas.',
-          variant: 'destructive'
-        });
-        setIsSaving(false);
-        return;
-      }
+      const canvasData = JSON.parse(dataString);
 
       const { error } = await supabase
         .from('projects')
@@ -112,12 +125,15 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
 
       if (error) {
         console.error('Save error:', error);
+      } else {
+        // Only update lastSavedDataRef on successful save
+        lastSavedDataRef.current = dataString;
       }
     } catch (err) {
       console.error('Save exception:', err);
     }
     setIsSaving(false);
-  }, [projectId, user, isLoading, toast]);
+  }, [projectId, user, isLoading]);
 
   // Auto-save with debounce
   useEffect(() => {
@@ -129,7 +145,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
 
     saveTimeoutRef.current = setTimeout(() => {
       saveProject(nodes, edges);
-    }, 1500);
+    }, 3000);
 
     return () => {
       if (saveTimeoutRef.current) {
