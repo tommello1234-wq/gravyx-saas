@@ -348,54 +348,24 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      claim_next_job:
-        | {
-            Args: {
-              p_concurrency_per_user?: number
-              p_global_concurrency?: number
-            }
-            Returns: {
-              created_at: string
-              error: string | null
-              finished_at: string | null
-              id: string
-              max_retries: number
-              next_run_at: string | null
-              payload: Json
-              project_id: string | null
-              request_id: string | null
-              result_count: number | null
-              result_urls: string[] | null
-              retries: number
-              started_at: string | null
-              status: string
-              user_id: string
-            }
-            SetofOptions: {
-              from: "*"
-              to: "jobs"
-              isOneToOne: true
-              isSetofReturn: false
-            }
-          }
-        | {
-            Args: { p_worker_id?: string }
-            Returns: {
-              created_at: string
-              error: string
-              finished_at: string
-              id: string
-              max_retries: number
-              next_run_at: string
-              payload: Json
-              project_id: string
-              request_id: string
-              retries: number
-              started_at: string
-              status: string
-              user_id: string
-            }[]
-          }
+      claim_next_job: {
+        Args: { p_worker_id?: string }
+        Returns: {
+          created_at: string
+          error: string
+          finished_at: string
+          id: string
+          max_retries: number
+          next_run_at: string
+          payload: Json
+          project_id: string
+          request_id: string
+          retries: number
+          started_at: string
+          status: string
+          user_id: string
+        }[]
+      }
       complete_job_with_result: {
         Args: {
           p_job_id: string
