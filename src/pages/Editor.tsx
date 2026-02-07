@@ -5,14 +5,13 @@ import '@xyflow/react/dist/style.css';
 import { Header } from '@/components/layout/Header';
 import { PromptNode } from '@/components/nodes/PromptNode';
 import { MediaNode } from '@/components/nodes/MediaNode';
-import { SettingsNode } from '@/components/nodes/SettingsNode';
+import { SettingsNode, GENERATING_STATE_EVENT } from '@/components/nodes/SettingsNode';
 import { OutputNode } from '@/components/nodes/OutputNode';
-import { Button } from '@/components/ui/button';
+import { NodeToolbar } from '@/components/editor/NodeToolbar';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Type, Image, Settings, Sparkles, Loader2 } from 'lucide-react';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Loader2 } from 'lucide-react';
 
 const nodeTypes = {
   prompt: PromptNode,
@@ -159,21 +158,12 @@ export default function Editor() {
     }
 
     const quantity = (settingsNode.data as { quantity?: number }).quantity || 1;
-    const creditsNeeded = quantity * 10; // 10 credits per image
+    const creditsNeeded = quantity; // 1 credit per image
 
     if (!profile || profile.credits < creditsNeeded) {
       toast({
         title: 'Créditos insuficientes',
-        description: `Você precisa de ${creditsNeeded} créditos para gerar ${quantity} ${quantity === 1 ? 'imagem' : 'imagens'}.`,
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    if (!settingsNode || !outputNode) {
-      toast({
-        title: 'Configure o fluxo',
-        description: 'Conecte os nós de configuração e resultado.',
+        description: `Você precisa de ${creditsNeeded} ${creditsNeeded === 1 ? 'crédito' : 'créditos'} para gerar ${quantity} ${quantity === 1 ? 'imagem' : 'imagens'}.`,
         variant: 'destructive'
       });
       return;
@@ -202,14 +192,8 @@ export default function Editor() {
       .map((n) => (n.data as { url: string | null }).url)
       .filter(Boolean) as string[];
 
-    // Set loading state
-    setNodes((nds) =>
-      nds.map((n) =>
-        n.id === outputNode.id
-          ? { ...n, data: { ...n.data, isLoading: true } }
-          : n
-      )
-    );
+    // Dispatch generating state event to SettingsNode
+    window.dispatchEvent(new CustomEvent(GENERATING_STATE_EVENT, { detail: { isGenerating: true } }));
 
     try {
       const { data, error } = await supabase.functions.invoke('generate-image', {
@@ -246,7 +230,6 @@ export default function Editor() {
               data: {
                 ...n.data,
                 images: [...normalizedExisting, ...newImages],
-                isLoading: false,
               },
             };
           }
@@ -257,16 +240,14 @@ export default function Editor() {
         return updated;
       });
 
+      // Reset generating state
+      window.dispatchEvent(new CustomEvent(GENERATING_STATE_EVENT, { detail: { isGenerating: false } }));
+
       toast({ title: `${data.images.length} ${data.images.length === 1 ? 'imagem gerada' : 'imagens geradas'} com sucesso!` });
     } catch (error) {
       console.error('Generation error:', error);
-      setNodes((nds) =>
-        nds.map((n) =>
-          n.id === outputNode.id
-            ? { ...n, data: { ...n.data, isLoading: false } }
-            : n
-        )
-      );
+      // Reset generating state on error
+      window.dispatchEvent(new CustomEvent(GENERATING_STATE_EVENT, { detail: { isGenerating: false } }));
       toast({
         title: 'Erro na geração',
         description: (error as Error).message,
@@ -352,39 +333,11 @@ export default function Editor() {
             </span>
           )}
         </div>
-
-        <div className="flex items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="rounded-full">
-                <Plus className="h-4 w-4 mr-2" />
-                Adicionar nó
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem onClick={() => addNode('prompt')}>
-                <Type className="h-4 w-4 mr-2 text-node-prompt" />
-                Prompt
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => addNode('media')}>
-                <Image className="h-4 w-4 mr-2 text-node-media" />
-                Mídia
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => addNode('settings')}>
-                <Settings className="h-4 w-4 mr-2 text-node-settings" />
-                Configurações
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => addNode('output')}>
-                <Sparkles className="h-4 w-4 mr-2 text-node-output" />
-                Resultado
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
       </div>
 
       {/* Canvas */}
-      <div className="flex-1">
+      <div className="flex-1 relative">
+        <NodeToolbar onAddNode={addNode} />
         <ReactFlow
           nodes={nodes}
           edges={edges}

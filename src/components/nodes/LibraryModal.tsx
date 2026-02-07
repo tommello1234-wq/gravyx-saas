@@ -33,8 +33,11 @@ interface LibraryModalProps {
   onSelect: (image: ReferenceImage) => void;
 }
 
+const allCategories = Object.keys(categoryLabels) as Array<keyof typeof categoryLabels>;
+
 export function LibraryModal({ open, onOpenChange, onSelect }: LibraryModalProps) {
   const [search, setSearch] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const { toast } = useToast();
 
   const { data: images, isLoading } = useQuery({
@@ -50,12 +53,20 @@ export function LibraryModal({ open, onOpenChange, onSelect }: LibraryModalProps
     enabled: open,
   });
 
-  const filteredImages = images?.filter(
-    (img) =>
-      img.title.toLowerCase().includes(search.toLowerCase()) ||
-      img.prompt.toLowerCase().includes(search.toLowerCase()) ||
-      categoryLabels[img.category]?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredImages = images?.filter((img) => {
+    // Filter by category first
+    if (selectedCategory && img.category !== selectedCategory) {
+      return false;
+    }
+    // Then filter by search text
+    if (search) {
+      return (
+        img.title.toLowerCase().includes(search.toLowerCase()) ||
+        img.prompt.toLowerCase().includes(search.toLowerCase())
+      );
+    }
+    return true;
+  });
 
   const handleCopyPrompt = (prompt: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -80,7 +91,28 @@ export function LibraryModal({ open, onOpenChange, onSelect }: LibraryModalProps
           />
         </div>
 
-        <ScrollArea className="h-[50vh] pr-4">
+        {/* Category Filter */}
+        <div className="flex flex-wrap gap-2">
+          <Badge
+            variant={selectedCategory === null ? "default" : "secondary"}
+            className="cursor-pointer hover:bg-primary/80 transition-colors"
+            onClick={() => setSelectedCategory(null)}
+          >
+            Todas
+          </Badge>
+          {allCategories.map((cat) => (
+            <Badge
+              key={cat}
+              variant={selectedCategory === cat ? "default" : "secondary"}
+              className="cursor-pointer hover:bg-primary/80 transition-colors"
+              onClick={() => setSelectedCategory(cat)}
+            >
+              {categoryLabels[cat]}
+            </Badge>
+          ))}
+        </div>
+
+        <ScrollArea className="h-[45vh] pr-4">
           {isLoading ? (
             <div className="flex justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
