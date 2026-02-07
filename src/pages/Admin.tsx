@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { Header } from '@/components/layout/Header';
+import { TemplatesTab } from '@/components/admin/TemplatesTab';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -440,16 +441,7 @@ export default function Admin() {
 
           {/* Templates Tab */}
           <TabsContent value="templates">
-            <Card className="glass-card">
-              <CardHeader>
-                <CardTitle>Templates de Projeto</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground text-center py-8">
-                  Em breve...
-                </p>
-              </CardContent>
-            </Card>
+            <TemplatesTab />
           </TabsContent>
 
           {/* Users Tab */}
