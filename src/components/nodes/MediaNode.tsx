@@ -1,4 +1,4 @@
-import { memo, useState, useRef } from 'react';
+import { memo, useState, useRef, useCallback } from 'react';
 import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -35,11 +35,16 @@ export const MediaNode = memo(({
     setNodes,
     getNodes
   } = useReactFlow();
-  const handleUrlChange = (newUrl: string | null, libraryPrompt?: string | null) => {
+  const handleUrlChange = useCallback((newUrl: string | null, libraryPrompt?: string | null) => {
     setUrl(newUrl);
-    (data as Record<string, unknown>).url = newUrl;
-    (data as Record<string, unknown>).libraryPrompt = libraryPrompt || null;
-  };
+    setNodes((nodes) =>
+      nodes.map((node) =>
+        node.id === id
+          ? { ...node, data: { ...node.data, url: newUrl, libraryPrompt: libraryPrompt || null } }
+          : node
+      )
+    );
+  }, [id, setNodes]);
   const handleSelectFromLibrary = (image: ReferenceImage) => {
     handleUrlChange(image.image_url, image.prompt);
     setShowLibrary(false);

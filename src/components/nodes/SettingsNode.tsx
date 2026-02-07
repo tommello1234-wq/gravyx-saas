@@ -1,4 +1,4 @@
-import { memo, useState, useEffect } from 'react';
+import { memo, useState, useEffect, useCallback } from 'react';
 import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react';
 import { Button } from '@/components/ui/button';
 import { Settings, Sparkles, Copy, Trash2, Square, RectangleVertical, Smartphone, Loader2 } from 'lucide-react';
@@ -64,15 +64,27 @@ export const SettingsNode = memo(({
     return () => window.removeEventListener(GENERATING_STATE_EVENT, handler as EventListener);
   }, []);
 
-  const handleAspectChange = (value: string) => {
+  const handleAspectChange = useCallback((value: string) => {
     setAspectRatio(value);
-    (data as Record<string, unknown>).aspectRatio = value;
-  };
+    setNodes((nodes) =>
+      nodes.map((node) =>
+        node.id === id
+          ? { ...node, data: { ...node.data, aspectRatio: value } }
+          : node
+      )
+    );
+  }, [id, setNodes]);
 
-  const handleQuantityChange = (value: number) => {
+  const handleQuantityChange = useCallback((value: number) => {
     setQuantity(value);
-    (data as Record<string, unknown>).quantity = value;
-  };
+    setNodes((nodes) =>
+      nodes.map((node) =>
+        node.id === id
+          ? { ...node, data: { ...node.data, quantity: value } }
+          : node
+      )
+    );
+  }, [id, setNodes]);
 
   const handleDelete = () => {
     deleteElements({
