@@ -37,6 +37,15 @@ const CREDITS_PER_IMAGE = 1;
 // Event for loading state
 export const GENERATING_STATE_EVENT = 'editor:generating-state';
 
+// Event for job queue state updates
+export const JOB_QUEUE_STATE_EVENT = 'editor:job-queue-state';
+
+interface JobQueueState {
+  hasQueuedJobs: boolean;
+  hasProcessingJobs: boolean;
+  totalPendingImages: number;
+}
+
 export const SettingsNode = memo(({
   data,
   id
@@ -45,6 +54,11 @@ export const SettingsNode = memo(({
   const [aspectRatio, setAspectRatio] = useState(nodeData.aspectRatio || '1:1');
   const [quantity, setQuantity] = useState(nodeData.quantity || 1);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [jobQueueState, setJobQueueState] = useState<JobQueueState>({
+    hasQueuedJobs: false,
+    hasProcessingJobs: false,
+    totalPendingImages: 0
+  });
   const {
     profile
   } = useAuth();
@@ -62,6 +76,16 @@ export const SettingsNode = memo(({
     
     window.addEventListener(GENERATING_STATE_EVENT, handler as EventListener);
     return () => window.removeEventListener(GENERATING_STATE_EVENT, handler as EventListener);
+  }, []);
+
+  // Listen for job queue state events
+  useEffect(() => {
+    const handler = (e: CustomEvent<JobQueueState>) => {
+      setJobQueueState(e.detail);
+    };
+    
+    window.addEventListener(JOB_QUEUE_STATE_EVENT, handler as EventListener);
+    return () => window.removeEventListener(JOB_QUEUE_STATE_EVENT, handler as EventListener);
   }, []);
 
   const handleAspectChange = useCallback((value: string) => {
@@ -183,12 +207,22 @@ export const SettingsNode = memo(({
         <Button 
           className="w-full h-12 rounded-xl bg-gradient-to-r from-violet-600 via-purple-600 to-violet-600 hover:from-violet-500 hover:via-purple-500 hover:to-violet-500 text-white font-semibold shadow-lg shadow-violet-500/30 transition-all hover:shadow-xl hover:shadow-violet-500/40 disabled:opacity-50 disabled:cursor-not-allowed" 
           onClick={() => window.dispatchEvent(new CustomEvent(GENERATE_IMAGE_EVENT))}
-          disabled={!hasEnoughCredits || isGenerating}
+          disabled={!hasEnoughCredits || isGenerating || jobQueueState.hasQueuedJobs || jobQueueState.hasProcessingJobs}
         >
-          {isGenerating ? (
+          {jobQueueState.hasProcessingJobs ? (
             <>
               <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-              Gerando...
+              Gerando {jobQueueState.totalPendingImages} {jobQueueState.totalPendingImages === 1 ? 'imagem' : 'imagens'}...
+            </>
+          ) : jobQueueState.hasQueuedJobs ? (
+            <>
+              <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+              Na fila ({jobQueueState.totalPendingImages})...
+            </>
+          ) : isGenerating ? (
+            <>
+              <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+              Enviando...
             </>
           ) : (
             <>
