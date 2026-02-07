@@ -1,23 +1,36 @@
-import { memo, useState, useCallback } from 'react';
+import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react';
 import { Textarea } from '@/components/ui/textarea';
 import { Type, Copy, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+
 interface PromptNodeData {
   label: string;
   value: string;
 }
+
 export const PromptNode = memo(({
   data,
   id
 }: NodeProps) => {
   const nodeData = data as unknown as PromptNodeData;
   const [value, setValue] = useState(nodeData.value || '');
+  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const {
     deleteElements,
     setNodes,
     getNodes
   } = useReactFlow();
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const handleDelete = () => {
     deleteElements({
       nodes: [{
@@ -25,6 +38,7 @@ export const PromptNode = memo(({
       }]
     });
   };
+
   const handleDuplicate = () => {
     const nodes = getNodes();
     const currentNode = nodes.find(n => n.id === id);
@@ -44,15 +58,24 @@ export const PromptNode = memo(({
     }
   };
 
+  // Debounced update - instant local state, delayed global flow update
   const handleValueChange = useCallback((newValue: string) => {
-    setValue(newValue);
-    setNodes((nodes) =>
-      nodes.map((node) =>
-        node.id === id
-          ? { ...node, data: { ...node.data, value: newValue } }
-          : node
-      )
-    );
+    setValue(newValue); // Instant UI update
+    
+    // Debounce the global flow update
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
+    }
+    
+    updateTimeoutRef.current = setTimeout(() => {
+      setNodes((nodes) =>
+        nodes.map((node) =>
+          node.id === id
+            ? { ...node, data: { ...node.data, value: newValue } }
+            : node
+        )
+      );
+    }, 500); // 500ms debounce
   }, [id, setNodes]);
 
   return <div className="bg-card border border-amber-500/30 rounded-2xl min-w-[320px] shadow-2xl shadow-amber-500/10 nodrag-content">
