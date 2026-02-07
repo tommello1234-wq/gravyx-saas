@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, Connection, Node, Edge, BackgroundVariant } from '@xyflow/react';
+import { ReactFlow, ReactFlowProvider, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, Connection, Node, Edge, BackgroundVariant } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Header } from '@/components/layout/Header';
 import { PromptNode } from '@/components/nodes/PromptNode';
@@ -20,19 +20,18 @@ const nodeTypes = {
   output: OutputNode
 };
 
-const initialNodes: Node[] = [];
-const initialEdges: Edge[] = [];
-
 // Custom event for triggering generation
 export const GENERATE_IMAGE_EVENT = 'editor:generate-image';
 
-export default function Editor() {
-  const [searchParams] = useSearchParams();
-  const projectId = searchParams.get('project');
+interface EditorCanvasProps {
+  projectId: string | null;
+}
+
+function EditorCanvas({ projectId }: EditorCanvasProps) {
   const { user, profile } = useAuth();
   const { toast } = useToast();
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [projectName, setProjectName] = useState('Sem título');
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -45,31 +44,35 @@ export default function Editor() {
         setIsLoading(false);
         return;
       }
-      const { data, error } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('id', projectId)
-        .single();
+      try {
+        const { data, error } = await supabase
+          .from('projects')
+          .select('*')
+          .eq('id', projectId)
+          .single();
 
-      if (error) {
-        console.error('Load project error:', error);
-        toast({
-          title: 'Erro ao carregar projeto',
-          description: error.message,
-          variant: 'destructive'
-        });
-      } else if (data) {
-        setProjectName(data.name);
-        const canvasState = data.canvas_state as { nodes?: Node[]; edges?: Edge[] };
-        if (canvasState?.nodes) setNodes(canvasState.nodes);
-        if (canvasState?.edges) setEdges(canvasState.edges);
+        if (error) {
+          console.error('Load project error:', error);
+          toast({
+            title: 'Erro ao carregar projeto',
+            description: error.message,
+            variant: 'destructive'
+          });
+        } else if (data) {
+          setProjectName(data.name);
+          const canvasState = data.canvas_state as { nodes?: Node[]; edges?: Edge[] };
+          if (canvasState?.nodes) setNodes(canvasState.nodes);
+          if (canvasState?.edges) setEdges(canvasState.edges);
+        }
+      } catch (err) {
+        console.error('Load project exception:', err);
       }
       setIsLoading(false);
     };
     loadProject();
   }, [projectId, user, setNodes, setEdges, toast]);
 
-  // Save function
+  // Save function with error handling
   const saveProject = useCallback(async (nodesToSave: Node[], edgesToSave: Edge[]) => {
     if (!projectId || !user || isLoading) return;
     
@@ -84,7 +87,20 @@ export default function Editor() {
         }
       }));
 
-      const canvasData = JSON.parse(JSON.stringify({ nodes: cleanNodes, edges: edgesToSave }));
+      // Wrap serialization in try-catch to prevent crashes
+      let canvasData;
+      try {
+        canvasData = JSON.parse(JSON.stringify({ nodes: cleanNodes, edges: edgesToSave }));
+      } catch (serializationError) {
+        console.error('Serialization error:', serializationError);
+        toast({
+          title: 'Erro ao salvar',
+          description: 'Não foi possível serializar os dados do canvas.',
+          variant: 'destructive'
+        });
+        setIsSaving(false);
+        return;
+      }
 
       const { error } = await supabase
         .from('projects')
@@ -101,7 +117,7 @@ export default function Editor() {
       console.error('Save exception:', err);
     }
     setIsSaving(false);
-  }, [projectId, user, isLoading]);
+  }, [projectId, user, isLoading, toast]);
 
   // Auto-save with debounce
   useEffect(() => {
@@ -254,7 +270,7 @@ export default function Editor() {
         variant: 'destructive'
       });
     }
-  }, [profile, projectId, setNodes, toast, saveProject]); // NO nodes/edges dependency!
+  }, [profile, projectId, setNodes, toast, saveProject]);
 
   // Listen for generate events from SettingsNode
   useEffect(() => {
@@ -357,5 +373,16 @@ export default function Editor() {
         </ReactFlow>
       </div>
     </div>
+  );
+}
+
+export default function Editor() {
+  const [searchParams] = useSearchParams();
+  const projectId = searchParams.get('project');
+
+  return (
+    <ReactFlowProvider>
+      <EditorCanvas projectId={projectId} />
+    </ReactFlowProvider>
   );
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   ReactFlow,
+  ReactFlowProvider,
   MiniMap,
   Controls,
   Background,
@@ -43,9 +44,11 @@ const nodeTypes = {
   output: OutputNode
 };
 
-export default function TemplateEditor() {
-  const [searchParams] = useSearchParams();
-  const templateIdParam = searchParams.get('id');
+interface TemplateEditorCanvasProps {
+  templateIdParam: string | null;
+}
+
+function TemplateEditorCanvas({ templateIdParam }: TemplateEditorCanvasProps) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -92,30 +95,34 @@ export default function TemplateEditor() {
         return;
       }
 
-      const { data, error } = await supabase
-        .from('project_templates')
-        .select('*')
-        .eq('id', templateId)
-        .single();
+      try {
+        const { data, error } = await supabase
+          .from('project_templates')
+          .select('*')
+          .eq('id', templateId)
+          .single();
 
-      if (error) {
-        console.error('Load template error:', error);
-        toast({
-          title: 'Erro ao carregar template',
-          description: error.message,
-          variant: 'destructive'
-        });
-        navigate('/admin');
-        return;
-      }
+        if (error) {
+          console.error('Load template error:', error);
+          toast({
+            title: 'Erro ao carregar template',
+            description: error.message,
+            variant: 'destructive'
+          });
+          navigate('/admin');
+          return;
+        }
 
-      if (data) {
-        setTemplateName(data.name);
-        setTemplateDescription(data.description || '');
-        setThumbnailUrl(data.thumbnail_url);
-        const canvas = data.canvas_state as { nodes?: Node[]; edges?: Edge[] };
-        if (canvas?.nodes) setNodes(canvas.nodes);
-        if (canvas?.edges) setEdges(canvas.edges);
+        if (data) {
+          setTemplateName(data.name);
+          setTemplateDescription(data.description || '');
+          setThumbnailUrl(data.thumbnail_url);
+          const canvas = data.canvas_state as { nodes?: Node[]; edges?: Edge[] };
+          if (canvas?.nodes) setNodes(canvas.nodes);
+          if (canvas?.edges) setEdges(canvas.edges);
+        }
+      } catch (err) {
+        console.error('Load template exception:', err);
       }
       setIsLoading(false);
     };
@@ -123,7 +130,7 @@ export default function TemplateEditor() {
     loadTemplate();
   }, [templateId, setNodes, setEdges, toast, navigate]);
 
-  // Save function
+  // Save function with error handling
   const saveTemplate = useCallback(async (nodesToSave: Node[], edgesToSave: Edge[]) => {
     if (!user || isLoading) return;
 
@@ -137,7 +144,20 @@ export default function TemplateEditor() {
         }
       }));
 
-      const canvasData = JSON.parse(JSON.stringify({ nodes: cleanNodes, edges: edgesToSave }));
+      // Wrap serialization in try-catch to prevent crashes
+      let canvasData;
+      try {
+        canvasData = JSON.parse(JSON.stringify({ nodes: cleanNodes, edges: edgesToSave }));
+      } catch (serializationError) {
+        console.error('Serialization error:', serializationError);
+        toast({
+          title: 'Erro ao salvar',
+          description: 'Não foi possível serializar os dados do canvas.',
+          variant: 'destructive'
+        });
+        setIsSaving(false);
+        return;
+      }
 
       if (templateId) {
         const { error } = await supabase
@@ -332,7 +352,7 @@ export default function TemplateEditor() {
             </span>
           ) : lastSaved ? (
             <span className="text-xs text-muted-foreground flex items-center gap-1">
-              <Check className="h-3 w-3 text-green-500" />
+              <Check className="h-3 w-3 text-emerald-500" />
               Salvo
             </span>
           ) : null}
@@ -441,5 +461,16 @@ export default function TemplateEditor() {
         </ReactFlow>
       </div>
     </div>
+  );
+}
+
+export default function TemplateEditor() {
+  const [searchParams] = useSearchParams();
+  const templateIdParam = searchParams.get('id');
+
+  return (
+    <ReactFlowProvider>
+      <TemplateEditorCanvas templateIdParam={templateIdParam} />
+    </ReactFlowProvider>
   );
 }
