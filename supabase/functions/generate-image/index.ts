@@ -193,14 +193,15 @@ serve(async (req) => {
       );
     }
 
-    // Save successful generations to database
+    // Save successful generations to database (auto-save to gallery)
     const generationInserts = successfulImages.map(imageUrl => ({
       user_id: user.id,
       project_id: projectId,
       prompt: prompt,
       aspect_ratio: aspectRatio || '1:1',
       image_url: imageUrl,
-      status: 'completed'
+      status: 'completed',
+      saved_to_gallery: true
     }));
 
     await supabaseAdmin.from('generations').insert(generationInserts);
