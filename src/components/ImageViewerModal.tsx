@@ -91,8 +91,8 @@ export function ImageViewerModal({
 
             <div className="space-y-2">
               <label className="text-sm font-medium text-muted-foreground">Prompt</label>
-              <div className="p-3 rounded-lg bg-muted/30 border border-border">
-                <p className="text-sm text-foreground leading-relaxed">{image.prompt}</p>
+              <div className="p-3 rounded-lg bg-muted/30 border border-border max-h-48 overflow-y-auto">
+                <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">{image.prompt}</p>
               </div>
             </div>
 

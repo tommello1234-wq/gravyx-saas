@@ -5,11 +5,13 @@ import { Settings, Sparkles, Copy, Trash2, Square, RectangleVertical, Smartphone
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { GENERATE_IMAGE_EVENT } from '@/pages/Editor';
+
 interface SettingsNodeData {
   label: string;
   aspectRatio: string;
   quantity: number;
 }
+
 const aspectRatios = [{
   value: '1:1',
   label: '1:1',
@@ -27,12 +29,18 @@ const aspectRatios = [{
   label: '16:9',
   icon: RectangleVertical
 }];
+
+const quantities = [1, 2, 4];
+
+const CREDITS_PER_IMAGE = 10;
+
 export const SettingsNode = memo(({
   data,
   id
 }: NodeProps) => {
   const nodeData = data as unknown as SettingsNodeData;
   const [aspectRatio, setAspectRatio] = useState(nodeData.aspectRatio || '1:1');
+  const [quantity, setQuantity] = useState(nodeData.quantity || 1);
   const {
     profile
   } = useAuth();
@@ -41,10 +49,17 @@ export const SettingsNode = memo(({
     setNodes,
     getNodes
   } = useReactFlow();
+
   const handleAspectChange = (value: string) => {
     setAspectRatio(value);
     (data as Record<string, unknown>).aspectRatio = value;
   };
+
+  const handleQuantityChange = (value: number) => {
+    setQuantity(value);
+    (data as Record<string, unknown>).quantity = value;
+  };
+
   const handleDelete = () => {
     deleteElements({
       nodes: [{
@@ -52,6 +67,7 @@ export const SettingsNode = memo(({
       }]
     });
   };
+
   const handleDuplicate = () => {
     const nodes = getNodes();
     const currentNode = nodes.find(n => n.id === id);
@@ -70,8 +86,11 @@ export const SettingsNode = memo(({
       setNodes([...nodes, newNode]);
     }
   };
-  const creditsNeeded = 1;
+
+  const creditsNeeded = quantity * CREDITS_PER_IMAGE;
   const credits = profile?.credits || 0;
+  const hasEnoughCredits = credits >= creditsNeeded;
+
   return <div className="bg-card border border-slate-500/30 rounded-2xl min-w-[300px] shadow-2xl shadow-slate-500/10">
       <Handle type="target" position={Position.Left} className="!w-4 !h-4 !bg-gradient-to-br !from-violet-500 !to-purple-600 !border-4 !border-card !-left-2 !shadow-lg" />
 
@@ -112,14 +131,43 @@ export const SettingsNode = memo(({
           </div>
         </div>
 
+        {/* Quantity */}
+        <div className="space-y-3">
+          <label className="text-sm font-medium text-muted-foreground">Quantidade de imagens</label>
+          <div className="grid grid-cols-3 gap-2">
+            {quantities.map(q => (
+              <button 
+                key={q} 
+                onClick={() => handleQuantityChange(q)} 
+                className={cn(
+                  'flex flex-col items-center gap-1 p-3 rounded-xl border transition-all',
+                  quantity === q 
+                    ? 'bg-primary/20 border-primary text-primary shadow-lg shadow-primary/20' 
+                    : 'bg-muted/20 border-border/50 text-muted-foreground hover:border-border hover:bg-muted/40'
+                )}
+              >
+                <span className="text-lg font-bold">{q}</span>
+                <span className="text-xs">{q === 1 ? 'imagem' : 'imagens'}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Generate Button */}
-        <Button className="w-full h-12 rounded-xl bg-gradient-to-r from-violet-600 via-purple-600 to-violet-600 hover:from-violet-500 hover:via-purple-500 hover:to-violet-500 text-white font-semibold shadow-lg shadow-violet-500/30 transition-all hover:shadow-xl hover:shadow-violet-500/40" onClick={() => window.dispatchEvent(new CustomEvent(GENERATE_IMAGE_EVENT))}>
+        <Button 
+          className="w-full h-12 rounded-xl bg-gradient-to-r from-violet-600 via-purple-600 to-violet-600 hover:from-violet-500 hover:via-purple-500 hover:to-violet-500 text-white font-semibold shadow-lg shadow-violet-500/30 transition-all hover:shadow-xl hover:shadow-violet-500/40 disabled:opacity-50 disabled:cursor-not-allowed" 
+          onClick={() => window.dispatchEvent(new CustomEvent(GENERATE_IMAGE_EVENT))}
+          disabled={!hasEnoughCredits}
+        >
           <Sparkles className="h-5 w-5 mr-2" />
-          Gerar Imagem
+          Gerar {quantity} {quantity === 1 ? 'Imagem' : 'Imagens'}
         </Button>
 
-        <p className="text-center text-xs text-muted-foreground">
-          {creditsNeeded} crédito por geração • {credits} disponíveis
+        <p className={cn(
+          "text-center text-xs",
+          hasEnoughCredits ? "text-muted-foreground" : "text-destructive"
+        )}>
+          {creditsNeeded} créditos por geração • {credits} disponíveis
         </p>
       </div>
 

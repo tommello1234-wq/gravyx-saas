@@ -204,8 +204,8 @@ export default function Gallery() {
               <div className="w-full md:w-80 p-6 space-y-4 border-t md:border-t-0 md:border-l border-border">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-muted-foreground">Prompt</label>
-                  <div className="p-3 rounded-lg bg-muted/30 border border-border max-h-40 overflow-y-auto">
-                    <p className="text-sm text-foreground leading-relaxed">{selectedImage.prompt}</p>
+                  <div className="p-3 rounded-lg bg-muted/30 border border-border max-h-48 overflow-y-auto">
+                    <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">{selectedImage.prompt}</p>
                   </div>
                 </div>
 
