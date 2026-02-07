@@ -11,11 +11,9 @@ import { useToast } from '@/hooks/use-toast';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import { 
   Plus, 
@@ -35,6 +33,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { CreateProjectModal } from '@/components/CreateProjectModal';
 
 interface Project {
   id: string;
@@ -44,6 +43,17 @@ interface Project {
   updated_at: string;
 }
 
+interface CanvasNode {
+  id: string;
+  type: string;
+  [key: string]: unknown;
+}
+
+interface CanvasState {
+  nodes: CanvasNode[];
+  edges: unknown[];
+}
+
 export default function Projects() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -51,7 +61,6 @@ export default function Projects() {
   const queryClient = useQueryClient();
   
   const [createOpen, setCreateOpen] = useState(false);
-  const [newProjectName, setNewProjectName] = useState('');
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [editName, setEditName] = useState('');
 
@@ -71,12 +80,39 @@ export default function Projects() {
     enabled: !!user,
   });
 
-  // Create project mutation
+  // Create project mutation (updated to support templates)
   const createMutation = useMutation({
-    mutationFn: async (name: string) => {
+    mutationFn: async ({ name, templateId }: { name: string; templateId?: string }) => {
+      let canvasState: CanvasState = { nodes: [], edges: [] };
+      
+      if (templateId) {
+        // Fetch template canvas_state
+        const { data: template } = await supabase
+          .from('project_templates')
+          .select('canvas_state')
+          .eq('id', templateId)
+          .single();
+        
+        if (template?.canvas_state) {
+          const templateState = template.canvas_state as unknown as CanvasState;
+          // Regenerate node IDs to avoid conflicts
+          canvasState = {
+            nodes: templateState.nodes?.map((node: CanvasNode) => ({
+              ...node,
+              id: `${node.type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+            })) || [],
+            edges: [] // Reset edges since node IDs changed
+          };
+        }
+      }
+      
       const { data, error } = await supabase
         .from('projects')
-        .insert({ name, user_id: user?.id })
+        .insert([{ 
+          name, 
+          user_id: user?.id, 
+          canvas_state: canvasState 
+        }] as never)
         .select()
         .single();
       
@@ -86,7 +122,6 @@ export default function Projects() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       setCreateOpen(false);
-      setNewProjectName('');
       navigate(`/app?project=${data.id}`);
     },
     onError: (error) => {
@@ -97,6 +132,14 @@ export default function Projects() {
       });
     },
   });
+
+  const handleCreateFromScratch = (name: string) => {
+    createMutation.mutate({ name });
+  };
+
+  const handleCreateFromTemplate = (name: string, templateId: string) => {
+    createMutation.mutate({ name, templateId });
+  };
 
   // Update project mutation
   const updateMutation = useMutation({
@@ -145,11 +188,6 @@ export default function Projects() {
     },
   });
 
-  const handleCreate = () => {
-    if (!newProjectName.trim()) return;
-    createMutation.mutate(newProjectName);
-  };
-
   const handleEdit = () => {
     if (!editingProject || !editName.trim()) return;
     updateMutation.mutate({ id: editingProject.id, name: editName });
@@ -168,37 +206,21 @@ export default function Projects() {
             </p>
           </div>
 
-          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-            <DialogTrigger asChild>
-              <Button className="rounded-full glow-primary">
-                <Plus className="mr-2 h-4 w-4" />
-                Novo Projeto
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="glass-card">
-              <DialogHeader>
-                <DialogTitle>Criar novo projeto</DialogTitle>
-                <DialogDescription>
-                  Dê um nome ao seu projeto para começar
-                </DialogDescription>
-              </DialogHeader>
-              <Input
-                placeholder="Nome do projeto"
-                value={newProjectName}
-                onChange={(e) => setNewProjectName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-              />
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setCreateOpen(false)}>
-                  Cancelar
-                </Button>
-                <Button onClick={handleCreate} disabled={createMutation.isPending}>
-                  {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Criar
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <Button 
+            className="rounded-full glow-primary"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Novo Projeto
+          </Button>
+
+          <CreateProjectModal
+            open={createOpen}
+            onOpenChange={setCreateOpen}
+            onCreateFromScratch={handleCreateFromScratch}
+            onCreateFromTemplate={handleCreateFromTemplate}
+            isCreating={createMutation.isPending}
+          />
         </div>
 
         {isLoading ? (
