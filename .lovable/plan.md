@@ -1,146 +1,157 @@
 
-# Plano: Corrigir Função SQL `claim_next_job`
 
-## Problema Identificado
+# Plano: Limpeza de Projetos Inflados e Otimização do Banco de Dados
 
-A função `claim_next_job` no banco de dados tem um bug que causa o erro:
-```
-column reference "id" is ambiguous
-```
+## Diagnóstico Completo
 
-O problema está no `RETURN QUERY SELECT` onde os nomes das colunas de retorno da função conflitam com os nomes das colunas da tabela.
+### Problema Identificado
+O aviso de **Disk IO Budget** não está relacionado ao espaço em disco (você tem 250GB livres), mas sim à **velocidade de leitura/escrita (IOPS)**. O plano MICRO tem limites de operações por segundo.
 
----
+### Causa Raiz
+6 projetos antigos contêm **imagens Base64 embutidas** no `canvas_state`:
 
-## Causa Raiz
+| Projeto | Tamanho | Base64? |
+|---------|---------|---------|
+| criar | 14.6 MB | ✅ Sim |
+| Teste | 7.8 MB | ✅ Sim |
+| dddd | 7.6 MB | ✅ Sim |
+| criar uma página de vendas | 2.6 MB | ✅ Sim |
+| hhhh | 2.3 MB | ✅ Sim |
+| Oi | 1.7 MB | ✅ Sim |
+| **Total** | **~36 MB** | |
 
-A função define colunas de retorno como `id`, `user_id`, etc., mas depois faz:
-```sql
-SELECT j.id, j.user_id, ... FROM public.jobs j WHERE j.id = v_job.id
-```
+**Projetos limpos** (sem Base64) têm apenas **1-8 KB** cada.
 
-O PostgreSQL não sabe se `id` na cláusula `WHERE j.id = v_job.id` refere-se à coluna de retorno ou à coluna da tabela.
+O auto-save do Editor (a cada 3 segundos) grava esses JSONs gigantes repetidamente, esgotando o orçamento de IO.
+
+### Tamanho Atual das Tabelas
+- `generations`: 368 MB (normal - são as imagens geradas)
+- `projects`: 145 MB (problemático - deveria ser < 1 MB)
+- `project_templates`: 8.6 MB (pode ter o mesmo problema)
 
 ---
 
 ## Solução
 
-Criar uma migration para substituir a função com a versão corrigida:
+### Passo 1: Limpeza Imediata dos Projetos Inflados
+
+Criar uma migration SQL que:
+1. Remove strings Base64 de `canvas_state` nos nós de mídia
+2. Remove o array `images` dos nós de output (já carregam da tabela `generations`)
+3. Mantém apenas dados estruturais
 
 ```sql
-CREATE OR REPLACE FUNCTION public.claim_next_job(p_worker_id uuid DEFAULT gen_random_uuid())
- RETURNS TABLE(
-   id uuid, 
-   user_id uuid, 
-   project_id uuid, 
-   status text, 
-   payload jsonb, 
-   error text, 
-   retries integer, 
-   max_retries integer, 
-   request_id text, 
-   created_at timestamp with time zone, 
-   started_at timestamp with time zone, 
-   finished_at timestamp with time zone, 
-   next_run_at timestamp with time zone
- )
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_temp'
-AS $function$
-DECLARE
-  v_job_id uuid;
-BEGIN
-  -- Seleciona o próximo job e faz lock para evitar concorrência
-  SELECT jobs.id INTO v_job_id
-  FROM public.jobs
-  WHERE jobs.status = 'queued'
-    AND (jobs.next_run_at IS NULL OR jobs.next_run_at <= now())
-  ORDER BY jobs.created_at ASC
-  FOR UPDATE SKIP LOCKED
-  LIMIT 1;
-
-  IF v_job_id IS NULL THEN
-    RETURN; -- retorna vazio
-  END IF;
-
-  -- Atualiza o job para processing
-  UPDATE public.jobs
-  SET 
-    status = 'processing', 
-    started_at = now(), 
-    error = NULL, 
-    request_id = COALESCE(jobs.request_id, p_worker_id::text)
-  WHERE jobs.id = v_job_id;
-
-  -- Retorna o job atualizado
-  RETURN QUERY
-  SELECT 
-    jobs.id,
-    jobs.user_id,
-    jobs.project_id,
-    jobs.status,
-    jobs.payload,
-    jobs.error,
-    jobs.retries,
-    jobs.max_retries,
-    jobs.request_id,
-    jobs.created_at,
-    jobs.started_at,
-    jobs.finished_at,
-    jobs.next_run_at
-  FROM public.jobs
-  WHERE jobs.id = v_job_id;
-END;
-$function$;
+-- Remove Base64 e images de TODOS os projetos
+UPDATE projects
+SET canvas_state = (
+  SELECT jsonb_build_object(
+    'nodes', (
+      SELECT jsonb_agg(
+        CASE 
+          -- Output nodes: remove images array
+          WHEN node->>'type' = 'output' THEN 
+            jsonb_set(node, '{data}', (node->'data') - 'images')
+          -- Media nodes: remove base64 URLs
+          WHEN node->>'type' = 'media' 
+               AND node->'data'->>'url' LIKE 'data:image%' THEN
+            jsonb_set(node, '{data,url}', 'null'::jsonb)
+          ELSE node
+        END
+      )
+      FROM jsonb_array_elements(canvas_state->'nodes') AS node
+    ),
+    'edges', canvas_state->'edges'
+  )
+)
+WHERE canvas_state::text LIKE '%data:image%'
+   OR canvas_state::text LIKE '%"images":%';
 ```
 
-As mudanças principais:
-1. **Renomeei** `v_job` para `v_job_id` (armazena só o ID, não a row inteira)
-2. **Qualifiquei** todas as referências com `jobs.` explicitamente
-3. O `RETURN QUERY` agora busca os dados **após** o `UPDATE`, garantindo que retorne `status = 'processing'`
+### Passo 2: Limpar Templates Também
+
+```sql
+-- Mesma lógica para project_templates
+UPDATE project_templates
+SET canvas_state = (
+  SELECT jsonb_build_object(
+    'nodes', (
+      SELECT jsonb_agg(
+        CASE 
+          WHEN node->>'type' = 'output' THEN 
+            jsonb_set(node, '{data}', (node->'data') - 'images')
+          WHEN node->>'type' = 'media' 
+               AND node->'data'->>'url' LIKE 'data:image%' THEN
+            jsonb_set(node, '{data,url}', 'null'::jsonb)
+          ELSE node
+        END
+      )
+      FROM jsonb_array_elements(canvas_state->'nodes') AS node
+    ),
+    'edges', canvas_state->'edges'
+  )
+)
+WHERE canvas_state::text LIKE '%data:image%'
+   OR canvas_state::text LIKE '%"images":%';
+```
+
+### Passo 3: VACUUM para Recuperar Espaço
+
+```sql
+-- Recupera o espaço em disco após a limpeza
+VACUUM (ANALYZE) projects;
+VACUUM (ANALYZE) project_templates;
+```
 
 ---
 
-## Arquivos a criar/modificar
+## Resultado Esperado
 
-| Arquivo | Ação |
-|---------|------|
-| Nova migration SQL | **Criar** - Corrige a função `claim_next_job` |
-
----
-
-## O que vai acontecer após a correção
-
-1. O worker vai conseguir reivindicar jobs
-2. Os 6 jobs presos em `queued` serão processados
-3. O sistema estará 100% operacional
+| Métrica | Antes | Depois |
+|---------|-------|--------|
+| Tabela `projects` | 145 MB | < 500 KB |
+| Maior projeto | 14.6 MB | ~8 KB |
+| IO por save | Alto | Mínimo |
+| Disk IO Budget | Esgotado | Normal |
 
 ---
 
-## Resumo das verificações
+## Sobre Upgrade de Plano
 
-| Componente | Status |
-|------------|--------|
-| Edge Function `generate-image` | ✅ OK |
-| Edge Function `image-worker` | ✅ OK |
-| Frontend (Editor + useJobQueue) | ✅ OK |
-| UI (SettingsNode) | ✅ OK |
-| Função SQL `claim_next_job` | ❌ **QUEBRADA** - precisa correção |
-| Função SQL `complete_job_with_result` | ✅ OK |
-| Realtime subscription | ✅ OK |
-| Polling mechanism | ✅ OK |
+### MICRO (atual) - $25/mês
+- Suporta: **5-15 alunos simultâneos** (com a limpeza)
+- 2 vCPUs, 1GB RAM
+- IO limitado
+
+### SMALL - $50/mês
+- Suporta: **20-50 alunos simultâneos**
+- 2 vCPUs, 2GB RAM
+- IO dobrado
+
+### MEDIUM - $100/mês
+- Suporta: **50-100+ alunos simultâneos**
+- 2 vCPUs, 4GB RAM
+- IO quadruplicado
+
+**Recomendação**: 
+- Para turma < 20 alunos: **MICRO é suficiente** após a limpeza
+- Para turma 20-50 alunos: Upgrade para **SMALL**
+- Para turma > 50 alunos: Upgrade para **MEDIUM**
 
 ---
 
-## Após esta correção
+## Arquivos/Ações
 
-**SIM**, você poderá distribuir o sistema para seus alunos. Todas as outras partes estão funcionando corretamente. O único problema é esta função SQL que impede o worker de processar os jobs.
+| Ação | Descrição |
+|------|-----------|
+| Nova migration SQL | Limpa Base64 e images de projetos existentes |
+| VACUUM automático | Recupera espaço em disco |
 
-Uma vez corrigida, o fluxo será:
-1. Aluno clica em "Gerar" → resposta imediata (< 1s)
-2. Job entra na fila
-3. Worker processa em background
-4. Imagem aparece automaticamente via Realtime
-5. Se falhar, retry automático com backoff
-6. Se falhar 3x, reembolso automático de créditos
+---
+
+## Após a Limpeza
+
+1. O aviso de Disk IO Budget deve desaparecer em minutos
+2. O auto-save do Editor vai funcionar de forma leve
+3. Projetos antigos dos alunos serão limpos automaticamente
+4. O sistema estará pronto para distribuição
+
