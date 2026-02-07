@@ -3,9 +3,6 @@ import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react';
 import { Sparkles, Download, Copy, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { OutputImageModal, NodeImage } from './OutputImageModal';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
-import { useSearchParams } from 'react-router-dom';
 interface OutputNodeData {
   label: string;
   images: NodeImage[] | string[]; // Support both old and new format
@@ -40,11 +37,6 @@ export const OutputNode = memo(({
     setNodes,
     getNodes
   } = useReactFlow();
-  const {
-    user
-  } = useAuth();
-  const [searchParams] = useSearchParams();
-  const projectId = searchParams.get('project');
   const [selectedImage, setSelectedImage] = useState<NodeImage | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const downloadImage = async (url: string, index: number) => {
@@ -95,41 +87,7 @@ export const OutputNode = memo(({
     setSelectedImage(image);
     setIsModalOpen(true);
   };
-  const handleSaveToGallery = useCallback(async (image: NodeImage) => {
-    if (!user || !projectId) throw new Error('Usuário não autenticado');
 
-    // Insert into generations table
-    const {
-      error
-    } = await supabase.from('generations').insert({
-      user_id: user.id,
-      project_id: projectId,
-      prompt: image.prompt,
-      aspect_ratio: image.aspectRatio,
-      image_url: image.url,
-      status: 'completed',
-      saved_to_gallery: true
-    });
-    if (error) throw error;
-
-    // Update local node state to mark as saved
-    setNodes(nds => nds.map(n => n.id === id ? {
-      ...n,
-      data: {
-        ...n.data,
-        images: normalizeImages((n.data as unknown as OutputNodeData).images).map(img => img.url === image.url ? {
-          ...img,
-          savedToGallery: true
-        } : img)
-      }
-    } : n));
-
-    // Update selected image state
-    setSelectedImage(prev => prev ? {
-      ...prev,
-      savedToGallery: true
-    } : null);
-  }, [user, projectId, id, setNodes]);
   const handleDeleteImage = useCallback((imageToDelete: NodeImage) => {
     setNodes(nds => nds.map(n => n.id === id ? {
       ...n,
@@ -170,15 +128,18 @@ export const OutputNode = memo(({
         <div className="p-4">
           {images.length > 0 ? <div className="space-y-4">
               <div className="grid grid-cols-2 gap-2">
-                {images.map((image, index) => <div key={`${image.url}-${index}`} className="relative group rounded-xl overflow-hidden cursor-pointer border border-border/30 hover:border-emerald-500/50 transition-all" onClick={() => handleImageClick(image)}>
+                {images.map((image, index) => (
+                  <div 
+                    key={`${image.url}-${index}`} 
+                    className="relative group rounded-xl overflow-hidden cursor-pointer border border-border/30 hover:border-emerald-500/50 transition-all" 
+                    onClick={() => handleImageClick(image)}
+                  >
                     <img src={image.url} alt={`Generated ${index + 1}`} className="w-full h-24 object-cover" />
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                       <span className="text-xs text-white font-medium">Clique para ver</span>
                     </div>
-                    {image.savedToGallery && <div className="absolute top-1 right-1 w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center">
-                        <span className="text-[8px] text-white">✓</span>
-                      </div>}
-                  </div>)}
+                  </div>
+                ))}
               </div>
 
               {images.length > 1 && <Button variant="outline" className="w-full rounded-xl border-border/50 bg-card text-foreground hover:bg-muted" onClick={downloadAll}>
@@ -194,7 +155,7 @@ export const OutputNode = memo(({
         </div>
       </div>
 
-      <OutputImageModal image={selectedImage} isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSaveToGallery={handleSaveToGallery} onDelete={handleDeleteImage} />
+      <OutputImageModal image={selectedImage} isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onDelete={handleDeleteImage} />
     </>;
 });
 OutputNode.displayName = 'OutputNode';

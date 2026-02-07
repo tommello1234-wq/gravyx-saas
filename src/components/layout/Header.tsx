@@ -66,9 +66,19 @@ export function Header() {
         )}
 
         {/* Right side */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           {user ? (
             <>
+              {/* Buy Credits Button */}
+              <Button
+                variant="outline"
+                className="rounded-full border-primary/50 hover:bg-primary/10 gap-2"
+                onClick={() => setShowBuyCredits(true)}
+              >
+                <CreditCard className="h-4 w-4" />
+                Comprar créditos
+              </Button>
+
               {/* User Menu */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -111,20 +121,10 @@ export function Header() {
                   </DropdownMenuItem>
                 <DropdownMenuSeparator />
                   <div className="px-2 py-2">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <Coins className="h-4 w-4 text-primary" />
-                        <span className="text-sm font-medium">{profile?.credits ?? 0} créditos</span>
-                      </div>
+                    <div className="flex items-center gap-2">
+                      <Coins className="h-4 w-4 text-primary" />
+                      <span className="text-sm font-medium">{profile?.credits ?? 0} créditos</span>
                     </div>
-                    <Button
-                      size="sm"
-                      className="w-full"
-                      onClick={() => setShowBuyCredits(true)}
-                    >
-                      <CreditCard className="mr-2 h-4 w-4" />
-                      Comprar créditos
-                    </Button>
                   </div>
                   {isAdmin && (
                     <>
