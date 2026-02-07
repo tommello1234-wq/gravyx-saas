@@ -1,286 +1,257 @@
 
-# Plano: Sistema de Templates de Projeto
+
+# Plano: Editor de Templates no Admin
 
 ## Resumo
 
-Implementar um sistema onde o admin pode criar templates de projetos pré-configurados, e os usuários podem escolher usar um template ou criar do zero ao iniciar um novo projeto.
+Criar uma página de editor dedicada para montar templates diretamente no painel admin. Quando você clicar em "Editar" ou "Criar Template", vai abrir um editor completo com o canvas de nós, igual ao editor de projetos, mas salvando na tabela `project_templates`.
 
 ---
 
-## 1. Fluxo do Usuário ao Criar Projeto
-
-Quando o usuário clica em "Novo Projeto" na página de projetos:
+## Fluxo do Admin
 
 ```text
-+------------------------------------------+
-|        Como você quer começar?           |
-+------------------------------------------+
-|                                          |
-|  [  Começar do Zero  ]                   |
-|                                          |
-|  ─────── ou usar um template ───────     |
-|                                          |
-|  +--------+  +--------+  +--------+      |
-|  |  Img   |  |  Img   |  |  Img   |      |
-|  |Template|  |Template|  |Template|      |
-|  |  Name  |  |  Name  |  |  Name  |      |
-|  +--------+  +--------+  +--------+      |
-|                                          |
-+------------------------------------------+
+Aba Templates                    Página TemplateEditor
++---------------------------+    +----------------------------------+
+| Templates     [+ Criar]   |    | [< Voltar]  Template X   [Salvo] |
+|                           |    +----------------------------------+
+| +--------+  +--------+    |    |  [Toolbar]                       |
+| |Template|  |Template|    | -> |                                  |
+| |  Name  |  |  Name  |    |    |     [Canvas ReactFlow]           |
+| |[Editar]|  |[Editar]|    |    |                                  |
+| +--------+  +--------+    |    |                                  |
++---------------------------+    +----------------------------------+
 ```
+
+**Fluxo:**
+1. Admin clica em "Criar Template" ou "Editar" em um template existente
+2. Abre a página `/admin/template-editor?id=xxx` (ou sem id para novo)
+3. Admin monta o canvas com os nós (Prompt, Mídia, Settings, Output)
+4. Auto-save salva diretamente na tabela `project_templates`
+5. Botão "Voltar" retorna para o painel admin
 
 ---
 
-## 2. Gestão de Templates no Admin
+## Arquivos a Criar/Modificar
 
-Na aba "Templates" do painel admin:
+| Ação | Arquivo | Descrição |
+|------|---------|-----------|
+| Criar | `src/pages/TemplateEditor.tsx` | Página com editor de canvas para templates |
+| Modificar | `src/components/admin/TemplatesTab.tsx` | Adicionar botão "Editar" e navegação |
+| Modificar | `src/App.tsx` | Adicionar rota `/admin/template-editor` |
 
+---
+
+## Detalhes Técnicos
+
+### TemplateEditor.tsx
+
+Página similar ao Editor.tsx, mas:
+- Carrega/salva na tabela `project_templates` em vez de `projects`
+- Inclui campos para editar nome, descrição e thumbnail
+- Não tem funcionalidade de geração de imagens (é só para montar o layout)
+- Possui verificação de admin antes de acessar
+
+**Estrutura:**
 ```text
 +------------------------------------------+
-| Templates de Projeto         [+ Criar]   |
+| [← Voltar ao Admin]                      |
 +------------------------------------------+
-| +--------+ +--------------------------+  |
-| |  Img   | | Nome: Template Produto   |  |
-| |        | | Descrição: Para fotos... |  |
-| +--------+ | Criado: 07/02/2026       |  |
-|            | [Editar] [Excluir]       |  |
+| Nome: [_______________]                  |
+| Descrição: [_______________]             |
+| Thumbnail: [Upload]                      |
 +------------------------------------------+
-```
-
-**Fluxo de criação de template:**
-1. Admin clica em "Criar Template"
-2. Abre modal com:
-   - Nome do template
-   - Descrição
-   - Upload de thumbnail (imagem de preview)
-   - Seletor de projeto existente para importar o canvas_state
-3. Admin salva e o template fica disponível para todos os usuários
-
----
-
-## 3. Arquivos a Modificar
-
-| Arquivo | Mudanças |
-|---------|----------|
-| `src/pages/Projects.tsx` | Substituir dialog de criação por modal com opção de templates |
-| `src/pages/Admin.tsx` | Implementar aba de Templates completa (CRUD) |
-
-### Novo Componente
-
-| Arquivo | Descrição |
-|---------|-----------|
-| `src/components/CreateProjectModal.tsx` | Modal com escolha entre "do zero" e templates |
-
----
-
-## 4. Detalhes Técnicos
-
-### CreateProjectModal.tsx
-
-```typescript
-interface CreateProjectModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onCreateFromScratch: (name: string) => void;
-  onCreateFromTemplate: (name: string, templateId: string) => void;
-}
+|                                          |
+|  [Toolbar]     [Canvas ReactFlow]        |
+|                                          |
++------------------------------------------+
+|                     Salvando...          |
++------------------------------------------+
 ```
 
 **Estados:**
-- `step`: 'choose' | 'name' (escolher template ou digitar nome)
-- `selectedTemplate`: template selecionado (ou null para do zero)
-- `projectName`: nome do novo projeto
-
-**Fluxo:**
-1. Usuário escolhe "do zero" ou seleciona um template
-2. Digita o nome do projeto
-3. Clica em "Criar"
-4. Se template selecionado, o `canvas_state` do template é copiado para o novo projeto
-
-### Mudanças no Projects.tsx
-
-**createMutation atualizada:**
 ```typescript
-mutationFn: async ({ name, templateId }: { name: string; templateId?: string }) => {
-  let canvasState = { nodes: [], edges: [] };
-  
-  if (templateId) {
-    // Buscar canvas_state do template
-    const { data: template } = await supabase
-      .from('project_templates')
-      .select('canvas_state')
-      .eq('id', templateId)
-      .single();
+const [templateId, setTemplateId] = useState<string | null>(null);
+const [templateName, setTemplateName] = useState('Novo Template');
+const [templateDescription, setTemplateDescription] = useState('');
+const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
+const [nodes, setNodes, onNodesChange] = useNodesState([]);
+const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+const [isSaving, setIsSaving] = useState(false);
+```
+
+**Carregar template existente:**
+```typescript
+useEffect(() => {
+  const loadTemplate = async () => {
+    if (!templateId) return;
     
-    if (template?.canvas_state) {
-      canvasState = template.canvas_state as { nodes: [], edges: [] };
-      // Regenerar IDs dos nós para evitar conflitos
-      canvasState.nodes = canvasState.nodes.map(node => ({
-        ...node,
-        id: `${node.type}-${Date.now()}-${Math.random()}`
-      }));
-    }
-  }
-  
-  const { data, error } = await supabase
-    .from('projects')
-    .insert({ name, user_id: user?.id, canvas_state: canvasState })
-    .select()
-    .single();
-  
-  if (error) throw error;
-  return data;
-}
-```
-
-### Mudanças no Admin.tsx - Aba Templates
-
-**Novos estados:**
-```typescript
-const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
-const [newTemplate, setNewTemplate] = useState({
-  name: '',
-  description: '',
-  thumbnail_url: '',
-  canvas_state: { nodes: [], edges: [] }
-});
-const [selectedProjectForTemplate, setSelectedProjectForTemplate] = useState<string | null>(null);
-```
-
-**Query para buscar projetos do admin (para importar canvas):**
-```typescript
-const { data: adminProjects } = useQuery({
-  queryKey: ['admin-projects'],
-  queryFn: async () => {
-    const { data, error } = await supabase
-      .from('projects')
-      .select('id, name, canvas_state')
-      .eq('user_id', user?.id)
-      .order('updated_at', { ascending: false });
-    if (error) throw error;
-    return data;
-  },
-});
-```
-
-**Query para buscar templates:**
-```typescript
-const { data: templates, isLoading: templatesLoading } = useQuery({
-  queryKey: ['admin-templates'],
-  queryFn: async () => {
     const { data, error } = await supabase
       .from('project_templates')
       .select('*')
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    return data;
-  },
-});
+      .eq('id', templateId)
+      .single();
+      
+    if (data) {
+      setTemplateName(data.name);
+      setTemplateDescription(data.description || '');
+      setThumbnailUrl(data.thumbnail_url);
+      const canvas = data.canvas_state as { nodes?: Node[]; edges?: Edge[] };
+      if (canvas?.nodes) setNodes(canvas.nodes);
+      if (canvas?.edges) setEdges(canvas.edges);
+    }
+  };
+  loadTemplate();
+}, [templateId]);
 ```
 
-**Mutation para criar template:**
+**Salvar template (com debounce):**
 ```typescript
-const createTemplateMutation = useMutation({
-  mutationFn: async (template: typeof newTemplate) => {
-    const { error } = await supabase
+const saveTemplate = async () => {
+  const canvasData = { nodes, edges };
+  
+  if (templateId) {
+    // Update existing
+    await supabase
+      .from('project_templates')
+      .update({
+        name: templateName,
+        description: templateDescription,
+        thumbnail_url: thumbnailUrl,
+        canvas_state: canvasData
+      })
+      .eq('id', templateId);
+  } else {
+    // Create new
+    const { data } = await supabase
       .from('project_templates')
       .insert({
-        name: template.name,
-        description: template.description,
-        thumbnail_url: template.thumbnail_url,
-        canvas_state: template.canvas_state,
+        name: templateName,
+        description: templateDescription,
+        thumbnail_url: thumbnailUrl,
+        canvas_state: canvasData,
         created_by: user?.id
-      });
-    if (error) throw error;
-  },
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ['admin-templates'] });
-    setTemplateDialogOpen(false);
-    resetTemplateForm();
-    toast({ title: 'Template criado!' });
-  },
-});
+      })
+      .select()
+      .single();
+    
+    if (data) {
+      setTemplateId(data.id);
+      // Update URL without reload
+      navigate(`/admin/template-editor?id=${data.id}`, { replace: true });
+    }
+  }
+};
 ```
 
-**Mutation para deletar template:**
+### Modificações no TemplatesTab.tsx
+
+**Adicionar botão "Editar" nos cards:**
 ```typescript
-const deleteTemplateMutation = useMutation({
-  mutationFn: async (id: string) => {
-    const { error } = await supabase
-      .from('project_templates')
-      .delete()
-      .eq('id', id);
-    if (error) throw error;
+<div className="flex gap-2">
+  <Button
+    variant="outline"
+    size="sm"
+    onClick={() => navigate(`/admin/template-editor?id=${template.id}`)}
+  >
+    <Pencil className="h-4 w-4 mr-1" />
+    Editar
+  </Button>
+  <Button
+    variant="ghost"
+    size="icon"
+    className="text-destructive"
+    onClick={() => {
+      setTemplateToDelete(template);
+      setDeleteDialogOpen(true);
+    }}
+  >
+    <Trash2 className="h-4 w-4" />
+  </Button>
+</div>
+```
+
+**Mudar "Criar Template" para navegar:**
+```typescript
+<Button onClick={() => navigate('/admin/template-editor')}>
+  <Plus className="h-4 w-4 mr-2" />
+  Criar Template
+</Button>
+```
+
+### Nova Rota no App.tsx
+
+```typescript
+<Route path="/admin/template-editor" element={<TemplateEditor />} />
+```
+
+---
+
+## Layout do TemplateEditor
+
+```text
++----------------------------------------------------------+
+| [← Voltar]                              [Salvando...]    |
++----------------------------------------------------------+
+| +------------------+  +-------------------------------+  |
+| | Nome             |  | Descrição                     |  |
+| | [______________] |  | [____________________________]|  |
+| +------------------+  +-------------------------------+  |
+| | Thumbnail        |                                     |
+| | [  Upload  ]     |                                     |
++----------------------------------------------------------+
+|                                                          |
+|  [Toolbar]                                               |
+|  +----+                                                  |
+|  |Type|     [===== Canvas ReactFlow =====]              |
+|  +----+                                                  |
+|  |Img |                                                  |
+|  +----+                                                  |
+|  |Cfg |                                                  |
+|  +----+                                                  |
+|  |Out |                                                  |
+|  +----+                                                  |
+|                                                          |
++----------------------------------------------------------+
+```
+
+---
+
+## Proteção de Acesso
+
+A página de TemplateEditor deve:
+1. Verificar se o usuário está logado
+2. Verificar se o usuário tem role `admin`
+3. Redirecionar para `/` se não for admin
+
+```typescript
+const { user } = useAuth();
+const { data: isAdmin } = useQuery({
+  queryKey: ['is-admin', user?.id],
+  queryFn: async () => {
+    const { data } = await supabase.rpc('has_role', {
+      _user_id: user?.id,
+      _role: 'admin'
+    });
+    return data;
   },
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ['admin-templates'] });
-    toast({ title: 'Template excluído!' });
-  },
+  enabled: !!user
 });
+
+useEffect(() => {
+  if (isAdmin === false) {
+    navigate('/');
+  }
+}, [isAdmin]);
 ```
 
 ---
 
-## 5. UI do Modal de Criação de Template (Admin)
+## Resumo das Mudanças
 
-```text
-+------------------------------------------+
-|          Criar Novo Template         [X] |
-+------------------------------------------+
-|                                          |
-|  Nome do Template                        |
-|  [________________________________]      |
-|                                          |
-|  Descrição                               |
-|  [________________________________]      |
-|  [________________________________]      |
-|                                          |
-|  Thumbnail                               |
-|  +-------------------+                   |
-|  |     [Upload]      |                   |
-|  +-------------------+                   |
-|                                          |
-|  Importar canvas de um projeto           |
-|  [Selecione um projeto ▼]               |
-|                                          |
-+------------------------------------------+
-|                    [Cancelar] [Criar]    |
-+------------------------------------------+
-```
+| Arquivo | Ação |
+|---------|------|
+| `src/pages/TemplateEditor.tsx` | Criar - Editor completo para templates |
+| `src/components/admin/TemplatesTab.tsx` | Modificar - Adicionar botão Editar, remover modal de criação |
+| `src/App.tsx` | Modificar - Adicionar rota |
 
----
-
-## 6. Storage para Thumbnails
-
-O bucket `reference-images` já é público e pode ser reutilizado para thumbnails de templates, ou podemos usar uma pasta específica dentro dele.
-
----
-
-## 7. Layout Visual dos Templates (Para Usuários)
-
-Cards estilizados mostrando:
-- Thumbnail do template
-- Nome
-- Descrição curta
-- Botão "Usar este template"
-
-```text
-+------------------+
-|    [Thumbnail]   |
-|                  |
-+------------------+
-| Template Name    |
-| Descrição curta  |
-| [Usar template]  |
-+------------------+
-```
-
----
-
-## Resumo de Arquivos
-
-| Ação | Arquivo |
-|------|---------|
-| Criar | `src/components/CreateProjectModal.tsx` |
-| Modificar | `src/pages/Projects.tsx` |
-| Modificar | `src/pages/Admin.tsx` |
