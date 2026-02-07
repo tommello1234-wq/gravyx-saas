@@ -1,5 +1,4 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { decode as base64Decode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,90 +6,6 @@ const corsHeaders = {
 };
 
 const CREDITS_PER_IMAGE = 1;
-const MAX_CONCURRENT_UPLOADS = 2; // Limit concurrent uploads to reduce DB load
-
-// Helper: Upload base64 image to Supabase Storage and return public URL
-async function uploadBase64ToStorage(
-  supabaseAdmin: ReturnType<typeof import("https://esm.sh/@supabase/supabase-js@2.49.1").createClient>,
-  base64DataUrl: string,
-  userId: string,
-  fileName: string
-): Promise<string | null> {
-  try {
-    // Extract base64 data from data URL (format: data:image/png;base64,xxxxx)
-    const matches = base64DataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
-    if (!matches) {
-      console.error("Invalid base64 data URL format");
-      return null;
-    }
-    
-    const imageType = matches[1]; // png, jpeg, etc.
-    const base64Data = matches[2];
-    
-    // Decode base64 to Uint8Array
-    const imageBytes = base64Decode(base64Data);
-    
-    // Create file path: userId/timestamp-random.ext
-    const filePath = `${userId}/${fileName}.${imageType}`;
-    
-    // Upload to Storage
-    const { error: uploadError } = await supabaseAdmin.storage
-      .from('generations')
-      .upload(filePath, imageBytes, {
-        contentType: `image/${imageType}`,
-        upsert: false
-      });
-    
-    if (uploadError) {
-      console.error("Storage upload error:", uploadError);
-      return null;
-    }
-    
-    // Get public URL
-    const { data: { publicUrl } } = supabaseAdmin.storage
-      .from('generations')
-      .getPublicUrl(filePath);
-    
-    console.log(`Uploaded image to Storage: ${filePath}`);
-    return publicUrl;
-  } catch (error) {
-    console.error("Error uploading to storage:", error);
-    return null;
-  }
-}
-
-// Helper: Run async tasks with limited concurrency
-async function runWithConcurrencyLimit<T>(
-  tasks: (() => Promise<T>)[],
-  limit: number
-): Promise<T[]> {
-  const results: T[] = [];
-  const executing: Promise<void>[] = [];
-  
-  for (const task of tasks) {
-    const p = task().then(result => {
-      results.push(result);
-    });
-    executing.push(p);
-    
-    if (executing.length >= limit) {
-      await Promise.race(executing);
-      // Remove completed promises
-      for (let i = executing.length - 1; i >= 0; i--) {
-        const status = await Promise.race([
-          executing[i].then(() => 'fulfilled'),
-          Promise.resolve('pending')
-        ]);
-        if (status === 'fulfilled') {
-          executing.splice(i, 1);
-        }
-      }
-    }
-  }
-  
-  await Promise.all(executing);
-  return results;
-}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -98,14 +13,9 @@ serve(async (req) => {
   }
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
-
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
-    }
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -165,7 +75,7 @@ serve(async (req) => {
       );
     }
 
-    // Deduct credits atomically and get the new balance
+    // Deduct credits atomically
     const { data: newCredits, error: updateError } = await supabaseAdmin
       .rpc('decrement_credits', { uid: user.id, amount: creditsNeeded });
 
@@ -178,150 +88,53 @@ serve(async (req) => {
         .eq('user_id', user.id);
     }
 
-    // Calculate credits after deduction (use RPC return if available)
     const creditsAfterDeduction = typeof newCredits === 'number' ? newCredits : profile.credits - creditsNeeded;
 
-    console.log(`Generating ${safeQuantity} image(s) for user ${user.id}, costing ${creditsNeeded} credits`);
+    console.log(`Enqueuing job for ${safeQuantity} image(s) for user ${user.id}, deducted ${creditsNeeded} credits`);
 
-    let fullPrompt = prompt;
-    if (aspectRatio) {
-      fullPrompt = `${prompt}. Aspect ratio: ${aspectRatio}`;
-    }
+    // Insert job into queue
+    const { data: job, error: insertError } = await supabaseAdmin
+      .from('jobs')
+      .insert({
+        user_id: user.id,
+        project_id: projectId,
+        status: 'queued',
+        payload: {
+          prompt,
+          aspectRatio: aspectRatio || '1:1',
+          quantity: safeQuantity,
+          imageUrls
+        },
+        max_retries: 3
+      })
+      .select('id')
+      .single();
 
-    // Build message content
-    const messageContent: { type: string; text?: string; image_url?: { url: string } }[] = [
-      { type: "text", text: fullPrompt }
-    ];
-    
-    for (const url of imageUrls) {
-      messageContent.push({
-        type: "image_url",
-        image_url: { url }
-      });
-    }
-
-    // Function to generate a single image and upload to Storage
-    const generateSingleImage = async (index: number): Promise<string | null> => {
-      try {
-        const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${LOVABLE_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "google/gemini-3-pro-image-preview",
-            messages: [{ role: "user", content: messageContent }],
-            modalities: ["image", "text"]
-          }),
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error("AI Gateway error:", response.status, errorText);
-          
-          if (response.status === 429) {
-            throw new Error("RATE_LIMIT");
-          }
-          
-          return null;
-        }
-
-        const data = await response.json();
-        const base64Url = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-        
-        if (!base64Url) {
-          console.error("No image URL in response");
-          return null;
-        }
-
-        // Upload to Storage instead of storing base64 directly
-        const fileName = `${Date.now()}-${index}-${Math.random().toString(36).substring(7)}`;
-        const publicUrl = await uploadBase64ToStorage(supabaseAdmin, base64Url, user.id, fileName);
-        
-        if (!publicUrl) {
-          console.error("Failed to upload image to storage");
-          return null;
-        }
-
-        return publicUrl;
-      } catch (error) {
-        console.error("Single image generation error:", error);
-        if (error instanceof Error && error.message === "RATE_LIMIT") {
-          throw error;
-        }
-        return null;
-      }
-    };
-
-    // Generate images with limited concurrency to reduce DB burst
-    const generationTasks = Array(safeQuantity).fill(null).map((_, i) => () => generateSingleImage(i));
-    
-    let results: (string | null)[];
-    try {
-      results = await runWithConcurrencyLimit(generationTasks, MAX_CONCURRENT_UPLOADS);
-    } catch (error) {
-      // Refund all credits on rate limit
+    if (insertError || !job) {
+      console.error("Error inserting job:", insertError);
+      
+      // Refund credits on failure
       await supabaseAdmin
         .from('profiles')
         .update({ credits: profile.credits })
         .eq('user_id', user.id);
       
-      if (error instanceof Error && error.message === "RATE_LIMIT") {
-        return new Response(
-          JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-      throw error;
-    }
-
-    // Filter successful generations
-    const successfulImages = results.filter((url): url is string => url !== null);
-    const failedCount = safeQuantity - successfulImages.length;
-
-    // Refund credits for failed generations (compute locally, no extra SELECT)
-    let finalCredits = creditsAfterDeduction;
-    if (failedCount > 0) {
-      const refundAmount = failedCount * CREDITS_PER_IMAGE;
-      finalCredits = creditsAfterDeduction + refundAmount;
-      await supabaseAdmin
-        .from('profiles')
-        .update({ credits: finalCredits })
-        .eq('user_id', user.id);
-      console.log(`Refunded ${refundAmount} credits for ${failedCount} failed generation(s)`);
-    }
-
-    // If all failed
-    if (successfulImages.length === 0) {
       return new Response(
-        JSON.stringify({ error: "Image generation failed", images: [] }),
+        JSON.stringify({ error: "Failed to enqueue job" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Save successful generations to database (now storing Storage URLs, not base64!)
-    const generationInserts = successfulImages.map(imageUrl => ({
-      user_id: user.id,
-      project_id: projectId,
-      prompt: prompt,
-      aspect_ratio: aspectRatio || '1:1',
-      image_url: imageUrl, // This is now a Storage URL, not base64!
-      status: 'completed',
-      saved_to_gallery: true
-    }));
+    console.log(`Job ${job.id} enqueued successfully`);
 
-    await supabaseAdmin.from('generations').insert(generationInserts);
-
-    console.log(`Generated ${successfulImages.length}/${safeQuantity} images for user ${user.id} (stored in Storage)`);
-
-    // Return response without extra SELECT for credits (we computed it locally)
+    // Return immediately with job info
     return new Response(
       JSON.stringify({ 
-        images: successfulImages, 
-        creditsRemaining: finalCredits,
-        generatedCount: successfulImages.length,
-        requestedCount: safeQuantity
+        jobId: job.id,
+        status: 'queued',
+        quantity: safeQuantity,
+        creditsDeducted: creditsNeeded,
+        creditsRemaining: creditsAfterDeduction
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

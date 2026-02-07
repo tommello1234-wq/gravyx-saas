@@ -6,12 +6,13 @@ import '@xyflow/react/dist/style.css';
 import { Header } from '@/components/layout/Header';
 import { PromptNode } from '@/components/nodes/PromptNode';
 import { MediaNode } from '@/components/nodes/MediaNode';
-import { SettingsNode, GENERATING_STATE_EVENT } from '@/components/nodes/SettingsNode';
+import { SettingsNode, GENERATING_STATE_EVENT, JOB_QUEUE_STATE_EVENT } from '@/components/nodes/SettingsNode';
 import { OutputNode } from '@/components/nodes/OutputNode';
 import { NodeToolbar } from '@/components/editor/NodeToolbar';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { useJobQueue } from '@/hooks/useJobQueue';
 import { Loader2 } from 'lucide-react';
 
 const nodeTypes = {
@@ -124,7 +125,7 @@ function repairCanvasState(canvasState: { nodes?: Node[]; edges?: Edge[] }): { n
 }
 
 function EditorCanvas({ projectId }: EditorCanvasProps) {
-  const { user, profile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const { toast } = useToast();
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -134,11 +135,84 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedDataRef = useRef<string>('');
   const toastRef = useRef(toast);
+  const setNodesRef = useRef(setNodes);
 
-  // Keep toast ref in sync
+  // Keep refs in sync
   useEffect(() => {
     toastRef.current = toast;
-  }, [toast]);
+    setNodesRef.current = setNodes;
+  }, [toast, setNodes]);
+
+  // Job completed handler - add images to output node
+  const handleJobCompleted = useCallback((result: { jobId: string; resultUrls: string[]; resultCount: number }) => {
+    const currentNodes = nodesRef.current;
+    const outputNode = currentNodes.find((n) => n.type === 'output');
+    
+    if (!outputNode) return;
+
+    const newImages = result.resultUrls.map(url => ({
+      url,
+      prompt: '',
+      aspectRatio: '1:1',
+      savedToGallery: true,
+      generatedAt: new Date().toISOString(),
+    }));
+
+    setNodesRef.current((nds) => {
+      return nds.map((n) => {
+        if (n.id === outputNode.id) {
+          const existingImages = (n.data as { images?: unknown[] }).images || [];
+          return {
+            ...n,
+            data: {
+              ...n.data,
+              images: [...(Array.isArray(existingImages) ? existingImages : []), ...newImages],
+            },
+          };
+        }
+        return n;
+      });
+    });
+
+    toastRef.current({ 
+      title: `${result.resultCount} ${result.resultCount === 1 ? 'imagem gerada' : 'imagens geradas'} com sucesso!` 
+    });
+    
+    // Refresh profile to update credits display
+    refreshProfile();
+  }, [refreshProfile]);
+
+  // Job failed handler
+  const handleJobFailed = useCallback((jobId: string, error: string) => {
+    toastRef.current({
+      title: 'Falha na geração',
+      description: error,
+      variant: 'destructive'
+    });
+    
+    // Refresh profile to update credits (might have been refunded)
+    refreshProfile();
+  }, [refreshProfile]);
+
+  // Job queue hook
+  const { 
+    pendingJobs, 
+    addPendingJob, 
+    hasQueuedJobs, 
+    hasProcessingJobs, 
+    totalPendingImages 
+  } = useJobQueue({
+    projectId,
+    onJobCompleted: handleJobCompleted,
+    onJobFailed: handleJobFailed
+  });
+
+  // Dispatch job queue state to SettingsNode
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(JOB_QUEUE_STATE_EVENT, { 
+      detail: { hasQueuedJobs, hasProcessingJobs, totalPendingImages } 
+    }));
+  }, [hasQueuedJobs, hasProcessingJobs, totalPendingImages]);
 
   // Load project and populate output node with images from generations table
   useEffect(() => {
@@ -387,57 +461,31 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
       .map((n) => (n.data as { url: string | null }).url)
       .filter(Boolean) as string[];
 
-    // Dispatch generating state event to SettingsNode
+    // Dispatch generating state event to SettingsNode (brief "sending" state)
     window.dispatchEvent(new CustomEvent(GENERATING_STATE_EVENT, { detail: { isGenerating: true } }));
 
     try {
+      // Call generate-image which now only enqueues the job
       const { data, error } = await supabase.functions.invoke('generate-image', {
         body: { prompt, aspectRatio, quantity, imageUrls, projectId }
       });
 
       if (error) throw error;
 
-      // Create new image objects with metadata
-      const newImages = data.images.map((url: string) => ({
-        url,
-        prompt,
-        aspectRatio,
-        savedToGallery: true,
-        generatedAt: new Date().toISOString(),
-      }));
+      // Add job to pending queue - images will arrive via Realtime
+      addPendingJob(data.jobId, data.quantity);
 
-      // Update output node - ACCUMULATE images (in local state only, not persisted)
-      setNodes((nds) => {
-        return nds.map((n) => {
-          if (n.id === outputNode.id) {
-            const existingImages = (n.data as { images?: unknown[] }).images || [];
-            // Normalize existing images to new format if needed
-            const normalizedExisting = Array.isArray(existingImages) 
-              ? existingImages.map((img: unknown) => 
-                  typeof img === 'string' 
-                    ? { url: img, prompt: '', aspectRatio: '1:1', savedToGallery: true, generatedAt: new Date().toISOString() }
-                    : img
-                )
-              : [];
-            
-            return {
-              ...n,
-              data: {
-                ...n.data,
-                images: [...normalizedExisting, ...newImages],
-              },
-            };
-          }
-          return n;
-        });
-        // NOTE: Removed forced saveProject after generation - images are stored in 
-        // generations table, not in canvas_state. This prevents massive DB writes.
-      });
-
-      // Reset generating state
+      // Reset "sending" state - job is now queued
       window.dispatchEvent(new CustomEvent(GENERATING_STATE_EVENT, { detail: { isGenerating: false } }));
 
-      toast({ title: `${data.images.length} ${data.images.length === 1 ? 'imagem gerada' : 'imagens geradas'} com sucesso!` });
+      toast({ 
+        title: 'Geração iniciada',
+        description: `${quantity} ${quantity === 1 ? 'imagem está sendo gerada' : 'imagens estão sendo geradas'}...`
+      });
+
+      // Refresh profile to show updated credits
+      refreshProfile();
+      
     } catch (error) {
       console.error('Generation error:', error);
       // Reset generating state on error
@@ -448,7 +496,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
         variant: 'destructive'
       });
     }
-  }, [profile, projectId, setNodes, toast]);
+  }, [profile, projectId, toast, addPendingJob, refreshProfile]);
 
   // Listen for generate events from SettingsNode
   useEffect(() => {
