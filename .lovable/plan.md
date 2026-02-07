@@ -1,100 +1,137 @@
 
-# Plano: Correções do Output Node
+# Plano: Correção de Erros na Geração de Imagens
 
-## Problema 1: Imagens não aparecem em tempo real
+## Diagnóstico
 
-### Diagnóstico
-O sistema Realtime está funcionando, MAS o hook `useJobQueue` só escuta atualizações quando `pendingJobs.length > 0`:
+Identifiquei **dois problemas críticos** causando os erros reportados pelos usuários:
+
+### Problema 1: Crash "Cannot read properties of undefined (reading 'map')"
+
+**Localização**: `src/pages/Editor.tsx` linha 153
 
 ```typescript
-// useJobQueue.ts linha 99
-if (!projectId || pendingJobs.length === 0) return;
+const newImages = result.resultUrls.map(url => ({ ... }));
 ```
 
-**Cenário do bug**: Quando você gera imagens em **outra aba/sessão** ou quando o job é processado tão rápido que a lista `pendingJobs` é limpa antes do Realtime disparar, a subscription é removida e as imagens não aparecem.
+**Causa**: O callback `handleJobCompleted` assume que `resultUrls` sempre é um array válido, mas pode receber `undefined` ou `null` em edge cases:
+- Payload malformado do Supabase Realtime
+- Condição de corrida onde o job é marcado como `completed` antes de `result_urls` ser populado
 
-### Solução
-Manter a subscription Realtime **sempre ativa** enquanto o usuário estiver no Editor, independente de haver jobs pendentes. Assim, qualquer atualização de job para o projeto será capturada e exibida.
+### Problema 2: Jobs presos na fila (9 jobs `queued` sem processamento)
 
-**Mudança em `useJobQueue.ts`**:
-```typescript
-// ANTES (linha 99)
-if (!projectId || pendingJobs.length === 0) return;
-
-// DEPOIS
-if (!projectId) return;
+**Diagnóstico do banco de dados**:
+```
+┌─────────────────────┬──────────┬──────────────────┐
+│ created_at          │ status   │ result_urls_null │
+├─────────────────────┼──────────┼──────────────────┤
+│ 2026-02-07 21:43:38 │ queued   │ true             │
+│ 2026-02-07 21:43:11 │ queued   │ true             │
+│ 2026-02-07 21:06:51 │ queued   │ true             │
+│ ... (mais 6 jobs)   │ queued   │ true             │
+└─────────────────────┴──────────┴──────────────────┘
 ```
 
-Também precisamos ajustar o callback para verificar se o job pertence à nossa lista antes de remover, evitando erros quando jobs de outras sessões chegam:
+**Causa**: O `image-worker` não está sendo invocado ou está falhando silenciosamente. Os jobs ficam eternamente `queued`.
+
+---
+
+## Soluções
+
+### Correção 1: Validação defensiva no handleJobCompleted
+
+**Arquivo**: `src/pages/Editor.tsx`
+
+Adicionar validação para garantir que `resultUrls` é um array válido antes de fazer `.map()`:
 
 ```typescript
-if (job.status === 'completed' && job.result_urls) {
-  callbacksRef.current.onJobCompleted({
-    jobId: job.id,
-    resultUrls: job.result_urls,
-    resultCount: job.result_count || job.result_urls.length
-  });
-  // Só remove se estava na nossa lista
-  if (pendingJobIds.has(job.id)) {
-    removePendingJob(job.id);
+const handleJobCompleted = useCallback((result: { jobId: string; resultUrls: string[]; resultCount: number }) => {
+  const currentNodes = nodesRef.current;
+  const outputNode = currentNodes.find((n) => n.type === 'output');
+  
+  if (!outputNode) return;
+
+  // CORREÇÃO: Validar resultUrls antes de usar
+  const urls = Array.isArray(result.resultUrls) ? result.resultUrls : [];
+  if (urls.length === 0) {
+    console.warn('Job completed but no result URLs provided:', result.jobId);
+    return;
   }
+
+  const newImages = urls.map(url => ({
+    url,
+    prompt: '',
+    aspectRatio: '1:1',
+    savedToGallery: true,
+    generatedAt: new Date().toISOString(),
+  }));
+  // ... resto do código
+});
+```
+
+### Correção 2: Validação no useJobQueue antes de chamar callback
+
+**Arquivo**: `src/hooks/useJobQueue.ts`
+
+Adicionar verificação mais robusta no handler do Realtime:
+
+```typescript
+if (job.status === 'completed') {
+  // CORREÇÃO: Validar que result_urls é um array não vazio
+  const urls = job.result_urls;
+  if (Array.isArray(urls) && urls.length > 0) {
+    callbacksRef.current.onJobCompleted({
+      jobId: job.id,
+      resultUrls: urls,
+      resultCount: job.result_count || urls.length
+    });
+  } else {
+    console.error('Job completed without valid result_urls:', job.id);
+  }
+  // ... resto do código
 }
 ```
 
-## Problema 2: Output Node muito extenso (15+ imagens)
+### Correção 3: Melhoria no worker polling
 
-### Diagnóstico
-Atualmente o grid de imagens cresce indefinidamente:
-```tsx
-<div className="grid grid-cols-2 gap-2">
-  {images.map(...)}  // Sem limite
-</div>
+O polling do worker está configurado corretamente, mas pode haver problemas de timeout. Adicionar tratamento de erro mais robusto:
+
+**Arquivo**: `src/hooks/useJobQueue.ts`
+
+```typescript
+const pollWorker = useCallback(async () => {
+  try {
+    const { data, error } = await supabase.functions.invoke('image-worker');
+    if (error) {
+      console.error('Worker invocation error:', error);
+    }
+  } catch (error) {
+    console.error('Worker poll error:', error);
+  }
+}, []);
 ```
 
-### Solução
-Adicionar um container com **altura máxima e scroll** a partir de 6 imagens (3 linhas no grid 2x):
-
-**Mudança em `OutputNode.tsx`**:
-```tsx
-import { ScrollArea } from '@/components/ui/scroll-area';
-
-// No Content section:
-{images.length > 6 ? (
-  <ScrollArea className="h-[200px]">
-    <div className="grid grid-cols-2 gap-2 pr-2">
-      {images.map(...)}
-    </div>
-  </ScrollArea>
-) : (
-  <div className="grid grid-cols-2 gap-2">
-    {images.map(...)}
-  </div>
-)}
-```
-
-A altura de 200px acomoda ~3 linhas (6 imagens) confortavelmente.
+---
 
 ## Arquivos a Modificar
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/hooks/useJobQueue.ts` | Manter Realtime sempre ativo para o projeto |
-| `src/components/nodes/OutputNode.tsx` | Adicionar ScrollArea para +6 imagens |
+| `src/pages/Editor.tsx` | Adicionar validação defensiva em `handleJobCompleted` |
+| `src/hooks/useJobQueue.ts` | Validar `result_urls` antes de chamar callback + melhorar logging do worker |
 
-## Resultado Esperado
-
-1. **Tempo Real**: Imagens aparecem imediatamente no Output Node sem precisar recarregar
-2. **Layout Compacto**: Node com scroll suave quando há mais de 6 imagens
+---
 
 ## Detalhes Técnicos
 
-### useJobQueue.ts
-- Remover condição `pendingJobs.length === 0` da subscription Realtime
-- Usar `useRef` para manter track dos jobIds pendentes e verificar antes de chamar callbacks
-- Manter a lógica de polling apenas quando há jobs pendentes (economia de recursos)
+### Por que o erro ocorre?
+1. Usuário clica em "Gerar"
+2. Job é enfileirado com status `queued`
+3. Worker é invocado mas pode falhar silenciosamente
+4. Se o Realtime enviar um evento com `status: 'completed'` mas `result_urls: null`, o código tenta fazer `.map(null)` e crasha
+5. ErrorBoundary captura o crash e mostra "Algo deu errado"
 
-### OutputNode.tsx
-- Importar `ScrollArea` do Radix
-- Calcular se precisa de scroll (images.length > 6)
-- Aplicar altura fixa apenas quando necessário
-- Manter espaçamento adequado para a scrollbar
+### Validação defensiva
+A regra de ouro: **nunca confiar em dados externos** - sempre validar antes de usar.
+
+### Limpeza de jobs órfãos
+Após aplicar as correções, será necessário limpar os 9 jobs presos no status `queued` para evitar que sejam reprocessados incorretamente.
