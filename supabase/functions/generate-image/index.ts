@@ -7,6 +7,7 @@ const corsHeaders = {
 };
 
 const CREDITS_PER_IMAGE = 1;
+const MAX_CONCURRENT_UPLOADS = 2; // Limit concurrent uploads to reduce DB load
 
 // Helper: Upload base64 image to Supabase Storage and return public URL
 async function uploadBase64ToStorage(
@@ -56,6 +57,39 @@ async function uploadBase64ToStorage(
     console.error("Error uploading to storage:", error);
     return null;
   }
+}
+
+// Helper: Run async tasks with limited concurrency
+async function runWithConcurrencyLimit<T>(
+  tasks: (() => Promise<T>)[],
+  limit: number
+): Promise<T[]> {
+  const results: T[] = [];
+  const executing: Promise<void>[] = [];
+  
+  for (const task of tasks) {
+    const p = task().then(result => {
+      results.push(result);
+    });
+    executing.push(p);
+    
+    if (executing.length >= limit) {
+      await Promise.race(executing);
+      // Remove completed promises
+      for (let i = executing.length - 1; i >= 0; i--) {
+        const status = await Promise.race([
+          executing[i].then(() => 'fulfilled'),
+          Promise.resolve('pending')
+        ]);
+        if (status === 'fulfilled') {
+          executing.splice(i, 1);
+        }
+      }
+    }
+  }
+  
+  await Promise.all(executing);
+  return results;
 }
 
 serve(async (req) => {
@@ -131,17 +165,21 @@ serve(async (req) => {
       );
     }
 
-    // Deduct credits atomically
-    const { error: updateError } = await supabaseAdmin
+    // Deduct credits atomically and get the new balance
+    const { data: newCredits, error: updateError } = await supabaseAdmin
       .rpc('decrement_credits', { uid: user.id, amount: creditsNeeded });
 
     if (updateError) {
       console.error("Error decrementing credits:", updateError);
+      // Fallback to direct update
       await supabaseAdmin
         .from('profiles')
         .update({ credits: profile.credits - creditsNeeded })
         .eq('user_id', user.id);
     }
+
+    // Calculate credits after deduction (use RPC return if available)
+    const creditsAfterDeduction = typeof newCredits === 'number' ? newCredits : profile.credits - creditsNeeded;
 
     console.log(`Generating ${safeQuantity} image(s) for user ${user.id}, costing ${creditsNeeded} credits`);
 
@@ -216,12 +254,12 @@ serve(async (req) => {
       }
     };
 
-    // Generate images in parallel
-    const generationPromises = Array(safeQuantity).fill(null).map((_, i) => generateSingleImage(i));
+    // Generate images with limited concurrency to reduce DB burst
+    const generationTasks = Array(safeQuantity).fill(null).map((_, i) => () => generateSingleImage(i));
     
     let results: (string | null)[];
     try {
-      results = await Promise.all(generationPromises);
+      results = await runWithConcurrencyLimit(generationTasks, MAX_CONCURRENT_UPLOADS);
     } catch (error) {
       // Refund all credits on rate limit
       await supabaseAdmin
@@ -242,12 +280,14 @@ serve(async (req) => {
     const successfulImages = results.filter((url): url is string => url !== null);
     const failedCount = safeQuantity - successfulImages.length;
 
-    // Refund credits for failed generations
+    // Refund credits for failed generations (compute locally, no extra SELECT)
+    let finalCredits = creditsAfterDeduction;
     if (failedCount > 0) {
       const refundAmount = failedCount * CREDITS_PER_IMAGE;
+      finalCredits = creditsAfterDeduction + refundAmount;
       await supabaseAdmin
         .from('profiles')
-        .update({ credits: profile.credits - creditsNeeded + refundAmount })
+        .update({ credits: finalCredits })
         .eq('user_id', user.id);
       console.log(`Refunded ${refundAmount} credits for ${failedCount} failed generation(s)`);
     }
@@ -275,17 +315,11 @@ serve(async (req) => {
 
     console.log(`Generated ${successfulImages.length}/${safeQuantity} images for user ${user.id} (stored in Storage)`);
 
-    // Get updated credits
-    const { data: updatedProfile } = await supabaseAdmin
-      .from('profiles')
-      .select('credits')
-      .eq('user_id', user.id)
-      .single();
-
+    // Return response without extra SELECT for credits (we computed it locally)
     return new Response(
       JSON.stringify({ 
         images: successfulImages, 
-        creditsRemaining: updatedProfile?.credits ?? profile.credits - (successfulImages.length * CREDITS_PER_IMAGE),
+        creditsRemaining: finalCredits,
         generatedCount: successfulImages.length,
         requestedCount: safeQuantity
       }),
