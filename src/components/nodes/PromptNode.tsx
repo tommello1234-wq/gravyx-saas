@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useState, useCallback } from 'react';
 import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react';
 import { Textarea } from '@/components/ui/textarea';
 import { Type, Copy, Trash2 } from 'lucide-react';
@@ -43,6 +43,18 @@ export const PromptNode = memo(({
       setNodes([...nodes, newNode]);
     }
   };
+
+  const handleValueChange = useCallback((newValue: string) => {
+    setValue(newValue);
+    setNodes((nodes) =>
+      nodes.map((node) =>
+        node.id === id
+          ? { ...node, data: { ...node.data, value: newValue } }
+          : node
+      )
+    );
+  }, [id, setNodes]);
+
   return <div className="bg-card border border-amber-500/30 rounded-2xl min-w-[320px] shadow-2xl shadow-amber-500/10 nodrag-content">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-border/30 bg-gradient-to-r from-amber-500/10 to-transparent rounded-t-2xl">
@@ -67,10 +79,7 @@ export const PromptNode = memo(({
 
       {/* Content */}
       <div className="p-4">
-        <Textarea value={value} onChange={e => {
-        setValue(e.target.value);
-        (data as Record<string, unknown>).value = e.target.value;
-      }} placeholder="Descreva a imagem que você quer criar..." className="min-h-[120px] bg-muted/20 border-border/30 resize-none text-sm rounded-xl focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/50 placeholder:text-muted-foreground/50 nodrag" onMouseDown={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()} />
+        <Textarea value={value} onChange={e => handleValueChange(e.target.value)} placeholder="Descreva a imagem que você quer criar..." className="min-h-[120px] bg-muted/20 border-border/30 resize-none text-sm rounded-xl focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/50 placeholder:text-muted-foreground/50 nodrag" onMouseDown={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()} />
       </div>
 
       <Handle type="source" position={Position.Right} className="!w-4 !h-4 !bg-gradient-to-br !from-amber-500 !to-orange-600 !border-4 !border-card !-right-2 !shadow-lg" />
