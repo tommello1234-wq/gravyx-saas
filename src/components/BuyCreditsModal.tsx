@@ -5,6 +5,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Coins, Sparkles, Zap, Crown, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -76,8 +77,14 @@ interface BuyCreditsModalProps {
 }
 
 export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
+  const { profile } = useAuth();
+
   const handleBuy = (url: string) => {
-    window.open(url, '_blank');
+    // Adiciona email do usuário na URL para identificação no webhook
+    const urlWithEmail = profile?.email 
+      ? `${url}?email=${encodeURIComponent(profile.email)}`
+      : url;
+    window.open(urlWithEmail, '_blank');
   };
 
   return (

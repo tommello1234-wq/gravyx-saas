@@ -41,6 +41,45 @@ export type Database = {
         }
         Relationships: []
       }
+      credit_purchases: {
+        Row: {
+          amount_paid: number
+          created_at: string | null
+          credits_added: number
+          customer_email: string
+          id: string
+          processed_at: string | null
+          product_id: string
+          raw_payload: Json | null
+          transaction_id: string
+          user_id: string
+        }
+        Insert: {
+          amount_paid: number
+          created_at?: string | null
+          credits_added: number
+          customer_email: string
+          id?: string
+          processed_at?: string | null
+          product_id: string
+          raw_payload?: Json | null
+          transaction_id: string
+          user_id: string
+        }
+        Update: {
+          amount_paid?: number
+          created_at?: string | null
+          credits_added?: number
+          customer_email?: string
+          id?: string
+          processed_at?: string | null
+          product_id?: string
+          raw_payload?: Json | null
+          transaction_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       generations: {
         Row: {
           aspect_ratio: string
