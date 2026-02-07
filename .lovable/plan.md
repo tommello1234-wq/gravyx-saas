@@ -1,138 +1,286 @@
 
-# Plano: Botão de Créditos no Header + Auto-Save + Simplificar Modal
+# Plano: Sistema de Templates de Projeto
 
-## Resumo das Mudanças
+## Resumo
 
-1. **Botão "Comprar créditos" ao lado do avatar** (fora do dropdown)
-2. **Auto-save automático na galeria** (todas as imagens salvas automaticamente)
-3. **Simplificar modal de imagem** (remover botão salvar e exibição do prompt)
+Implementar um sistema onde o admin pode criar templates de projetos pré-configurados, e os usuários podem escolher usar um template ou criar do zero ao iniciar um novo projeto.
 
 ---
 
-## 1. Botão "Comprar créditos" no Header
+## 1. Fluxo do Usuário ao Criar Projeto
 
-### Arquivo: `src/components/layout/Header.tsx`
-
-Adicionar um botão estilizado **antes** do avatar do usuário, fora do dropdown:
+Quando o usuário clica em "Novo Projeto" na página de projetos:
 
 ```text
-+--------------------------------------------------+
-| Logo     [Projetos] [Galeria] [Biblioteca]       |
-|                        [Comprar créditos] [Avatar]
-+--------------------------------------------------+
++------------------------------------------+
+|        Como você quer começar?           |
++------------------------------------------+
+|                                          |
+|  [  Começar do Zero  ]                   |
+|                                          |
+|  ─────── ou usar um template ───────     |
+|                                          |
+|  +--------+  +--------+  +--------+      |
+|  |  Img   |  |  Img   |  |  Img   |      |
+|  |Template|  |Template|  |Template|      |
+|  |  Name  |  |  Name  |  |  Name  |      |
+|  +--------+  +--------+  +--------+      |
+|                                          |
++------------------------------------------+
 ```
-
-**Mudanças:**
-- Mover o botão "Comprar créditos" para fora do `DropdownMenuContent`
-- Posicionar ao lado do avatar (à esquerda)
-- Estilo similar à referência: botão com ícone + texto, borda primary
 
 ---
 
-## 2. Auto-Save Automático na Galeria
+## 2. Gestão de Templates no Admin
 
-### Arquivo: `supabase/functions/generate-image/index.ts`
+Na aba "Templates" do painel admin:
 
-Adicionar `saved_to_gallery: true` nos inserts da tabela `generations`:
-
-```typescript
-const generationInserts = successfulImages.map(imageUrl => ({
-  user_id: user.id,
-  project_id: projectId,
-  prompt: prompt,
-  aspect_ratio: aspectRatio || '1:1',
-  image_url: imageUrl,
-  status: 'completed',
-  saved_to_gallery: true  // <-- Adicionar
-}));
-```
-
-### Arquivo: `src/components/nodes/OutputNode.tsx`
-
-- Remover a função `handleSaveToGallery`
-- Remover a prop `onSaveToGallery` do modal
-- Remover o indicador de "salvo" (checkmark verde) das imagens
-- Simplificar para que todas as imagens já sejam consideradas salvas
-
----
-
-## 3. Simplificar Modal de Imagem
-
-### Arquivo: `src/components/nodes/OutputImageModal.tsx`
-
-**Remover:**
-- Toda a seção do prompt (linhas 101-118)
-- Botão "Salvar na Galeria" (linhas 122-136)
-- Props `onSaveToGallery` e estado `isSaving`
-- Função `handleSaveToGallery`
-- Função `handleCopyPrompt`
-- Metadado de proporção (manter apenas data de geração)
-
-**Manter apenas:**
-- Visualização da imagem
-- Botão "Baixar"
-- Botão "Excluir"
-- Data de geração
-
-**Layout final do modal:**
 ```text
-+----------------------------------+
-|  Visualizar Imagem           [X] |
-+----------------------------------+
-|                                  |
-|         [IMAGEM]                 |
-|                                  |
-+----------------------------------+
-|   [Baixar]        [Excluir]      |
-+----------------------------------+
-|   Gerado em: 07/02/2026, 10:30   |
-+----------------------------------+
++------------------------------------------+
+| Templates de Projeto         [+ Criar]   |
++------------------------------------------+
+| +--------+ +--------------------------+  |
+| |  Img   | | Nome: Template Produto   |  |
+| |        | | Descrição: Para fotos... |  |
+| +--------+ | Criado: 07/02/2026       |  |
+|            | [Editar] [Excluir]       |  |
++------------------------------------------+
 ```
+
+**Fluxo de criação de template:**
+1. Admin clica em "Criar Template"
+2. Abre modal com:
+   - Nome do template
+   - Descrição
+   - Upload de thumbnail (imagem de preview)
+   - Seletor de projeto existente para importar o canvas_state
+3. Admin salva e o template fica disponível para todos os usuários
 
 ---
 
-## Arquivos a Modificar
+## 3. Arquivos a Modificar
 
 | Arquivo | Mudanças |
 |---------|----------|
-| `src/components/layout/Header.tsx` | Botão "Comprar créditos" fora do dropdown, ao lado do avatar |
-| `supabase/functions/generate-image/index.ts` | Adicionar `saved_to_gallery: true` |
-| `src/components/nodes/OutputNode.tsx` | Remover lógica de salvar manualmente, remover indicador de salvo |
-| `src/components/nodes/OutputImageModal.tsx` | Remover prompt, remover botão salvar, simplificar interface |
+| `src/pages/Projects.tsx` | Substituir dialog de criação por modal com opção de templates |
+| `src/pages/Admin.tsx` | Implementar aba de Templates completa (CRUD) |
+
+### Novo Componente
+
+| Arquivo | Descrição |
+|---------|-----------|
+| `src/components/CreateProjectModal.tsx` | Modal com escolha entre "do zero" e templates |
 
 ---
 
-## Detalhes Técnicos
+## 4. Detalhes Técnicos
 
-### Interface Simplificada do OutputImageModal
+### CreateProjectModal.tsx
 
 ```typescript
-interface OutputImageModalProps {
-  image: NodeImage | null;
-  isOpen: boolean;
-  onClose: () => void;
-  onDelete: (image: NodeImage) => void;
-  // Removido: onSaveToGallery
+interface CreateProjectModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onCreateFromScratch: (name: string) => void;
+  onCreateFromTemplate: (name: string, templateId: string) => void;
 }
 ```
 
-### Novo Layout do Header (área direita)
+**Estados:**
+- `step`: 'choose' | 'name' (escolher template ou digitar nome)
+- `selectedTemplate`: template selecionado (ou null para do zero)
+- `projectName`: nome do novo projeto
 
+**Fluxo:**
+1. Usuário escolhe "do zero" ou seleciona um template
+2. Digita o nome do projeto
+3. Clica em "Criar"
+4. Se template selecionado, o `canvas_state` do template é copiado para o novo projeto
+
+### Mudanças no Projects.tsx
+
+**createMutation atualizada:**
 ```typescript
-<div className="flex items-center gap-3">
-  {/* Botão Comprar Créditos */}
-  <Button
-    variant="outline"
-    className="rounded-full border-primary/50 hover:bg-primary/10"
-    onClick={() => setShowBuyCredits(true)}
-  >
-    <CreditCard className="mr-2 h-4 w-4" />
-    Comprar créditos
-  </Button>
+mutationFn: async ({ name, templateId }: { name: string; templateId?: string }) => {
+  let canvasState = { nodes: [], edges: [] };
   
-  {/* Avatar com Dropdown */}
-  <DropdownMenu>
-    ...
-  </DropdownMenu>
-</div>
+  if (templateId) {
+    // Buscar canvas_state do template
+    const { data: template } = await supabase
+      .from('project_templates')
+      .select('canvas_state')
+      .eq('id', templateId)
+      .single();
+    
+    if (template?.canvas_state) {
+      canvasState = template.canvas_state as { nodes: [], edges: [] };
+      // Regenerar IDs dos nós para evitar conflitos
+      canvasState.nodes = canvasState.nodes.map(node => ({
+        ...node,
+        id: `${node.type}-${Date.now()}-${Math.random()}`
+      }));
+    }
+  }
+  
+  const { data, error } = await supabase
+    .from('projects')
+    .insert({ name, user_id: user?.id, canvas_state: canvasState })
+    .select()
+    .single();
+  
+  if (error) throw error;
+  return data;
+}
 ```
+
+### Mudanças no Admin.tsx - Aba Templates
+
+**Novos estados:**
+```typescript
+const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+const [newTemplate, setNewTemplate] = useState({
+  name: '',
+  description: '',
+  thumbnail_url: '',
+  canvas_state: { nodes: [], edges: [] }
+});
+const [selectedProjectForTemplate, setSelectedProjectForTemplate] = useState<string | null>(null);
+```
+
+**Query para buscar projetos do admin (para importar canvas):**
+```typescript
+const { data: adminProjects } = useQuery({
+  queryKey: ['admin-projects'],
+  queryFn: async () => {
+    const { data, error } = await supabase
+      .from('projects')
+      .select('id, name, canvas_state')
+      .eq('user_id', user?.id)
+      .order('updated_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
+});
+```
+
+**Query para buscar templates:**
+```typescript
+const { data: templates, isLoading: templatesLoading } = useQuery({
+  queryKey: ['admin-templates'],
+  queryFn: async () => {
+    const { data, error } = await supabase
+      .from('project_templates')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
+});
+```
+
+**Mutation para criar template:**
+```typescript
+const createTemplateMutation = useMutation({
+  mutationFn: async (template: typeof newTemplate) => {
+    const { error } = await supabase
+      .from('project_templates')
+      .insert({
+        name: template.name,
+        description: template.description,
+        thumbnail_url: template.thumbnail_url,
+        canvas_state: template.canvas_state,
+        created_by: user?.id
+      });
+    if (error) throw error;
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['admin-templates'] });
+    setTemplateDialogOpen(false);
+    resetTemplateForm();
+    toast({ title: 'Template criado!' });
+  },
+});
+```
+
+**Mutation para deletar template:**
+```typescript
+const deleteTemplateMutation = useMutation({
+  mutationFn: async (id: string) => {
+    const { error } = await supabase
+      .from('project_templates')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['admin-templates'] });
+    toast({ title: 'Template excluído!' });
+  },
+});
+```
+
+---
+
+## 5. UI do Modal de Criação de Template (Admin)
+
+```text
++------------------------------------------+
+|          Criar Novo Template         [X] |
++------------------------------------------+
+|                                          |
+|  Nome do Template                        |
+|  [________________________________]      |
+|                                          |
+|  Descrição                               |
+|  [________________________________]      |
+|  [________________________________]      |
+|                                          |
+|  Thumbnail                               |
+|  +-------------------+                   |
+|  |     [Upload]      |                   |
+|  +-------------------+                   |
+|                                          |
+|  Importar canvas de um projeto           |
+|  [Selecione um projeto ▼]               |
+|                                          |
++------------------------------------------+
+|                    [Cancelar] [Criar]    |
++------------------------------------------+
+```
+
+---
+
+## 6. Storage para Thumbnails
+
+O bucket `reference-images` já é público e pode ser reutilizado para thumbnails de templates, ou podemos usar uma pasta específica dentro dele.
+
+---
+
+## 7. Layout Visual dos Templates (Para Usuários)
+
+Cards estilizados mostrando:
+- Thumbnail do template
+- Nome
+- Descrição curta
+- Botão "Usar este template"
+
+```text
++------------------+
+|    [Thumbnail]   |
+|                  |
++------------------+
+| Template Name    |
+| Descrição curta  |
+| [Usar template]  |
++------------------+
+```
+
+---
+
+## Resumo de Arquivos
+
+| Ação | Arquivo |
+|------|---------|
+| Criar | `src/components/CreateProjectModal.tsx` |
+| Modificar | `src/pages/Projects.tsx` |
+| Modificar | `src/pages/Admin.tsx` |
