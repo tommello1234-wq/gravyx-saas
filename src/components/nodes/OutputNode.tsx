@@ -32,7 +32,8 @@ export const OutputNode = memo(({
   id
 }: NodeProps) => {
   const nodeData = data as unknown as OutputNodeData;
-  const images = normalizeImages(nodeData.images);
+  // Reverse to show newest images first
+  const images = normalizeImages(nodeData.images).slice().reverse();
   const {
     deleteElements,
     setNodes,
@@ -126,10 +127,10 @@ export const OutputNode = memo(({
         </div>
 
         {/* Content */}
-        <div className="p-4">
+        <div className="p-4 nowheel" onWheel={(e) => e.stopPropagation()}>
           {images.length > 0 ? <div className="space-y-4">
               {images.length > 6 ? (
-                <ScrollArea className="h-[200px]">
+                <ScrollArea className="h-[200px] nowheel" onWheel={(e) => e.stopPropagation()}>
                   <div className="grid grid-cols-2 gap-2 pr-2">
                     {images.map((image, index) => (
                       <div 
