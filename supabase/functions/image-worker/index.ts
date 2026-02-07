@@ -133,7 +133,9 @@ serve(async (req) => {
     const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     // Claim the next available job
-    const { data: job, error: claimError } = await supabaseAdmin.rpc('claim_next_job');
+    const { data: job, error: claimError } = await supabaseAdmin.rpc('claim_next_job', {
+      p_worker_id: crypto.randomUUID()
+    });
     
     if (claimError) {
       console.error("Error claiming job:", claimError);
