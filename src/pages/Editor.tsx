@@ -136,6 +136,8 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
   const lastSavedDataRef = useRef<string>('');
   const toastRef = useRef(toast);
   const setNodesRef = useRef(setNodes);
+  const pollingFallbackRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSyncedAtRef = useRef<string>('');
 
   // Keep refs in sync
   useEffect(() => {
@@ -514,6 +516,79 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     window.addEventListener(GENERATE_IMAGE_EVENT, handler);
     return () => window.removeEventListener(GENERATE_IMAGE_EVENT, handler);
   }, [handleGenerate]);
+
+  // POLLING FALLBACK: Check for new images every 5 seconds when there are pending jobs
+  useEffect(() => {
+    if (!projectId || pendingJobs.length === 0) {
+      if (pollingFallbackRef.current) {
+        clearInterval(pollingFallbackRef.current);
+        pollingFallbackRef.current = null;
+      }
+      return;
+    }
+
+    const checkForNewImages = async () => {
+      try {
+        // Fetch recent generations from DB
+        const { data: generations, error } = await supabase
+          .from('generations')
+          .select('image_url, prompt, aspect_ratio, created_at')
+          .eq('project_id', projectId)
+          .eq('status', 'completed')
+          .order('created_at', { ascending: false })
+          .limit(20);
+
+        if (error || !generations) return;
+
+        // Check if we have new images since last sync
+        const newestCreatedAt = generations[0]?.created_at || '';
+        if (newestCreatedAt && newestCreatedAt !== lastSyncedAtRef.current) {
+          console.log('Polling fallback: detected new images, syncing...');
+          lastSyncedAtRef.current = newestCreatedAt;
+
+          // Get all images and update output node
+          const allImages = generations.map(gen => ({
+            url: gen.image_url,
+            prompt: gen.prompt,
+            aspectRatio: gen.aspect_ratio,
+            savedToGallery: true,
+            generatedAt: gen.created_at,
+          })).reverse();
+
+          setNodesRef.current((nds) =>
+            nds.map((n) => {
+              if (n.type === 'output') {
+                return {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    images: allImages,
+                  },
+                };
+              }
+              return n;
+            })
+          );
+        }
+      } catch (err) {
+        console.error('Polling fallback error:', err);
+      }
+    };
+
+    // Initial check after 2 seconds
+    const initialTimeout = setTimeout(checkForNewImages, 2000);
+    
+    // Then poll every 5 seconds
+    pollingFallbackRef.current = setInterval(checkForNewImages, 5000);
+
+    return () => {
+      clearTimeout(initialTimeout);
+      if (pollingFallbackRef.current) {
+        clearInterval(pollingFallbackRef.current);
+        pollingFallbackRef.current = null;
+      }
+    };
+  }, [projectId, pendingJobs.length]);
 
   const addNode = useCallback(
     (type: string) => {

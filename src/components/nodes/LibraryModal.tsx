@@ -112,7 +112,7 @@ export function LibraryModal({ open, onOpenChange, onSelect }: LibraryModalProps
           ))}
         </div>
 
-        <ScrollArea className="h-[45vh] pr-4">
+        <ScrollArea className="h-[45vh] pr-4 nowheel" onWheel={(e) => e.stopPropagation()}>
           {isLoading ? (
             <div className="flex justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
