@@ -14,6 +14,7 @@ import Editor from "./pages/Editor";
 import Gallery from "./pages/Gallery";
 import Library from "./pages/Library";
 import Admin from "./pages/Admin";
+import TemplateEditor from "./pages/TemplateEditor";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -66,6 +67,14 @@ const App = () => (
               element={
                 <ProtectedRoute requireAdmin>
                   <Admin />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/admin/template-editor" 
+              element={
+                <ProtectedRoute requireAdmin>
+                  <TemplateEditor />
                 </ProtectedRoute>
               } 
             />

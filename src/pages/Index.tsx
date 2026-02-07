@@ -107,9 +107,17 @@ export default function Index() {
           duration: 0.6
         }} className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-20 max-w-3xl mx-auto">
             {stats.map((stat, index) => {
-            const Icon = stat.icon;
-            return;
-          })}
+              const Icon = stat.icon;
+              return (
+                <div key={stat.label} className="glass-card p-6 text-center">
+                  <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                    <Icon className="h-6 w-6 text-primary" />
+                  </div>
+                  <div className="text-3xl font-bold mb-1">{stat.value}</div>
+                  <div className="text-sm text-muted-foreground">{stat.label}</div>
+                </div>
+              );
+            })}
           </motion.div>
         </div>
       </section>
