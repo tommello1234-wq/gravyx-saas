@@ -1,101 +1,167 @@
 
-Contexto do problema (o “porquê” caiu de novo)
-- O seu Postgres está ficando “unhealthy” por overload + timeouts, e isso está sendo disparado principalmente por payloads gigantes em `projects.canvas_state`.
-- Achei no banco que existem pelo menos 11 projetos com Base64 dentro do `canvas_state` (`canvas_state::text like '%data:image%'`).
-- E existem projetos com `canvas_state` absurdamente grande (ex.: ~37.7 milhões de caracteres, ~18.3M, ~14.6M…). Um UPDATE desse campo reescreve dezenas de MB.
-- Além disso, a página `/projects` hoje faz `.select('*')` na tabela `projects` (ou seja: ela puxa `canvas_state` de TODOS os projetos na listagem). Se você tem 1–3 projetos gigantes, só entrar/atualizar a listagem já vira uma “bomba” de leitura e pode derrubar o banco.
-- Quando você gera imagens, o Editor atualiza o Output node (que contém `images`) e força um `saveProject` logo após a geração. Se aquele projeto ainda tinha Base64 antigo no Output, o save tenta gravar tudo de novo (gigante) e começa a estourar `statement timeout`, levando a “database not accepting connections”.
+# Plano: Implementar Sistema Assíncrono de Geração de Imagens
 
-Objetivo da correção
-1) Parar de “carregar e gravar caminhões de dados” no Postgres.
-2) Garantir que geração de imagens não cause UPDATE gigantes em `projects`.
-3) Limpar automaticamente os projetos que já estão “inflados” (remover Base64 do canvas_state) para estabilizar definitivamente.
-4) Reduzir requisições e picos de carga durante geração.
+## Resumo
 
-Mudanças (implementação)
+O Supabase já criou a estrutura do banco de dados (colunas `result_urls`, `result_count`, `next_run_at` e funções SQL). Agora vou implementar as Edge Functions e atualizar o frontend para usar o sistema de fila assíncrona.
 
-A) Cortar leituras gigantes (impacto imediato)
-1. `src/pages/Projects.tsx`
-   - Trocar `.select('*')` por algo como: `select('id,name,updated_at,created_at')`
-   - Resultado: a listagem não puxa `canvas_state` (nem TOAST gigantes), reduzindo muito I/O e tempo de query.
-2. `src/pages/Editor.tsx`
-   - Trocar `.select('*')` por `select('name, canvas_state')`
-   - Resultado: reduz payload desnecessário.
+---
 
-B) Nunca mais persistir imagens (nem Base64) dentro de `projects.canvas_state`
-3. `src/pages/Editor.tsx` (núcleo do fix)
-   - Criar uma função de “persistência limpa” do canvas:
-     - Salvar apenas campos essenciais do node (ex.: `id`, `type`, `position`, `data` filtrado).
-     - Remover campos transitórios do ReactFlow (ex.: `selected`, `dragging`, `measured`, `width/height`, etc.).
-     - Para node `output`: não persistir `data.images` no banco (ou, alternativamente, persistir no máximo um histórico bem pequeno e SEM data:image).
-   - Ajustar o `saveProject` para usar esse “estado limpo” antes de `JSON.stringify` e antes do UPDATE.
-   - Remover o “force save” após geração:
-     - Hoje existe `setTimeout(() => saveProject(updated, currentEdges), 100);`
-     - Isso é perigoso porque grava imediatamente e pode tentar salvar um canvas ainda gigante.
-     - Depois do refactor, a geração não precisa disparar save (as imagens ficam no estado local; o canvas persistido não inclui elas).
+## O que será feito
 
-C) Auto-repair (limpar os projetos já gigantes) sem você ter que mexer no Supabase manualmente
-4. `src/pages/Editor.tsx` (no load do projeto)
-   - Ao carregar `canvas_state`, detectar:
-     - se contém `data:image` (Base64) OU
-     - se o tamanho serializado passa de um limite (ex.: > 1MB).
-   - Se detectar, fazer:
-     1) Sanitizar em memória (remover `data.images` e qualquer `url` que comece com `data:image`).
-     2) Atualizar o projeto UMA vez no Supabase com o canvas_state sanitizado (agora pequeno).
-     3) Mostrar um toast/aviso: “Otimizamos este projeto removendo imagens antigas do canvas para manter performance. Suas imagens ficam na Galeria.”
-   - Isso “desinfla” os 11 projetos problemáticos e estabiliza o banco. É o ponto mais importante.
+### 1. Criar Edge Function `image-worker`
 
-D) OutputNode continua mostrando imagens, mas via fonte correta (tabela `generations`)
-5. `src/pages/Editor.tsx` (UX para não perder histórico)
-   - Em vez de depender de imagens persistidas no `canvas_state`, preencher o Output node em runtime buscando em `generations` por `project_id` (ex.: últimas 20–50).
-   - As novas imagens geradas entram instantaneamente no Output node (estado local) e opcionalmente a lista pode ser “mesclada” com as vindas do banco.
-   - Resultado: histórico continua existindo, mas não explode `projects.canvas_state`.
+**Arquivo:** `supabase/functions/image-worker/index.ts`
 
-E) Otimizações adicionais para reduzir ainda mais carga durante geração
-6. `supabase/functions/generate-image/index.ts`
-   - Remover o SELECT final de créditos:
-     - O RPC `decrement_credits` retorna `integer` (novos créditos). Podemos usar esse retorno e computar reembolso localmente, evitando uma query extra por request.
-   - Reduzir paralelismo agressivo:
-     - Hoje `Promise.all` gera+upload em paralelo (até 4 uploads simultâneos por request).
-     - Implementar um limitador de concorrência (ex.: 2 por vez) ou fazer upload sequencial para evitar picos (especialmente com 4 contas gerando ao mesmo tempo).
-   - Resultado: menos burst no Storage (que também escreve metadata no DB) e menos chance de spike.
+Esta função será responsável por processar jobs em background:
 
-F) “Higiene” em telas admin/listagens que usam select('*') (prevenção de futuras bombas)
-7. `src/components/admin/TemplatesTab.tsx`
-   - Trocar `.select('*')` por colunas necessárias (id, name, description, thumbnail_url, created_at, created_by).
-   - Mesmo que hoje templates estejam pequenos, evita repetir o mesmo erro.
+- Chama `claim_next_job()` para pegar o próximo job disponível
+- Extrai payload (prompt, aspectRatio, quantity, imageUrls)
+- Gera imagens chamando o AI Gateway (Lovable AI)
+- Faz upload para Storage (bucket `generations`)
+- Registra imagens na tabela `generations`
+- Atualiza job com `complete_job_with_result()`
+- Em caso de erro: incrementa `retries`, define `next_run_at` com backoff exponencial
 
-Sequência recomendada (para reduzir risco)
-1) Ajustar `/projects` para não selecionar `canvas_state` (mitigação imediata).
-2) Refatorar persistência do Editor para estado limpo + remover forced save após geração.
-3) Implementar auto-repair no load do Editor e publicar.
-4) Ajustar Output para carregar histórico via `generations` (mantém UX).
-5) Otimizar edge function (reduzir uma query + limitar concorrência).
-6) Re-testar carga com múltiplas contas.
+**Lógica de Retry/Backoff:**
+- Retry 1: espera 5 segundos
+- Retry 2: espera 10 segundos
+- Retry 3: espera 20 segundos
+- Após 3 tentativas: marca como `failed` e reembolsa créditos
 
-Como vamos validar (teste de aceitação)
-- Teste 1 (estabilidade): abrir `/projects` com vários projetos e confirmar que não há travamentos nem picos.
-- Teste 2 (geração): em 4 contas, gerar 20+ imagens (4 por vez) e verificar:
-  - DB não entra em “unhealthy”
-  - logs não mostram “canceling statement due to statement timeout”
-  - requests no DB não disparam em avalanche
-- Teste 3 (auto-repair): abrir um dos projetos grandes (os que tinham base64) e confirmar:
-  - Ele abre
-  - Aparece aviso de otimização
-  - Depois disso, o tamanho do `canvas_state` cai drasticamente e o projeto deixa de “derrubar” o banco.
+---
 
-Riscos/observações
-- Ao remover `data.images` do `canvas_state`, o usuário deixa de “reabrir e ver imagens antigas” diretamente do canvas. Por isso vamos preencher o Output via `generations` (histórico continua existindo).
-- O primeiro load de um projeto gigantesco ainda precisa ler aquele JSON grande uma vez (até o auto-repair salvar a versão reduzida). Depois disso, fica leve permanentemente.
+### 2. Refatorar Edge Function `generate-image`
 
-Arquivos que serão alterados
-- `src/pages/Projects.tsx` (parar `.select('*')` em `projects`)
-- `src/pages/Editor.tsx` (sanitização de persistência, auto-repair, remover forced save, carregar imagens via `generations`)
-- `src/components/admin/TemplatesTab.tsx` (parar `.select('*')` em `project_templates`)
-- `supabase/functions/generate-image/index.ts` (reduzir queries e limitar concorrência)
+**Arquivo:** `supabase/functions/generate-image/index.ts`
 
-Resultado esperado
-- Parar de gerar UPDATEs de dezenas de MB no `projects.canvas_state`.
-- Queda drástica de timeouts/“db not accepting connections”.
-- Banco deixa de cair mesmo com geração simultânea em múltiplas contas.
-- Requisições do “Database requests” passam a refletir o necessário (geração + storage) sem avalanche por canvas_state gigante.
+Transformar de "geração síncrona" para "enqueue only":
+
+**Antes (síncrono):**
+```
+Usuário → generate-image → AI Gateway → Storage → Resposta
+          (espera 30-60s)
+```
+
+**Depois (assíncrono):**
+```
+Usuário → generate-image → Insere job → Resposta imediata
+          (< 1 segundo)
+```
+
+**Fluxo simplificado:**
+1. Validar usuário e créditos
+2. Deduzir créditos atomicamente
+3. Inserir job na tabela `jobs` com payload
+4. Retornar `{ jobId, status: 'queued' }` imediatamente
+
+---
+
+### 3. Atualizar `config.toml`
+
+**Arquivo:** `supabase/config.toml`
+
+Adicionar configuração do `image-worker`:
+
+```toml
+[functions.image-worker]
+verify_jwt = false
+```
+
+---
+
+### 4. Atualizar Frontend (`Editor.tsx`)
+
+**Arquivo:** `src/pages/Editor.tsx`
+
+Mudanças principais:
+
+1. **Estado de jobs pendentes:**
+   - Novo estado `pendingJobs` para rastrear jobs em andamento
+   
+2. **Modificar `handleGenerate`:**
+   - Chamar `generate-image` (agora retorna jobId)
+   - Adicionar jobId à lista de pendentes
+   - Mostrar toast "Geração iniciada"
+
+3. **Implementar Supabase Realtime:**
+   - Assinar canal `postgres_changes` para a tabela `jobs`
+   - Filtrar por `project_id`
+   - Quando job for `completed`: adicionar imagens ao OutputNode
+   - Quando job for `failed`: mostrar erro
+
+4. **Implementar Polling do Worker:**
+   - Enquanto houver jobs pendentes, chamar `image-worker` a cada 3 segundos
+   - Isso garante que os jobs sejam processados mesmo sem Realtime
+
+---
+
+### 5. Atualizar `SettingsNode.tsx`
+
+**Arquivo:** `src/components/nodes/SettingsNode.tsx`
+
+Mostrar estados intermediários:
+- "Gerando..." quando há jobs em `processing`
+- "Na fila..." quando há jobs em `queued`
+- Indicador de progresso (ex: "2 de 4 imagens geradas")
+
+---
+
+## Arquitetura Final
+
+```text
+┌─────────────┐    enqueue    ┌─────────────┐
+│   Frontend  │──────────────>│    jobs     │
+│  (Editor)   │               │   (table)   │
+└──────┬──────┘               └──────┬──────┘
+       │                             │
+       │  Realtime                   │ claim_next_job()
+       │  (status updates)           │
+       │                             v
+       │                    ┌─────────────────┐
+       └<───────────────────│  image-worker   │
+                            │ (Edge Function) │
+                            └────────┬────────┘
+                                     │
+                          ┌──────────┼──────────┐
+                          v          v          v
+                    ┌─────────┐ ┌─────────┐ ┌──────────┐
+                    │ AI API  │ │ Storage │ │generations│
+                    └─────────┘ └─────────┘ └──────────┘
+```
+
+---
+
+## Benefícios
+
+| Antes (Síncrono) | Depois (Assíncrono) |
+|------------------|---------------------|
+| Timeout após 30-60s | Resposta em < 1s |
+| 4 usuários = 4 conexões bloqueadas | Fila processa ordenadamente |
+| Falha = perda total | Retry automático com backoff |
+| Sem visibilidade | Jobs rastreáveis no banco |
+
+---
+
+## Arquivos a criar/modificar
+
+| Arquivo | Ação |
+|---------|------|
+| `supabase/functions/image-worker/index.ts` | **Criar** |
+| `supabase/functions/generate-image/index.ts` | **Modificar** (enqueue only) |
+| `supabase/config.toml` | **Modificar** (adicionar image-worker) |
+| `src/pages/Editor.tsx` | **Modificar** (Realtime + polling + jobs pendentes) |
+| `src/components/nodes/SettingsNode.tsx` | **Modificar** (estados de fila) |
+
+---
+
+## Resposta sugerida para o Supabase
+
+Você pode responder ao Supabase:
+
+> "Perfeito! O banco de dados está pronto. Vou implementar o restante pelo Lovable:
+> - Edge Function `image-worker` com a lógica real de geração
+> - Refatorar `generate-image` para enqueue-only
+> - Atualizar o frontend com Realtime e polling
+>
+> Não precisa fazer mais nada por aí. Obrigado!"
