@@ -3,44 +3,35 @@ import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
-import { 
-  Sparkles, 
-  Wand2, 
-  Images, 
-  Layers, 
-  ArrowRight,
-  Zap,
-  Users,
-  ImagePlus
-} from 'lucide-react';
-
-const stats = [
-  { label: 'Imagens geradas', value: '10K+', icon: Images },
-  { label: 'Usuários ativos', value: '500+', icon: Users },
-  { label: 'Tempo médio', value: '<10s', icon: Zap },
-];
-
-const steps = [
-  {
-    icon: Layers,
-    title: 'Monte seu fluxo',
-    description: 'Arraste e conecte nós para criar seu workflow de geração de imagens.',
-  },
-  {
-    icon: Wand2,
-    title: 'Configure os prompts',
-    description: 'Adicione prompts, imagens de referência e ajuste as configurações.',
-  },
-  {
-    icon: ImagePlus,
-    title: 'Gere suas imagens',
-    description: 'Clique em gerar e veja a magia acontecer em segundos.',
-  },
-];
-
+import { Sparkles, Wand2, Images, Layers, ArrowRight, Zap, Users, ImagePlus } from 'lucide-react';
+const stats = [{
+  label: 'Imagens geradas',
+  value: '10K+',
+  icon: Images
+}, {
+  label: 'Usuários ativos',
+  value: '500+',
+  icon: Users
+}, {
+  label: 'Tempo médio',
+  value: '<10s',
+  icon: Zap
+}];
+const steps = [{
+  icon: Layers,
+  title: 'Monte seu fluxo',
+  description: 'Arraste e conecte nós para criar seu workflow de geração de imagens.'
+}, {
+  icon: Wand2,
+  title: 'Configure os prompts',
+  description: 'Adicione prompts, imagens de referência e ajuste as configurações.'
+}, {
+  icon: ImagePlus,
+  title: 'Gere suas imagens',
+  description: 'Clique em gerar e veja a magia acontecer em segundos.'
+}];
 export default function Index() {
-  return (
-    <div className="min-h-screen bg-background">
+  return <div className="min-h-screen bg-background">
       <Header />
       
       {/* Hero Section */}
@@ -48,22 +39,30 @@ export default function Index() {
         {/* Background effects */}
         <div className="absolute inset-0 grid-pattern opacity-50" />
         <div className="orb w-[600px] h-[600px] bg-primary/20 -top-64 -right-64" />
-        <div className="orb w-[500px] h-[500px] bg-secondary/20 -bottom-32 -left-32" style={{ animationDelay: '3s' }} />
+        <div className="orb w-[500px] h-[500px] bg-secondary/20 -bottom-32 -left-32" style={{
+        animationDelay: '3s'
+      }} />
         
         <div className="container relative">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="max-w-4xl mx-auto text-center"
-          >
+          <motion.div initial={{
+          opacity: 0,
+          y: 20
+        }} animate={{
+          opacity: 1,
+          y: 0
+        }} transition={{
+          duration: 0.6
+        }} className="max-w-4xl mx-auto text-center">
             {/* Badge */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.2 }}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 mb-8"
-            >
+            <motion.div initial={{
+            opacity: 0,
+            scale: 0.9
+          }} animate={{
+            opacity: 1,
+            scale: 1
+          }} transition={{
+            delay: 0.2
+          }} className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 mb-8">
               <Sparkles className="h-4 w-4 text-primary" />
               <span className="text-sm font-medium text-primary">Alimentado por IA</span>
             </motion.div>
@@ -97,28 +96,20 @@ export default function Index() {
           </motion.div>
 
           {/* Stats */}
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4, duration: 0.6 }}
-            className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-20 max-w-3xl mx-auto"
-          >
+          <motion.div initial={{
+          opacity: 0,
+          y: 40
+        }} animate={{
+          opacity: 1,
+          y: 0
+        }} transition={{
+          delay: 0.4,
+          duration: 0.6
+        }} className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-20 max-w-3xl mx-auto">
             {stats.map((stat, index) => {
-              const Icon = stat.icon;
-              return (
-                <motion.div
-                  key={stat.label}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.5 + index * 0.1 }}
-                  className="glass-card p-6 text-center"
-                >
-                  <Icon className="h-8 w-8 text-primary mx-auto mb-3" />
-                  <div className="text-3xl font-bold gradient-text mb-1">{stat.value}</div>
-                  <div className="text-sm text-muted-foreground">{stat.label}</div>
-                </motion.div>
-              );
-            })}
+            const Icon = stat.icon;
+            return;
+          })}
           </motion.div>
         </div>
       </section>
@@ -126,12 +117,15 @@ export default function Index() {
       {/* How it Works */}
       <section className="py-24 relative">
         <div className="container">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-center mb-16"
-          >
+          <motion.div initial={{
+          opacity: 0,
+          y: 20
+        }} whileInView={{
+          opacity: 1,
+          y: 0
+        }} viewport={{
+          once: true
+        }} className="text-center mb-16">
             <h2 className="text-4xl font-bold mb-4">
               Como <span className="gradient-text">funciona</span>
             </h2>
@@ -142,16 +136,18 @@ export default function Index() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {steps.map((step, index) => {
-              const Icon = step.icon;
-              return (
-                <motion.div
-                  key={step.title}
-                  initial={{ opacity: 0, y: 30 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: index * 0.2 }}
-                  className="glass-card p-8 text-center relative group"
-                >
+            const Icon = step.icon;
+            return <motion.div key={step.title} initial={{
+              opacity: 0,
+              y: 30
+            }} whileInView={{
+              opacity: 1,
+              y: 0
+            }} viewport={{
+              once: true
+            }} transition={{
+              delay: index * 0.2
+            }} className="glass-card p-8 text-center relative group">
                   {/* Step number */}
                   <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-gradient-primary flex items-center justify-center text-sm font-bold text-white">
                     {index + 1}
@@ -163,9 +159,8 @@ export default function Index() {
                   
                   <h3 className="text-xl font-semibold mb-3">{step.title}</h3>
                   <p className="text-muted-foreground">{step.description}</p>
-                </motion.div>
-              );
-            })}
+                </motion.div>;
+          })}
           </div>
         </div>
       </section>
@@ -175,12 +170,15 @@ export default function Index() {
         <div className="orb w-[400px] h-[400px] bg-accent/20 top-0 right-0" />
         
         <div className="container relative">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            viewport={{ once: true }}
-            className="glass-card p-12 text-center max-w-3xl mx-auto gradient-border"
-          >
+          <motion.div initial={{
+          opacity: 0,
+          scale: 0.95
+        }} whileInView={{
+          opacity: 1,
+          scale: 1
+        }} viewport={{
+          once: true
+        }} className="glass-card p-12 text-center max-w-3xl mx-auto gradient-border">
             <Sparkles className="h-12 w-12 text-primary mx-auto mb-6" />
             <h2 className="text-4xl font-bold mb-4">
               Pronto para começar?
@@ -199,6 +197,5 @@ export default function Index() {
       </section>
 
       <Footer />
-    </div>
-  );
+    </div>;
 }
