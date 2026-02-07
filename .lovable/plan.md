@@ -1,257 +1,260 @@
 
-
-# Plano: Editor de Templates no Admin
+# Plano: Integração Webhook Ticto para Créditos Automáticos
 
 ## Resumo
 
-Criar uma página de editor dedicada para montar templates diretamente no painel admin. Quando você clicar em "Editar" ou "Criar Template", vai abrir um editor completo com o canvas de nós, igual ao editor de projetos, mas salvando na tabela `project_templates`.
+Implementar um sistema completo de webhook para receber notificações de pagamento da Ticto e adicionar créditos automaticamente quando uma compra for aprovada ("Venda Realizada").
 
 ---
 
-## Fluxo do Admin
+## Arquitetura
 
 ```text
-Aba Templates                    Página TemplateEditor
-+---------------------------+    +----------------------------------+
-| Templates     [+ Criar]   |    | [< Voltar]  Template X   [Salvo] |
-|                           |    +----------------------------------+
-| +--------+  +--------+    |    |  [Toolbar]                       |
-| |Template|  |Template|    | -> |                                  |
-| |  Name  |  |  Name  |    |    |     [Canvas ReactFlow]           |
-| |[Editar]|  |[Editar]|    |    |                                  |
-| +--------+  +--------+    |    |                                  |
-+---------------------------+    +----------------------------------+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          FLUXO DE COMPRA                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  1. Usuário clica        2. Ticto processa      3. Webhook envia       │
+│     em "Comprar"            pagamento              notificação         │
+│                                                                         │
+│   ┌─────────┐           ┌──────────────┐       ┌─────────────────┐     │
+│   │ App Web │ ────────> │ Ticto        │ ────> │ Edge Function   │     │
+│   │         │           │ payment.ticto│       │ ticto-webhook   │     │
+│   └─────────┘           └──────────────┘       └────────┬────────┘     │
+│                                                         │              │
+│                         4. Adiciona créditos            │              │
+│                                                         v              │
+│                                                 ┌───────────────┐      │
+│                                                 │   Supabase    │      │
+│                                                 │  - profiles   │      │
+│                                                 │  - purchases  │      │
+│                                                 └───────────────┘      │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
-
-**Fluxo:**
-1. Admin clica em "Criar Template" ou "Editar" em um template existente
-2. Abre a página `/admin/template-editor?id=xxx` (ou sem id para novo)
-3. Admin monta o canvas com os nós (Prompt, Mídia, Settings, Output)
-4. Auto-save salva diretamente na tabela `project_templates`
-5. Botão "Voltar" retorna para o painel admin
 
 ---
 
-## Arquivos a Criar/Modificar
+## O que será criado
 
-| Ação | Arquivo | Descrição |
-|------|---------|-----------|
-| Criar | `src/pages/TemplateEditor.tsx` | Página com editor de canvas para templates |
-| Modificar | `src/components/admin/TemplatesTab.tsx` | Adicionar botão "Editar" e navegação |
-| Modificar | `src/App.tsx` | Adicionar rota `/admin/template-editor` |
+| Tipo | Nome | Descrição |
+|------|------|-----------|
+| Edge Function | `ticto-webhook` | Recebe webhooks da Ticto e processa pagamentos |
+| Tabela DB | `credit_purchases` | Registra todas as compras de créditos |
+| Alteração | `BuyCreditsModal.tsx` | Adicionar email do usuário na URL de compra |
 
 ---
 
 ## Detalhes Técnicos
 
-### TemplateEditor.tsx
+### 1. Edge Function: ticto-webhook
 
-Página similar ao Editor.tsx, mas:
-- Carrega/salva na tabela `project_templates` em vez de `projects`
-- Inclui campos para editar nome, descrição e thumbnail
-- Não tem funcionalidade de geração de imagens (é só para montar o layout)
-- Possui verificação de admin antes de acessar
+**Endpoint:** `POST /functions/v1/ticto-webhook`
 
-**Estrutura:**
-```text
-+------------------------------------------+
-| [← Voltar ao Admin]                      |
-+------------------------------------------+
-| Nome: [_______________]                  |
-| Descrição: [_______________]             |
-| Thumbnail: [Upload]                      |
-+------------------------------------------+
-|                                          |
-|  [Toolbar]     [Canvas ReactFlow]        |
-|                                          |
-+------------------------------------------+
-|                     Salvando...          |
-+------------------------------------------+
-```
+**Responsabilidades:**
+- Receber payload do webhook da Ticto
+- Validar o evento ("Venda Realizada" / "APPROVED")
+- Identificar o usuário pelo email
+- Mapear o produto para quantidade de créditos
+- Adicionar créditos ao perfil do usuário
+- Registrar a transação em `credit_purchases`
+- Prevenir duplicatas usando transaction_id
 
-**Estados:**
-```typescript
-const [templateId, setTemplateId] = useState<string | null>(null);
-const [templateName, setTemplateName] = useState('Novo Template');
-const [templateDescription, setTemplateDescription] = useState('');
-const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
-const [nodes, setNodes, onNodesChange] = useNodesState([]);
-const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-const [isSaving, setIsSaving] = useState(false);
-```
+**Payload esperado da Ticto (baseado em webhooks similares):**
 
-**Carregar template existente:**
-```typescript
-useEffect(() => {
-  const loadTemplate = async () => {
-    if (!templateId) return;
-    
-    const { data, error } = await supabase
-      .from('project_templates')
-      .select('*')
-      .eq('id', templateId)
-      .single();
-      
-    if (data) {
-      setTemplateName(data.name);
-      setTemplateDescription(data.description || '');
-      setThumbnailUrl(data.thumbnail_url);
-      const canvas = data.canvas_state as { nodes?: Node[]; edges?: Edge[] };
-      if (canvas?.nodes) setNodes(canvas.nodes);
-      if (canvas?.edges) setEdges(canvas.edges);
-    }
-  };
-  loadTemplate();
-}, [templateId]);
-```
-
-**Salvar template (com debounce):**
-```typescript
-const saveTemplate = async () => {
-  const canvasData = { nodes, edges };
-  
-  if (templateId) {
-    // Update existing
-    await supabase
-      .from('project_templates')
-      .update({
-        name: templateName,
-        description: templateDescription,
-        thumbnail_url: thumbnailUrl,
-        canvas_state: canvasData
-      })
-      .eq('id', templateId);
-  } else {
-    // Create new
-    const { data } = await supabase
-      .from('project_templates')
-      .insert({
-        name: templateName,
-        description: templateDescription,
-        thumbnail_url: thumbnailUrl,
-        canvas_state: canvasData,
-        created_by: user?.id
-      })
-      .select()
-      .single();
-    
-    if (data) {
-      setTemplateId(data.id);
-      // Update URL without reload
-      navigate(`/admin/template-editor?id=${data.id}`, { replace: true });
-    }
+```json
+{
+  "event": "APPROVED",
+  "transaction": {
+    "id": "TXN123456",
+    "status": "approved",
+    "amount": 2990,
+    "currency": "BRL"
+  },
+  "customer": {
+    "email": "usuario@email.com",
+    "name": "Nome do Usuário",
+    "document": "12345678900"
+  },
+  "product": {
+    "id": "O7EB601F4",
+    "name": "Starter - 50 Créditos"
   }
+}
+```
+
+**Mapeamento de produtos:**
+
+```typescript
+const PRODUCT_CREDITS: Record<string, number> = {
+  'O7EB601F4': 50,   // Starter
+  'O37CE7121': 120,  // Pro
+  'OD5F04218': 400,  // Business
 };
 ```
 
-### Modificações no TemplatesTab.tsx
+**Lógica principal:**
 
-**Adicionar botão "Editar" nos cards:**
 ```typescript
-<div className="flex gap-2">
-  <Button
-    variant="outline"
-    size="sm"
-    onClick={() => navigate(`/admin/template-editor?id=${template.id}`)}
-  >
-    <Pencil className="h-4 w-4 mr-1" />
-    Editar
-  </Button>
-  <Button
-    variant="ghost"
-    size="icon"
-    className="text-destructive"
-    onClick={() => {
-      setTemplateToDelete(template);
-      setDeleteDialogOpen(true);
-    }}
-  >
-    <Trash2 className="h-4 w-4" />
-  </Button>
-</div>
+// 1. Validar evento
+if (body.event !== 'APPROVED' && body.event !== 'Venda Realizada') {
+  return new Response('Event ignored', { status: 200 });
+}
+
+// 2. Verificar duplicata
+const { data: existingPurchase } = await supabase
+  .from('credit_purchases')
+  .select('id')
+  .eq('transaction_id', body.transaction.id)
+  .maybeSingle();
+
+if (existingPurchase) {
+  return new Response('Already processed', { status: 200 });
+}
+
+// 3. Buscar usuário por email
+const { data: profile } = await supabase
+  .from('profiles')
+  .select('*')
+  .eq('email', body.customer.email)
+  .single();
+
+// 4. Calcular créditos
+const credits = PRODUCT_CREDITS[body.product.id] || 0;
+
+// 5. Adicionar créditos
+await supabase
+  .from('profiles')
+  .update({ credits: profile.credits + credits })
+  .eq('user_id', profile.user_id);
+
+// 6. Registrar compra
+await supabase
+  .from('credit_purchases')
+  .insert({
+    user_id: profile.user_id,
+    transaction_id: body.transaction.id,
+    product_id: body.product.id,
+    credits_added: credits,
+    amount_paid: body.transaction.amount,
+    customer_email: body.customer.email,
+    raw_payload: body
+  });
 ```
 
-**Mudar "Criar Template" para navegar:**
-```typescript
-<Button onClick={() => navigate('/admin/template-editor')}>
-  <Plus className="h-4 w-4 mr-2" />
-  Criar Template
-</Button>
+### 2. Nova Tabela: credit_purchases
+
+**Estrutura:**
+
+```sql
+CREATE TABLE public.credit_purchases (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id),
+  transaction_id TEXT UNIQUE NOT NULL,
+  product_id TEXT NOT NULL,
+  credits_added INTEGER NOT NULL,
+  amount_paid INTEGER NOT NULL,
+  customer_email TEXT NOT NULL,
+  raw_payload JSONB,
+  processed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- RLS
+ALTER TABLE credit_purchases ENABLE ROW LEVEL SECURITY;
+
+-- Admins podem ver todas as compras
+CREATE POLICY "Admins can view all purchases"
+  ON credit_purchases FOR SELECT
+  USING (has_role(auth.uid(), 'admin'));
+
+-- Usuários podem ver próprias compras
+CREATE POLICY "Users can view own purchases"
+  ON credit_purchases FOR SELECT
+  USING (auth.uid() = user_id);
+
+-- Insert via service role only (webhook)
+CREATE POLICY "Service role can insert"
+  ON credit_purchases FOR INSERT
+  WITH CHECK (true);
 ```
 
-### Nova Rota no App.tsx
+### 3. Modificação: BuyCreditsModal.tsx
+
+Passar o email do usuário como parâmetro na URL para identificação:
 
 ```typescript
-<Route path="/admin/template-editor" element={<TemplateEditor />} />
+const handleBuy = (url: string) => {
+  const urlWithEmail = profile?.email 
+    ? `${url}?email=${encodeURIComponent(profile.email)}`
+    : url;
+  window.open(urlWithEmail, '_blank');
+};
 ```
 
 ---
 
-## Layout do TemplateEditor
+## Configuração na Ticto
 
-```text
-+----------------------------------------------------------+
-| [← Voltar]                              [Salvando...]    |
-+----------------------------------------------------------+
-| +------------------+  +-------------------------------+  |
-| | Nome             |  | Descrição                     |  |
-| | [______________] |  | [____________________________]|  |
-| +------------------+  +-------------------------------+  |
-| | Thumbnail        |                                     |
-| | [  Upload  ]     |                                     |
-+----------------------------------------------------------+
-|                                                          |
-|  [Toolbar]                                               |
-|  +----+                                                  |
-|  |Type|     [===== Canvas ReactFlow =====]              |
-|  +----+                                                  |
-|  |Img |                                                  |
-|  +----+                                                  |
-|  |Cfg |                                                  |
-|  +----+                                                  |
-|  |Out |                                                  |
-|  +----+                                                  |
-|                                                          |
-+----------------------------------------------------------+
-```
+Após implementar, você precisa configurar o webhook no painel da Ticto:
+
+1. Acesse **TICTOOLS > WEBHOOK**
+2. Clique em **+ADICIONAR**
+3. Configure:
+   - **Produto**: Selecione cada pacote de créditos
+   - **URL**: `https://oruslrvpmdhtnrsgoght.supabase.co/functions/v1/ticto-webhook`
+   - **Evento**: Venda Realizada
+4. Repita para cada produto (Starter, Pro, Business)
 
 ---
 
-## Proteção de Acesso
+## Tratamento de Erros
 
-A página de TemplateEditor deve:
-1. Verificar se o usuário está logado
-2. Verificar se o usuário tem role `admin`
-3. Redirecionar para `/` se não for admin
+A edge function tratará os seguintes cenários:
+
+| Cenário | Ação |
+|---------|------|
+| Email não encontrado | Log em webhook_logs, retorna 200 |
+| Produto desconhecido | Log com produto_id, retorna 200 |
+| Duplicata (mesmo transaction_id) | Ignora, retorna 200 |
+| Erro no banco | Retorna 500 com mensagem |
+
+**Importante:** Sempre retornar 200 para eventos válidos, mesmo que não processados, para evitar reenvios infinitos da Ticto.
+
+---
+
+## Logging e Debug
+
+Todas as requisições serão logadas em `webhook_logs`:
 
 ```typescript
-const { user } = useAuth();
-const { data: isAdmin } = useQuery({
-  queryKey: ['is-admin', user?.id],
-  queryFn: async () => {
-    const { data } = await supabase.rpc('has_role', {
-      _user_id: user?.id,
-      _role: 'admin'
-    });
-    return data;
-  },
-  enabled: !!user
+await supabase.from('webhook_logs').insert({
+  event_type: body.event || 'unknown',
+  payload: body,
+  processed: true/false,
+  error_message: error?.message
 });
-
-useEffect(() => {
-  if (isAdmin === false) {
-    navigate('/');
-  }
-}, [isAdmin]);
 ```
+
+Isso permite debug no painel Admin (já existe a tabela).
 
 ---
 
-## Resumo das Mudanças
+## Arquivos a Criar/Modificar
 
 | Arquivo | Ação |
 |---------|------|
-| `src/pages/TemplateEditor.tsx` | Criar - Editor completo para templates |
-| `src/components/admin/TemplatesTab.tsx` | Modificar - Adicionar botão Editar, remover modal de criação |
-| `src/App.tsx` | Modificar - Adicionar rota |
+| `supabase/functions/ticto-webhook/index.ts` | Criar - Edge function do webhook |
+| `supabase/config.toml` | Modificar - Adicionar config da função |
+| `src/components/BuyCreditsModal.tsx` | Modificar - Passar email na URL |
+| Migration SQL | Criar - Tabela credit_purchases |
 
+---
+
+## Testes
+
+Após implementação:
+
+1. Fazer uma compra de teste na Ticto
+2. Verificar logs em `webhook_logs`
+3. Confirmar créditos adicionados no perfil
+4. Verificar registro em `credit_purchases`
