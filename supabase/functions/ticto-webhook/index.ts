@@ -15,10 +15,19 @@ const OFFER_CREDITS: Record<string, number> = {
 interface TictoPayload {
   status?: string;
   payment_method?: string;
+  query_params?: {
+    code?: string;
+    offer_code?: string;
+  };
   url_params?: {
     query_params?: {
       code?: string;
     };
+  };
+  offer?: {
+    id?: number;
+    code?: string;
+    name?: string;
   };
   order?: {
     hash: string;
@@ -30,6 +39,7 @@ interface TictoPayload {
     product_id?: number;
     offer_name?: string;
     offer_id?: number;
+    offer_code?: string;
     amount?: number;
   };
   customer?: {
@@ -74,11 +84,11 @@ Deno.serve(async (req: Request) => {
   const status = body.status || '';
   const transactionId = body.order?.hash || '';
   const customerEmail = body.customer?.email || '';
-  const offerCode = body.url_params?.query_params?.code || '';
+  const offerCode = body.query_params?.code || body.offer?.code || body.item?.offer_code || body.url_params?.query_params?.code || '';
   const amountPaid = body.order?.paid_amount || body.item?.amount || 0;
 
   // Verificar se é um evento de aprovação
-  const approvalStatuses = ['approved', 'paid', 'confirmed', 'completed'];
+  const approvalStatuses = ['approved', 'paid', 'confirmed', 'completed', 'authorized'];
   const isApproved = approvalStatuses.some(s => 
     status.toLowerCase().includes(s)
   );
