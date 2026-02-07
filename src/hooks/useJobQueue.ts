@@ -25,8 +25,18 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
   const [pendingJobs, setPendingJobs] = useState<PendingJob[]>([]);
   const [isPolling, setIsPolling] = useState(false);
   const { toast } = useToast();
+
+  // Polling that triggers the worker execution (keeps the queue moving)
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Polling that reconciles job statuses (fallback when Realtime misses/out-of-order updates)
+  const statusPollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   const callbacksRef = useRef({ onJobCompleted, onJobFailed });
+
+  // Tracks jobs we've already processed to avoid duplicates AND to handle out-of-order events
+  // (e.g. job completes before it was added to pendingJobs)
+  const processedJobIdsRef = useRef<Set<string>>(new Set());
 
   // Keep callbacks ref in sync
   useEffect(() => {
@@ -35,7 +45,13 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
 
   // Add a new job to the pending list
   const addPendingJob = useCallback((jobId: string, quantity: number) => {
-    setPendingJobs(prev => [
+    // If the job already completed/failed (Realtime can arrive before state updates), don't add it.
+    if (processedJobIdsRef.current.has(jobId)) {
+      console.log('[useJobQueue] Skipping addPendingJob for already-processed job:', jobId);
+      return;
+    }
+
+    setPendingJobs((prev) => [
       ...prev,
       {
         id: jobId,
@@ -48,15 +64,56 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
 
   // Remove a job from the pending list
   const removePendingJob = useCallback((jobId: string) => {
-    setPendingJobs(prev => prev.filter(job => job.id !== jobId));
+    setPendingJobs((prev) => prev.filter((job) => job.id !== jobId));
   }, []);
 
   // Update job status
   const updateJobStatus = useCallback((jobId: string, status: PendingJob['status']) => {
-    setPendingJobs(prev => 
-      prev.map(job => job.id === jobId ? { ...job, status } : job)
-    );
+    setPendingJobs((prev) => prev.map((job) => (job.id === jobId ? { ...job, status } : job)));
   }, []);
+
+  const processJobUpdate = useCallback((job: {
+    id: string;
+    status: string;
+    result_urls: string[] | null;
+    result_count: number | null;
+    error: string | null;
+  }) => {
+    if (!job?.id) return;
+
+    // Prevent duplicate processing (Realtime + polling can both see the same completion)
+    if (processedJobIdsRef.current.has(job.id)) return;
+
+    console.log('[useJobQueue] Processing job update:', job.id, 'status:', job.status);
+
+    if (job.status === 'completed') {
+      const urls = job.result_urls;
+
+      if (Array.isArray(urls) && urls.length > 0) {
+        console.log('[useJobQueue] Job completed with', urls.length, 'images');
+        callbacksRef.current.onJobCompleted({
+          jobId: job.id,
+          resultUrls: urls,
+          resultCount: job.result_count || urls.length
+        });
+      } else {
+        console.error('[useJobQueue] Job completed WITHOUT valid result_urls:', job.id, 'urls:', urls);
+        callbacksRef.current.onJobFailed(job.id, 'Job concluído sem imagens');
+      }
+
+      processedJobIdsRef.current.add(job.id);
+      // Unconditional removal: safe even if not present; fixes out-of-order state updates
+      removePendingJob(job.id);
+    } else if (job.status === 'failed') {
+      console.error('[useJobQueue] Job failed:', job.id, job.error);
+      callbacksRef.current.onJobFailed(job.id, job.error || 'Falha na geração');
+
+      processedJobIdsRef.current.add(job.id);
+      removePendingJob(job.id);
+    } else if (job.status === 'processing') {
+      updateJobStatus(job.id, 'processing');
+    }
+  }, [removePendingJob, updateJobStatus]);
 
   // Poll the worker to process jobs
   const pollWorker = useCallback(async () => {
@@ -82,10 +139,10 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
     }
 
     setIsPolling(true);
-    
+
     // Initial poll
     pollWorker();
-    
+
     // Poll every 3 seconds
     pollingIntervalRef.current = setInterval(pollWorker, 3000);
 
@@ -99,10 +156,10 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
 
   // Track pending job IDs for checking in callbacks
   const pendingJobIdsRef = useRef<Set<string>>(new Set());
-  
+
   // Keep pendingJobIdsRef in sync
   useEffect(() => {
-    pendingJobIdsRef.current = new Set(pendingJobs.map(j => j.id));
+    pendingJobIdsRef.current = new Set(pendingJobs.map((j) => j.id));
   }, [pendingJobs]);
 
   // Subscribe to Realtime updates for jobs - always active when projectId exists
@@ -131,34 +188,7 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
           };
 
           console.log('[useJobQueue] Realtime job update received:', job.id, 'status:', job.status);
-
-          if (job.status === 'completed') {
-            // CORREÇÃO: Validar que result_urls é um array não vazio antes de chamar callback
-            const urls = job.result_urls;
-            if (Array.isArray(urls) && urls.length > 0) {
-              console.log('[useJobQueue] Job completed with', urls.length, 'images');
-              callbacksRef.current.onJobCompleted({
-                jobId: job.id,
-                resultUrls: urls,
-                resultCount: job.result_count || urls.length
-              });
-            } else {
-              console.error('[useJobQueue] Job completed WITHOUT valid result_urls:', job.id, 'urls:', urls);
-            }
-            // Only remove if it was in our pending list
-            if (pendingJobIdsRef.current.has(job.id)) {
-              removePendingJob(job.id);
-            }
-          } else if (job.status === 'failed') {
-            console.error('[useJobQueue] Job failed:', job.id, job.error);
-            callbacksRef.current.onJobFailed(job.id, job.error || 'Falha na geração');
-            if (pendingJobIdsRef.current.has(job.id)) {
-              removePendingJob(job.id);
-            }
-          } else if (job.status === 'processing') {
-            console.log('[useJobQueue] Job processing:', job.id);
-            updateJobStatus(job.id, 'processing');
-          }
+          processJobUpdate(job);
         }
       )
       .subscribe((status, err) => {
@@ -172,7 +202,53 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
       console.log('[useJobQueue] Cleaning up Realtime subscription');
       supabase.removeChannel(channel);
     };
-  }, [projectId, removePendingJob, updateJobStatus]);
+  }, [projectId, processJobUpdate]);
+
+  // Fallback: poll job statuses to reconcile pendingJobs when Realtime misses/out-of-order updates
+  useEffect(() => {
+    if (!projectId) return;
+
+    if (pendingJobs.length === 0) {
+      if (statusPollingIntervalRef.current) {
+        clearInterval(statusPollingIntervalRef.current);
+        statusPollingIntervalRef.current = null;
+      }
+      return;
+    }
+
+    const pollStatuses = async () => {
+      const ids = Array.from(pendingJobIdsRef.current);
+      if (ids.length === 0) return;
+
+      try {
+        const { data, error } = await supabase
+          .from('jobs')
+          .select('id,status,result_urls,result_count,error')
+          .in('id', ids);
+
+        if (error) {
+          console.error('[useJobQueue] Status polling error:', error.message || error);
+          return;
+        }
+
+        (data ?? []).forEach((row) => processJobUpdate(row as any));
+      } catch (err) {
+        console.error('[useJobQueue] Status polling exception:', err);
+      }
+    };
+
+    // Initial reconciliation
+    pollStatuses();
+
+    statusPollingIntervalRef.current = setInterval(pollStatuses, 5000);
+
+    return () => {
+      if (statusPollingIntervalRef.current) {
+        clearInterval(statusPollingIntervalRef.current);
+        statusPollingIntervalRef.current = null;
+      }
+    };
+  }, [projectId, pendingJobs.length, processJobUpdate]);
 
   // Computed states
   const hasQueuedJobs = pendingJobs.some(job => job.status === 'queued');
