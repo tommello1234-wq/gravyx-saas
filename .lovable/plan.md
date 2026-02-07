@@ -1,110 +1,100 @@
 
-# Plano: Corrigir Políticas RLS de Admin
+# Plano: Correções do Output Node
 
-## Problema Identificado
+## Problema 1: Imagens não aparecem em tempo real
 
-As políticas RLS para admin estão usando:
-```sql
-(auth.jwt() ->> 'user_role') = 'admin'
+### Diagnóstico
+O sistema Realtime está funcionando, MAS o hook `useJobQueue` só escuta atualizações quando `pendingJobs.length > 0`:
+
+```typescript
+// useJobQueue.ts linha 99
+if (!projectId || pendingJobs.length === 0) return;
 ```
 
-Mas o **JWT do Supabase não contém essa claim por padrão**. Por isso, mesmo sendo admin na tabela `user_roles`, o banco de dados não reconhece sua permissão.
+**Cenário do bug**: Quando você gera imagens em **outra aba/sessão** ou quando o job é processado tão rápido que a lista `pendingJobs` é limpa antes do Realtime disparar, a subscription é removida e as imagens não aparecem.
 
-### Evidência
-- Tabela `user_roles`: você (tommello1234@gmail.com) tem role = 'admin'
-- Tabela `profiles`: tem 15 usuários cadastrados
-- Painel Admin: só mostra 1 usuário (você mesmo)
+### Solução
+Manter a subscription Realtime **sempre ativa** enquanto o usuário estiver no Editor, independente de haver jobs pendentes. Assim, qualquer atualização de job para o projeto será capturada e exibida.
 
-## Solução
+**Mudança em `useJobQueue.ts`**:
+```typescript
+// ANTES (linha 99)
+if (!projectId || pendingJobs.length === 0) return;
 
-Alterar TODAS as políticas RLS que usam `auth.jwt() ->> 'user_role'` para usar a função `has_role()` que já existe no banco:
-
-```sql
--- DE (não funciona):
-(auth.jwt() ->> 'user_role') = 'admin'
-
--- PARA (funciona):
-has_role(auth.uid(), 'admin')
+// DEPOIS
+if (!projectId) return;
 ```
 
-## Tabelas Afetadas
+Também precisamos ajustar o callback para verificar se o job pertence à nossa lista antes de remover, evitando erros quando jobs de outras sessões chegam:
 
-| Tabela | Políticas a Corrigir |
-|--------|---------------------|
-| profiles | profiles_admin_view, profiles_admin_update |
-| user_roles | user_roles_admin_manage |
-| webhook_logs | webhook_logs_admin_select, webhook_logs_admin_update, webhook_logs_admin_delete |
-| reference_images | reference_images_admin_all |
-| project_templates | project_templates_admin_all |
-| credit_packages | credit_packages_admin_all |
-| credit_purchases | credit_purchases_admin_select |
-
-## Migration SQL
-
-```sql
--- PROFILES
-DROP POLICY IF EXISTS "profiles_admin_view" ON profiles;
-CREATE POLICY "profiles_admin_view" ON profiles
-  FOR SELECT USING (has_role(auth.uid(), 'admin'));
-
-DROP POLICY IF EXISTS "profiles_admin_update" ON profiles;
-CREATE POLICY "profiles_admin_update" ON profiles
-  FOR UPDATE USING (has_role(auth.uid(), 'admin'))
-  WITH CHECK (has_role(auth.uid(), 'admin'));
-
--- USER_ROLES
-DROP POLICY IF EXISTS "user_roles_admin_manage" ON user_roles;
-CREATE POLICY "user_roles_admin_manage" ON user_roles
-  FOR ALL USING (has_role(auth.uid(), 'admin'))
-  WITH CHECK (has_role(auth.uid(), 'admin'));
-
--- WEBHOOK_LOGS
-DROP POLICY IF EXISTS "webhook_logs_admin_select" ON webhook_logs;
-CREATE POLICY "webhook_logs_admin_select" ON webhook_logs
-  FOR SELECT USING (has_role(auth.uid(), 'admin'));
-
-DROP POLICY IF EXISTS "webhook_logs_admin_update" ON webhook_logs;
-CREATE POLICY "webhook_logs_admin_update" ON webhook_logs
-  FOR UPDATE USING (has_role(auth.uid(), 'admin'))
-  WITH CHECK (has_role(auth.uid(), 'admin'));
-
-DROP POLICY IF EXISTS "webhook_logs_admin_delete" ON webhook_logs;
-CREATE POLICY "webhook_logs_admin_delete" ON webhook_logs
-  FOR DELETE USING (has_role(auth.uid(), 'admin'));
-
--- REFERENCE_IMAGES
-DROP POLICY IF EXISTS "reference_images_admin_all" ON reference_images;
-CREATE POLICY "reference_images_admin_all" ON reference_images
-  FOR ALL USING (has_role(auth.uid(), 'admin'))
-  WITH CHECK (has_role(auth.uid(), 'admin'));
-
--- PROJECT_TEMPLATES
-DROP POLICY IF EXISTS "project_templates_admin_all" ON project_templates;
-CREATE POLICY "project_templates_admin_all" ON project_templates
-  FOR ALL USING (has_role(auth.uid(), 'admin'))
-  WITH CHECK (has_role(auth.uid(), 'admin'));
-
--- CREDIT_PACKAGES
-DROP POLICY IF EXISTS "credit_packages_admin_all" ON credit_packages;
-CREATE POLICY "credit_packages_admin_all" ON credit_packages
-  FOR ALL USING (has_role(auth.uid(), 'admin'))
-  WITH CHECK (has_role(auth.uid(), 'admin'));
-
--- CREDIT_PURCHASES
-DROP POLICY IF EXISTS "credit_purchases_admin_select" ON credit_purchases;
-CREATE POLICY "credit_purchases_admin_select" ON credit_purchases
-  FOR SELECT USING (has_role(auth.uid(), 'admin'));
+```typescript
+if (job.status === 'completed' && job.result_urls) {
+  callbacksRef.current.onJobCompleted({
+    jobId: job.id,
+    resultUrls: job.result_urls,
+    resultCount: job.result_count || job.result_urls.length
+  });
+  // Só remove se estava na nossa lista
+  if (pendingJobIds.has(job.id)) {
+    removePendingJob(job.id);
+  }
+}
 ```
+
+## Problema 2: Output Node muito extenso (15+ imagens)
+
+### Diagnóstico
+Atualmente o grid de imagens cresce indefinidamente:
+```tsx
+<div className="grid grid-cols-2 gap-2">
+  {images.map(...)}  // Sem limite
+</div>
+```
+
+### Solução
+Adicionar um container com **altura máxima e scroll** a partir de 6 imagens (3 linhas no grid 2x):
+
+**Mudança em `OutputNode.tsx`**:
+```tsx
+import { ScrollArea } from '@/components/ui/scroll-area';
+
+// No Content section:
+{images.length > 6 ? (
+  <ScrollArea className="h-[200px]">
+    <div className="grid grid-cols-2 gap-2 pr-2">
+      {images.map(...)}
+    </div>
+  </ScrollArea>
+) : (
+  <div className="grid grid-cols-2 gap-2">
+    {images.map(...)}
+  </div>
+)}
+```
+
+A altura de 200px acomoda ~3 linhas (6 imagens) confortavelmente.
+
+## Arquivos a Modificar
+
+| Arquivo | Mudança |
+|---------|---------|
+| `src/hooks/useJobQueue.ts` | Manter Realtime sempre ativo para o projeto |
+| `src/components/nodes/OutputNode.tsx` | Adicionar ScrollArea para +6 imagens |
 
 ## Resultado Esperado
 
-Após a migration:
-- O painel Admin mostrará todos os 15 usuários
-- Você poderá editar créditos, reenviar convites e deletar usuários
-- Todas as funcionalidades de admin voltarão a funcionar
+1. **Tempo Real**: Imagens aparecem imediatamente no Output Node sem precisar recarregar
+2. **Layout Compacto**: Node com scroll suave quando há mais de 6 imagens
 
-## Arquivos
+## Detalhes Técnicos
 
-| Ação | Descrição |
-|------|-----------|
-| Nova migration SQL | Corrige todas as políticas RLS de admin |
+### useJobQueue.ts
+- Remover condição `pendingJobs.length === 0` da subscription Realtime
+- Usar `useRef` para manter track dos jobIds pendentes e verificar antes de chamar callbacks
+- Manter a lógica de polling apenas quando há jobs pendentes (economia de recursos)
+
+### OutputNode.tsx
+- Importar `ScrollArea` do Radix
+- Calcular se precisa de scroll (images.length > 6)
+- Aplicar altura fixa apenas quando necessário
+- Manter espaçamento adequado para a scrollbar
