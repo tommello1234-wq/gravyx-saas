@@ -1,140 +1,173 @@
 
-# Plano: Correção da Tela Preta
+# Plano: Corrigir Crash ao Gerar Imagens
 
 ## Problema Identificado
 
-Usuários reportaram que a tela fica preta (e a aplicação "crasha") em dois cenários:
-
-1. **Ao criar um projeto e clicar em "Criar"** - A navegação para o Editor falha silenciosamente
-2. **Ao clicar em "Gerar" no canvas** - A geração de imagem causa um crash silencioso
-
-Como a aplicação usa um tema dark (`--background: 240 10% 4%`), quando o React crasha, o fundo escuro aparece como "tela preta".
-
-## Causa Raiz
-
-### 1. Ausência de Error Boundary
-Não existe um Error Boundary na aplicação. Quando ocorre qualquer erro não tratado no React, a árvore de componentes é desmontada e o usuário vê apenas o fundo escuro.
-
-### 2. Problemas de serialização no auto-save
-No `Editor.tsx`, a função `saveProject` usa `JSON.parse(JSON.stringify({...}))` que pode falhar se os dados contiverem:
-- Funções
-- Referências circulares
-- Valores `undefined` (são removidos)
-
-### 3. Uso incorreto do ReactFlowProvider
-Embora os nós sejam renderizados dentro do `<ReactFlow>`, não há um `<ReactFlowProvider>` envolvendo o componente. Isso pode causar problemas de sincronização de estado durante atualizações rápidas.
-
-## Correções Necessárias
-
-### 1. Criar Error Boundary Global
-
-Componente que captura erros e mostra UI amigável em vez de tela preta:
+A tela fica preta ao clicar em "Gerar" porque os componentes dos nós (**PromptNode**, **MediaNode**, **SettingsNode**) estão **mutando diretamente o objeto `data`** em vez de usar atualizações imutáveis do React:
 
 ```typescript
-// src/components/ErrorBoundary.tsx
-class ErrorBoundary extends React.Component {
-  state = { hasError: false, error: null };
+// ❌ ERRADO - causa crash
+(data as Record<string, unknown>).value = e.target.value;
 
-  static getDerivedStateFromError(error) {
-    return { hasError: true, error };
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="min-h-screen bg-background flex items-center justify-center">
-          <div className="text-center">
-            <h1>Algo deu errado</h1>
-            <button onClick={() => window.location.reload()}>
-              Recarregar página
-            </button>
-          </div>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
+// ❌ ERRADO - causa crash
+(data as Record<string, unknown>).aspectRatio = value;
 ```
 
-### 2. Envolver Editor com ReactFlowProvider
+Isso viola a regra de imutabilidade do React e React Flow. Quando a função `handleGenerate` tenta atualizar o Output Node via `setNodes`, o estado interno fica inconsistente e causa o crash.
 
-O componente `<ReactFlow>` precisa estar dentro de um `<ReactFlowProvider>` quando usamos hooks como `useReactFlow()` em componentes separados:
+**Por que funciona às vezes?** A imagem é gerada porque a Edge Function executa corretamente. O crash acontece **depois**, quando o frontend tenta atualizar o canvas com as novas imagens.
+
+---
+
+## Solução
+
+Substituir todas as mutações diretas por atualizações imutáveis usando `setNodes` do React Flow.
+
+### Padrão Correto
 
 ```typescript
-// Editor.tsx
-import { ReactFlowProvider } from '@xyflow/react';
-
-export default function Editor() {
-  return (
-    <ReactFlowProvider>
-      <EditorCanvas />
-    </ReactFlowProvider>
+// ✅ CORRETO - atualização imutável
+const handleValueChange = (newValue: string) => {
+  setNodes((nodes) =>
+    nodes.map((node) =>
+      node.id === id
+        ? { ...node, data: { ...node.data, value: newValue } }
+        : node
+    )
   );
-}
-```
-
-### 3. Adicionar tratamento de erro na serialização
-
-Proteger o `JSON.parse(JSON.stringify())` com try-catch:
-
-```typescript
-const saveProject = async (...) => {
-  try {
-    const canvasData = JSON.parse(JSON.stringify({ nodes, edges }));
-    // ... resto do save
-  } catch (err) {
-    console.error('Serialization error:', err);
-    toast({ title: 'Erro ao salvar', variant: 'destructive' });
-  }
 };
 ```
 
-### 4. Aplicar mesma correção no TemplateEditor
-
-O `TemplateEditor.tsx` tem a mesma estrutura e precisa das mesmas correções.
+---
 
 ## Arquivos a Modificar
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/components/ErrorBoundary.tsx` | **NOVO** - Componente Error Boundary global |
-| `src/App.tsx` | Envolver aplicação com ErrorBoundary |
-| `src/pages/Editor.tsx` | Adicionar ReactFlowProvider e melhorar tratamento de erros |
-| `src/pages/TemplateEditor.tsx` | Adicionar ReactFlowProvider e melhorar tratamento de erros |
+| Arquivo | Problema | Correção |
+|---------|----------|----------|
+| `src/components/nodes/PromptNode.tsx` | `data.value = e.target.value` | Usar `setNodes` para atualizar |
+| `src/components/nodes/MediaNode.tsx` | `data.url = newUrl` | Usar `setNodes` para atualizar |
+| `src/components/nodes/SettingsNode.tsx` | `data.aspectRatio` e `data.quantity` mutados | Usar `setNodes` para atualizar |
+
+---
+
+## Mudanças Detalhadas
+
+### 1. PromptNode.tsx
+
+**Antes (linha 70-72):**
+```typescript
+onChange={e => {
+  setValue(e.target.value);
+  (data as Record<string, unknown>).value = e.target.value;
+}}
+```
+
+**Depois:**
+```typescript
+const handleValueChange = useCallback((newValue: string) => {
+  setValue(newValue);
+  setNodes((nodes) =>
+    nodes.map((node) =>
+      node.id === id
+        ? { ...node, data: { ...node.data, value: newValue } }
+        : node
+    )
+  );
+}, [id, setNodes]);
+
+// No Textarea:
+onChange={e => handleValueChange(e.target.value)}
+```
+
+### 2. MediaNode.tsx
+
+**Antes (linhas 38-42):**
+```typescript
+const handleUrlChange = (newUrl: string | null, libraryPrompt?: string | null) => {
+  setUrl(newUrl);
+  (data as Record<string, unknown>).url = newUrl;
+  (data as Record<string, unknown>).libraryPrompt = libraryPrompt || null;
+};
+```
+
+**Depois:**
+```typescript
+const handleUrlChange = useCallback((newUrl: string | null, libraryPrompt?: string | null) => {
+  setUrl(newUrl);
+  setNodes((nodes) =>
+    nodes.map((node) =>
+      node.id === id
+        ? { ...node, data: { ...node.data, url: newUrl, libraryPrompt: libraryPrompt || null } }
+        : node
+    )
+  );
+}, [id, setNodes]);
+```
+
+### 3. SettingsNode.tsx
+
+**Antes (linhas 55-62):**
+```typescript
+const handleAspectChange = (value: string) => {
+  setAspectRatio(value);
+  (data as Record<string, unknown>).aspectRatio = value;
+};
+
+const handleQuantityChange = (value: number) => {
+  setQuantity(value);
+  (data as Record<string, unknown>).quantity = value;
+};
+```
+
+**Depois:**
+```typescript
+const handleAspectChange = useCallback((value: string) => {
+  setAspectRatio(value);
+  setNodes((nodes) =>
+    nodes.map((node) =>
+      node.id === id
+        ? { ...node, data: { ...node.data, aspectRatio: value } }
+        : node
+    )
+  );
+}, [id, setNodes]);
+
+const handleQuantityChange = useCallback((value: number) => {
+  setQuantity(value);
+  setNodes((nodes) =>
+    nodes.map((node) =>
+      node.id === id
+        ? { ...node, data: { ...node.data, quantity: value } }
+        : node
+    )
+  );
+}, [id, setNodes]);
+```
+
+---
+
+## Por Que Isso Resolve
+
+1. **Imutabilidade preservada** - React e React Flow conseguem detectar as mudanças corretamente
+2. **Estado consistente** - Não há conflito entre estado local e estado global do flow
+3. **Auto-save funciona** - O debounce no Editor.tsx vai capturar as mudanças via `setNodes`
+4. **Sem crashes** - A atualização após geração não conflita com estado mutado
+
+---
 
 ## Resultado Esperado
 
 Após as correções:
+- Clicar em "Gerar" executará a geração **sem crashar**
+- As imagens aparecerão no Output Node normalmente
+- O canvas será salvo automaticamente
+- Nenhuma tela preta aparecerá
 
-1. Se ocorrer qualquer erro, o usuário verá uma mensagem amigável com botão de recarregar
-2. O Editor será mais estável com o ReactFlowProvider corretamente configurado
-3. Erros de serialização serão capturados e reportados ao usuário
-4. A tela preta não acontecerá mais - haverá sempre feedback visual
+---
 
-## Detalhes Técnicos
+## Código Completo dos Componentes (Resumo Técnico)
 
-A estrutura do Editor ficará assim:
-
-```text
-Editor (função exportada)
-└── ReactFlowProvider
-    └── EditorCanvas (componente interno)
-        └── ReactFlow
-            ├── PromptNode (usa useReactFlow)
-            ├── MediaNode (usa useReactFlow)
-            ├── SettingsNode (usa useReactFlow)
-            └── OutputNode (usa useReactFlow)
-```
-
-E a estrutura do App:
-
-```text
-App
-└── ErrorBoundary
-    └── QueryClientProvider
-        └── AuthProvider
-            └── TooltipProvider
-                └── BrowserRouter
-                    └── Routes
-```
+Cada componente precisará:
+1. Importar `useCallback` do React
+2. Substituir mutações diretas por `setNodes` com spread operator
+3. Envolver os handlers em `useCallback` para performance
