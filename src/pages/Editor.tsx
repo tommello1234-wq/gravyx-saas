@@ -142,21 +142,33 @@ export default function Editor() {
   }, [edges]);
 
   const handleGenerate = useCallback(async () => {
-    if (!profile || profile.credits < 1) {
-      toast({
-        title: 'Créditos insuficientes',
-        description: 'Você precisa de créditos para gerar imagens.',
-        variant: 'destructive'
-      });
-      return;
-    }
-
     // Use refs to access current state without depending on them
     const currentNodes = nodesRef.current;
     const currentEdges = edgesRef.current;
 
     const settingsNode = currentNodes.find((n) => n.type === 'settings');
     const outputNode = currentNodes.find((n) => n.type === 'output');
+
+    if (!settingsNode || !outputNode) {
+      toast({
+        title: 'Configure o fluxo',
+        description: 'Conecte os nós de configuração e resultado.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const quantity = (settingsNode.data as { quantity?: number }).quantity || 1;
+    const creditsNeeded = quantity * 10; // 10 credits per image
+
+    if (!profile || profile.credits < creditsNeeded) {
+      toast({
+        title: 'Créditos insuficientes',
+        description: `Você precisa de ${creditsNeeded} créditos para gerar ${quantity} ${quantity === 1 ? 'imagem' : 'imagens'}.`,
+        variant: 'destructive'
+      });
+      return;
+    }
 
     if (!settingsNode || !outputNode) {
       toast({
@@ -201,7 +213,7 @@ export default function Editor() {
 
     try {
       const { data, error } = await supabase.functions.invoke('generate-image', {
-        body: { prompt, aspectRatio, quantity: 1, imageUrls, projectId }
+        body: { prompt, aspectRatio, quantity, imageUrls, projectId }
       });
 
       if (error) throw error;
@@ -245,7 +257,7 @@ export default function Editor() {
         return updated;
       });
 
-      toast({ title: 'Imagem gerada com sucesso!' });
+      toast({ title: `${data.images.length} ${data.images.length === 1 ? 'imagem gerada' : 'imagens geradas'} com sucesso!` });
     } catch (error) {
       console.error('Generation error:', error);
       setNodes((nds) =>

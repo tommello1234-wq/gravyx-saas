@@ -20,26 +20,26 @@ interface CreditPackage {
 
 const packages: CreditPackage[] = [
   {
-    credits: 50,
+    credits: 500,
     price: 'R$ 29,90',
     url: 'https://payment.ticto.app/O7EB601F4',
     icon: Coins,
-    label: 'Iniciante',
+    label: '50 imagens',
   },
   {
-    credits: 120,
+    credits: 1200,
     price: 'R$ 59,90',
     url: 'https://payment.ticto.app/O37CE7121',
     icon: Zap,
     popular: true,
-    label: 'Popular',
+    label: '120 imagens',
   },
   {
-    credits: 400,
+    credits: 4000,
     price: 'R$ 149,90',
     url: 'https://payment.ticto.app/OD5F04218',
     icon: Crown,
-    label: 'Profissional',
+    label: '400 imagens',
   },
 ];
 
