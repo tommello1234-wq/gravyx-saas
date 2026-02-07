@@ -61,9 +61,12 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
   // Poll the worker to process jobs
   const pollWorker = useCallback(async () => {
     try {
-      await supabase.functions.invoke('image-worker');
+      const { error } = await supabase.functions.invoke('image-worker');
+      if (error) {
+        console.error('Worker invocation error:', error.message || error);
+      }
     } catch (error) {
-      console.error('Worker poll error:', error);
+      console.error('Worker poll exception:', error);
     }
   }, []);
 
@@ -127,12 +130,18 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
 
           console.log('Job update received:', job.id, job.status);
 
-          if (job.status === 'completed' && job.result_urls) {
-            callbacksRef.current.onJobCompleted({
-              jobId: job.id,
-              resultUrls: job.result_urls,
-              resultCount: job.result_count || job.result_urls.length
-            });
+          if (job.status === 'completed') {
+            // CORREÇÃO: Validar que result_urls é um array não vazio antes de chamar callback
+            const urls = job.result_urls;
+            if (Array.isArray(urls) && urls.length > 0) {
+              callbacksRef.current.onJobCompleted({
+                jobId: job.id,
+                resultUrls: urls,
+                resultCount: job.result_count || urls.length
+              });
+            } else {
+              console.error('Job completed without valid result_urls:', job.id, 'urls:', urls);
+            }
             // Only remove if it was in our pending list
             if (pendingJobIdsRef.current.has(job.id)) {
               removePendingJob(job.id);

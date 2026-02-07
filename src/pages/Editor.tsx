@@ -150,7 +150,14 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     
     if (!outputNode) return;
 
-    const newImages = result.resultUrls.map(url => ({
+    // CORREÇÃO: Validar resultUrls antes de usar - evita crash em payloads malformados
+    const urls = Array.isArray(result.resultUrls) ? result.resultUrls : [];
+    if (urls.length === 0) {
+      console.warn('Job completed but no result URLs provided:', result.jobId);
+      return;
+    }
+
+    const newImages = urls.map(url => ({
       url,
       prompt: '',
       aspectRatio: '1:1',
