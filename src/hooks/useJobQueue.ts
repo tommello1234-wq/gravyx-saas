@@ -94,9 +94,17 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
     };
   }, [pendingJobs.length, pollWorker]);
 
-  // Subscribe to Realtime updates for jobs
+  // Track pending job IDs for checking in callbacks
+  const pendingJobIdsRef = useRef<Set<string>>(new Set());
+  
+  // Keep pendingJobIdsRef in sync
   useEffect(() => {
-    if (!projectId || pendingJobs.length === 0) return;
+    pendingJobIdsRef.current = new Set(pendingJobs.map(j => j.id));
+  }, [pendingJobs]);
+
+  // Subscribe to Realtime updates for jobs - always active when projectId exists
+  useEffect(() => {
+    if (!projectId) return;
 
     const channel = supabase
       .channel(`jobs-${projectId}`)
@@ -125,10 +133,15 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
               resultUrls: job.result_urls,
               resultCount: job.result_count || job.result_urls.length
             });
-            removePendingJob(job.id);
+            // Only remove if it was in our pending list
+            if (pendingJobIdsRef.current.has(job.id)) {
+              removePendingJob(job.id);
+            }
           } else if (job.status === 'failed') {
             callbacksRef.current.onJobFailed(job.id, job.error || 'Falha na geração');
-            removePendingJob(job.id);
+            if (pendingJobIdsRef.current.has(job.id)) {
+              removePendingJob(job.id);
+            }
           } else if (job.status === 'processing') {
             updateJobStatus(job.id, 'processing');
           }
@@ -139,7 +152,7 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [projectId, pendingJobs.length, removePendingJob, updateJobStatus]);
+  }, [projectId, removePendingJob, updateJobStatus]);
 
   // Computed states
   const hasQueuedJobs = pendingJobs.some(job => job.status === 'queued');

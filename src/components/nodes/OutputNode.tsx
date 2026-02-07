@@ -2,6 +2,7 @@ import { memo, useState, useCallback } from 'react';
 import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react';
 import { Sparkles, Download, Copy, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { OutputImageModal, NodeImage } from './OutputImageModal';
 interface OutputNodeData {
   label: string;
@@ -127,20 +128,39 @@ export const OutputNode = memo(({
         {/* Content */}
         <div className="p-4">
           {images.length > 0 ? <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-2">
-                {images.map((image, index) => (
-                  <div 
-                    key={`${image.url}-${index}`} 
-                    className="relative group rounded-xl overflow-hidden cursor-pointer border border-border/30 hover:border-emerald-500/50 transition-all" 
-                    onClick={() => handleImageClick(image)}
-                  >
-                    <img src={image.url} alt={`Generated ${index + 1}`} className="w-full h-24 object-cover" />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <span className="text-xs text-white font-medium">Clique para ver</span>
-                    </div>
+              {images.length > 6 ? (
+                <ScrollArea className="h-[200px]">
+                  <div className="grid grid-cols-2 gap-2 pr-2">
+                    {images.map((image, index) => (
+                      <div 
+                        key={`${image.url}-${index}`} 
+                        className="relative group rounded-xl overflow-hidden cursor-pointer border border-border/30 hover:border-emerald-500/50 transition-all" 
+                        onClick={() => handleImageClick(image)}
+                      >
+                        <img src={image.url} alt={`Generated ${index + 1}`} className="w-full h-24 object-cover" />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <span className="text-xs text-white font-medium">Clique para ver</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </ScrollArea>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {images.map((image, index) => (
+                    <div 
+                      key={`${image.url}-${index}`} 
+                      className="relative group rounded-xl overflow-hidden cursor-pointer border border-border/30 hover:border-emerald-500/50 transition-all" 
+                      onClick={() => handleImageClick(image)}
+                    >
+                      <img src={image.url} alt={`Generated ${index + 1}`} className="w-full h-24 object-cover" />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <span className="text-xs text-white font-medium">Clique para ver</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {images.length > 1 && <Button variant="outline" className="w-full rounded-xl border-border/50 bg-card text-foreground hover:bg-muted" onClick={downloadAll}>
                   <Download className="h-4 w-4 mr-2" />
