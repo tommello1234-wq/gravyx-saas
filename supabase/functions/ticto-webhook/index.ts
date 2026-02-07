@@ -5,36 +5,39 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Mapeamento de produtos da Ticto para créditos
-const PRODUCT_CREDITS: Record<string, number> = {
+// Mapeamento de ofertas da Ticto para créditos (código da oferta -> créditos)
+const OFFER_CREDITS: Record<string, number> = {
   'O7EB601F4': 50,   // Starter
   'O37CE7121': 120,  // Pro
   'OD5F04218': 400,  // Business
 };
 
 interface TictoPayload {
-  event?: string;
-  transaction?: {
-    id: string;
-    status?: string;
+  status?: string;
+  payment_method?: string;
+  url_params?: {
+    query_params?: {
+      code?: string;
+    };
+  };
+  order?: {
+    hash: string;
+    paid_amount?: number;
+    installments?: number;
+  };
+  item?: {
+    product_name?: string;
+    product_id?: number;
+    offer_name?: string;
+    offer_id?: number;
     amount?: number;
-    currency?: string;
   };
   customer?: {
     email: string;
     name?: string;
-    document?: string;
+    cpf?: string;
   };
-  product?: {
-    id: string;
-    name?: string;
-  };
-  // Campos alternativos que a Ticto pode enviar
-  status?: string;
-  order_id?: string;
-  buyer_email?: string;
-  product_id?: string;
-  offer_code?: string;
+  token?: string;
 }
 
 Deno.serve(async (req: Request) => {
@@ -59,35 +62,43 @@ Deno.serve(async (req: Request) => {
     return new Response('Invalid JSON', { status: 400, headers: corsHeaders });
   }
 
-  // Normalizar campos do payload (Ticto pode usar formatos diferentes)
-  const eventType = body.event || body.status || 'unknown';
-  const transactionId = body.transaction?.id || body.order_id || '';
-  const customerEmail = body.customer?.email || body.buyer_email || '';
-  const productId = body.product?.id || body.product_id || body.offer_code || '';
-  const amountPaid = body.transaction?.amount || 0;
+  // Validar token de segurança
+  const expectedToken = Deno.env.get('TICTO_WEBHOOK_TOKEN');
+  if (expectedToken && body.token !== expectedToken) {
+    console.error('Token inválido');
+    await logWebhook(supabase, 'invalid_token', body, false, 'Invalid webhook token');
+    return new Response('Invalid token', { status: 401, headers: corsHeaders });
+  }
 
-  // Validar se é um evento de aprovação
-  const approvalEvents = ['APPROVED', 'Venda Realizada', 'approved', 'paid', 'confirmed'];
-  const isApproved = approvalEvents.some(e => 
-    eventType.toLowerCase().includes(e.toLowerCase())
+  // Extrair campos do payload real da Ticto
+  const status = body.status || '';
+  const transactionId = body.order?.hash || '';
+  const customerEmail = body.customer?.email || '';
+  const offerCode = body.url_params?.query_params?.code || '';
+  const amountPaid = body.order?.paid_amount || body.item?.amount || 0;
+
+  // Verificar se é um evento de aprovação
+  const approvalStatuses = ['approved', 'paid', 'confirmed', 'completed'];
+  const isApproved = approvalStatuses.some(s => 
+    status.toLowerCase().includes(s)
   );
 
   if (!isApproved) {
-    console.log(`Evento ignorado: ${eventType}`);
-    await logWebhook(supabase, eventType, body, false, `Event type not approved: ${eventType}`);
+    console.log(`Evento ignorado: ${status}`);
+    await logWebhook(supabase, status, body, false, `Status not approved: ${status}`);
     return new Response('Event ignored', { status: 200, headers: corsHeaders });
   }
 
   // Verificar campos obrigatórios
   if (!transactionId) {
     console.error('Transaction ID não encontrado');
-    await logWebhook(supabase, eventType, body, false, 'Missing transaction_id');
+    await logWebhook(supabase, status, body, false, 'Missing transaction_id (order.hash)');
     return new Response('Missing transaction_id', { status: 200, headers: corsHeaders });
   }
 
   if (!customerEmail) {
     console.error('Email do cliente não encontrado');
-    await logWebhook(supabase, eventType, body, false, 'Missing customer email');
+    await logWebhook(supabase, status, body, false, 'Missing customer email');
     return new Response('Missing customer email', { status: 200, headers: corsHeaders });
   }
 
@@ -100,7 +111,7 @@ Deno.serve(async (req: Request) => {
 
   if (existingPurchase) {
     console.log(`Transação já processada: ${transactionId}`);
-    await logWebhook(supabase, eventType, body, true, 'Already processed');
+    await logWebhook(supabase, status, body, true, 'Already processed');
     return new Response('Already processed', { status: 200, headers: corsHeaders });
   }
 
@@ -113,17 +124,17 @@ Deno.serve(async (req: Request) => {
 
   if (profileError || !profile) {
     console.error(`Usuário não encontrado: ${customerEmail}`, profileError);
-    await logWebhook(supabase, eventType, body, false, `User not found: ${customerEmail}`);
+    await logWebhook(supabase, status, body, false, `User not found: ${customerEmail}`);
     return new Response('User not found', { status: 200, headers: corsHeaders });
   }
 
-  // Calcular créditos
-  const credits = PRODUCT_CREDITS[productId] || 0;
+  // Calcular créditos baseado no código da oferta
+  const credits = OFFER_CREDITS[offerCode] || 0;
   
   if (credits === 0) {
-    console.error(`Produto desconhecido: ${productId}`);
-    await logWebhook(supabase, eventType, body, false, `Unknown product: ${productId}`);
-    return new Response('Unknown product', { status: 200, headers: corsHeaders });
+    console.error(`Oferta desconhecida: ${offerCode}`);
+    await logWebhook(supabase, status, body, false, `Unknown offer code: ${offerCode}`);
+    return new Response('Unknown offer', { status: 200, headers: corsHeaders });
   }
 
   // Adicionar créditos ao perfil
@@ -134,7 +145,7 @@ Deno.serve(async (req: Request) => {
 
   if (updateError) {
     console.error('Erro ao atualizar créditos:', updateError);
-    await logWebhook(supabase, eventType, body, false, `Failed to update credits: ${updateError.message}`);
+    await logWebhook(supabase, status, body, false, `Failed to update credits: ${updateError.message}`);
     return new Response('Failed to update credits', { status: 500, headers: corsHeaders });
   }
 
@@ -144,7 +155,7 @@ Deno.serve(async (req: Request) => {
     .insert({
       user_id: profile.user_id,
       transaction_id: transactionId,
-      product_id: productId,
+      product_id: offerCode,
       credits_added: credits,
       amount_paid: amountPaid,
       customer_email: customerEmail.toLowerCase().trim(),
@@ -157,7 +168,7 @@ Deno.serve(async (req: Request) => {
   }
 
   console.log(`✅ ${credits} créditos adicionados para ${customerEmail} (${profile.user_id})`);
-  await logWebhook(supabase, eventType, body, true);
+  await logWebhook(supabase, status, body, true);
 
   return new Response(
     JSON.stringify({ 
