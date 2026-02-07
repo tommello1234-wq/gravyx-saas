@@ -1,118 +1,140 @@
 
-
-# Plano: Correção do Webhook Ticto
+# Plano: Correção da Tela Preta
 
 ## Problema Identificado
 
-Analisando os logs, identifiquei **dois problemas** no webhook atual:
+Usuários reportaram que a tela fica preta (e a aplicação "crasha") em dois cenários:
 
-### 1. Status "authorized" não está sendo aceito
+1. **Ao criar um projeto e clicar em "Criar"** - A navegação para o Editor falha silenciosamente
+2. **Ao clicar em "Gerar" no canvas** - A geração de imagem causa um crash silencioso
 
-O payload da Ticto veio com `status: "authorized"`, que é ignorado pelo nosso código. No fluxo do PIX:
-- **authorized** = PIX gerado (QR Code criado)
-- **approved/paid** = Pagamento confirmado
+Como a aplicação usa um tema dark (`--background: 240 10% 4%`), quando o React crasha, o fundo escuro aparece como "tela preta".
 
-Porém, na imagem dos postbacks você mostra que o evento é "Venda Realizada", o que indica que o pagamento foi confirmado. Isso sugere que a Ticto pode usar "authorized" como status final para PIX.
+## Causa Raiz
 
-### 2. Caminho errado para o código da oferta
+### 1. Ausência de Error Boundary
+Não existe um Error Boundary na aplicação. Quando ocorre qualquer erro não tratado no React, a árvore de componentes é desmontada e o usuário vê apenas o fundo escuro.
 
-No payload real:
-```json
-{
-  "query_params": {
-    "code": "O37CE7121"
+### 2. Problemas de serialização no auto-save
+No `Editor.tsx`, a função `saveProject` usa `JSON.parse(JSON.stringify({...}))` que pode falhar se os dados contiverem:
+- Funções
+- Referências circulares
+- Valores `undefined` (são removidos)
+
+### 3. Uso incorreto do ReactFlowProvider
+Embora os nós sejam renderizados dentro do `<ReactFlow>`, não há um `<ReactFlowProvider>` envolvendo o componente. Isso pode causar problemas de sincronização de estado durante atualizações rápidas.
+
+## Correções Necessárias
+
+### 1. Criar Error Boundary Global
+
+Componente que captura erros e mostra UI amigável em vez de tela preta:
+
+```typescript
+// src/components/ErrorBoundary.tsx
+class ErrorBoundary extends React.Component {
+  state = { hasError: false, error: null };
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-background flex items-center justify-center">
+          <div className="text-center">
+            <h1>Algo deu errado</h1>
+            <button onClick={() => window.location.reload()}>
+              Recarregar página
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
   }
 }
 ```
 
-No código atual:
-```typescript
-const offerCode = body.url_params?.query_params?.code || '';  // ❌ Errado
-```
+### 2. Envolver Editor com ReactFlowProvider
 
-Deveria ser:
-```typescript
-const offerCode = body.query_params?.code || body.offer?.code || '';  // ✅ Correto
-```
-
----
-
-## Correções Necessárias
-
-### 1. Adicionar "authorized" como status válido
-
-Para PIX, o status "authorized" significa que o pagamento foi processado. Vamos adicioná-lo à lista de status aprovados.
+O componente `<ReactFlow>` precisa estar dentro de um `<ReactFlowProvider>` quando usamos hooks como `useReactFlow()` em componentes separados:
 
 ```typescript
-const approvalStatuses = ['approved', 'paid', 'confirmed', 'completed', 'authorized'];
-```
+// Editor.tsx
+import { ReactFlowProvider } from '@xyflow/react';
 
-### 2. Corrigir extração do código da oferta
-
-O código da oferta pode vir em diferentes lugares do payload:
-
-```typescript
-const offerCode = 
-  body.query_params?.code ||           // Estrutura real observada
-  body.offer?.code ||                  // Fallback 1
-  body.item?.offer_code ||             // Fallback 2
-  body.url_params?.query_params?.code || // Estrutura original
-  '';
-```
-
-### 3. Atualizar a interface TypeScript
-
-Adicionar o campo `query_params` no nível raiz e `offer.code`:
-
-```typescript
-interface TictoPayload {
-  status?: string;
-  payment_method?: string;
-  query_params?: {
-    code?: string;
-    offer_code?: string;
-  };
-  offer?: {
-    id?: number;
-    code?: string;
-    name?: string;
-  };
-  // ... resto da interface
+export default function Editor() {
+  return (
+    <ReactFlowProvider>
+      <EditorCanvas />
+    </ReactFlowProvider>
+  );
 }
 ```
 
----
+### 3. Adicionar tratamento de erro na serialização
 
-## Arquivo a Modificar
+Proteger o `JSON.parse(JSON.stringify())` com try-catch:
+
+```typescript
+const saveProject = async (...) => {
+  try {
+    const canvasData = JSON.parse(JSON.stringify({ nodes, edges }));
+    // ... resto do save
+  } catch (err) {
+    console.error('Serialization error:', err);
+    toast({ title: 'Erro ao salvar', variant: 'destructive' });
+  }
+};
+```
+
+### 4. Aplicar mesma correção no TemplateEditor
+
+O `TemplateEditor.tsx` tem a mesma estrutura e precisa das mesmas correções.
+
+## Arquivos a Modificar
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `supabase/functions/ticto-webhook/index.ts` | Corrigir extração do offerCode e adicionar "authorized" |
+| `src/components/ErrorBoundary.tsx` | **NOVO** - Componente Error Boundary global |
+| `src/App.tsx` | Envolver aplicação com ErrorBoundary |
+| `src/pages/Editor.tsx` | Adicionar ReactFlowProvider e melhorar tratamento de erros |
+| `src/pages/TemplateEditor.tsx` | Adicionar ReactFlowProvider e melhorar tratamento de erros |
 
----
+## Resultado Esperado
 
-## Resumo das Mudanças no Código
+Após as correções:
 
-```typescript
-// 1. Adicionar "authorized" aos status válidos
-const approvalStatuses = ['approved', 'paid', 'confirmed', 'completed', 'authorized'];
+1. Se ocorrer qualquer erro, o usuário verá uma mensagem amigável com botão de recarregar
+2. O Editor será mais estável com o ReactFlowProvider corretamente configurado
+3. Erros de serialização serão capturados e reportados ao usuário
+4. A tela preta não acontecerá mais - haverá sempre feedback visual
 
-// 2. Corrigir extração do código da oferta (múltiplos fallbacks)
-const offerCode = 
-  body.query_params?.code || 
-  body.offer?.code || 
-  body.item?.offer_code ||
-  body.url_params?.query_params?.code || 
-  '';
+## Detalhes Técnicos
 
-// 3. Atualizar interface para incluir query_params e offer
+A estrutura do Editor ficará assim:
+
+```text
+Editor (função exportada)
+└── ReactFlowProvider
+    └── EditorCanvas (componente interno)
+        └── ReactFlow
+            ├── PromptNode (usa useReactFlow)
+            ├── MediaNode (usa useReactFlow)
+            ├── SettingsNode (usa useReactFlow)
+            └── OutputNode (usa useReactFlow)
 ```
 
----
+E a estrutura do App:
 
-## Após a Correção
-
-1. O webhook será deployado automaticamente
-2. Você pode usar o botão "Reenviar" no painel da Ticto para reprocessar o mesmo evento
-3. Os créditos serão adicionados automaticamente
-
+```text
+App
+└── ErrorBoundary
+    └── QueryClientProvider
+        └── AuthProvider
+            └── TooltipProvider
+                └── BrowserRouter
+                    └── Routes
+```
