@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { decode as base64Decode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -6,6 +7,56 @@ const corsHeaders = {
 };
 
 const CREDITS_PER_IMAGE = 1;
+
+// Helper: Upload base64 image to Supabase Storage and return public URL
+async function uploadBase64ToStorage(
+  supabaseAdmin: ReturnType<typeof import("https://esm.sh/@supabase/supabase-js@2.49.1").createClient>,
+  base64DataUrl: string,
+  userId: string,
+  fileName: string
+): Promise<string | null> {
+  try {
+    // Extract base64 data from data URL (format: data:image/png;base64,xxxxx)
+    const matches = base64DataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
+    if (!matches) {
+      console.error("Invalid base64 data URL format");
+      return null;
+    }
+    
+    const imageType = matches[1]; // png, jpeg, etc.
+    const base64Data = matches[2];
+    
+    // Decode base64 to Uint8Array
+    const imageBytes = base64Decode(base64Data);
+    
+    // Create file path: userId/timestamp-random.ext
+    const filePath = `${userId}/${fileName}.${imageType}`;
+    
+    // Upload to Storage
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from('generations')
+      .upload(filePath, imageBytes, {
+        contentType: `image/${imageType}`,
+        upsert: false
+      });
+    
+    if (uploadError) {
+      console.error("Storage upload error:", uploadError);
+      return null;
+    }
+    
+    // Get public URL
+    const { data: { publicUrl } } = supabaseAdmin.storage
+      .from('generations')
+      .getPublicUrl(filePath);
+    
+    console.log(`Uploaded image to Storage: ${filePath}`);
+    return publicUrl;
+  } catch (error) {
+    console.error("Error uploading to storage:", error);
+    return null;
+  }
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -58,7 +109,7 @@ serve(async (req) => {
     const validQuantities = [1, 2, 4];
     const safeQuantity = validQuantities.includes(quantity) ? quantity : 1;
 
-    // Check credits (10 per image)
+    // Check credits
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
       .select('credits')
@@ -111,8 +162,8 @@ serve(async (req) => {
       });
     }
 
-    // Function to generate a single image
-    const generateSingleImage = async (): Promise<string | null> => {
+    // Function to generate a single image and upload to Storage
+    const generateSingleImage = async (index: number): Promise<string | null> => {
       try {
         const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
           method: "POST",
@@ -139,7 +190,23 @@ serve(async (req) => {
         }
 
         const data = await response.json();
-        return data.choices?.[0]?.message?.images?.[0]?.image_url?.url || null;
+        const base64Url = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+        
+        if (!base64Url) {
+          console.error("No image URL in response");
+          return null;
+        }
+
+        // Upload to Storage instead of storing base64 directly
+        const fileName = `${Date.now()}-${index}-${Math.random().toString(36).substring(7)}`;
+        const publicUrl = await uploadBase64ToStorage(supabaseAdmin, base64Url, user.id, fileName);
+        
+        if (!publicUrl) {
+          console.error("Failed to upload image to storage");
+          return null;
+        }
+
+        return publicUrl;
       } catch (error) {
         console.error("Single image generation error:", error);
         if (error instanceof Error && error.message === "RATE_LIMIT") {
@@ -150,7 +217,7 @@ serve(async (req) => {
     };
 
     // Generate images in parallel
-    const generationPromises = Array(safeQuantity).fill(null).map(() => generateSingleImage());
+    const generationPromises = Array(safeQuantity).fill(null).map((_, i) => generateSingleImage(i));
     
     let results: (string | null)[];
     try {
@@ -193,20 +260,20 @@ serve(async (req) => {
       );
     }
 
-    // Save successful generations to database (auto-save to gallery)
+    // Save successful generations to database (now storing Storage URLs, not base64!)
     const generationInserts = successfulImages.map(imageUrl => ({
       user_id: user.id,
       project_id: projectId,
       prompt: prompt,
       aspect_ratio: aspectRatio || '1:1',
-      image_url: imageUrl,
+      image_url: imageUrl, // This is now a Storage URL, not base64!
       status: 'completed',
       saved_to_gallery: true
     }));
 
     await supabaseAdmin.from('generations').insert(generationInserts);
 
-    console.log(`Generated ${successfulImages.length}/${safeQuantity} images for user ${user.id}`);
+    console.log(`Generated ${successfulImages.length}/${safeQuantity} images for user ${user.id} (stored in Storage)`);
 
     // Get updated credits
     const { data: updatedProfile } = await supabaseAdmin
