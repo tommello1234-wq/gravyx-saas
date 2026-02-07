@@ -1,6 +1,6 @@
 import { memo, useState, useCallback } from 'react';
 import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react';
-import { Sparkles, Download, Loader2, Copy, Trash2 } from 'lucide-react';
+import { Sparkles, Download, Copy, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { OutputImageModal, NodeImage } from './OutputImageModal';
 import { supabase } from '@/integrations/supabase/client';
@@ -9,7 +9,6 @@ import { useSearchParams } from 'react-router-dom';
 interface OutputNodeData {
   label: string;
   images: NodeImage[] | string[]; // Support both old and new format
-  isLoading: boolean;
 }
 
 // Helper to normalize images to new format
@@ -36,7 +35,6 @@ export const OutputNode = memo(({
 }: NodeProps) => {
   const nodeData = data as unknown as OutputNodeData;
   const images = normalizeImages(nodeData.images);
-  const isLoading = nodeData.isLoading || false;
   const {
     deleteElements,
     setNodes,
@@ -170,17 +168,7 @@ export const OutputNode = memo(({
 
         {/* Content */}
         <div className="p-4">
-          {isLoading ? <div className="flex flex-col items-center justify-center py-12">
-              <div className="relative">
-                <div className="w-16 h-16 rounded-full bg-gradient-to-r from-violet-500 via-purple-500 to-violet-500 animate-spin" style={{
-              animationDuration: '2s'
-            }}>
-                  <div className="absolute inset-1 rounded-full bg-card" />
-                </div>
-                <Sparkles className="absolute inset-0 m-auto h-6 w-6 text-violet-500" />
-              </div>
-              <p className="text-sm text-muted-foreground mt-4">Gerando imagem...</p>
-            </div> : images.length > 0 ? <div className="space-y-4">
+          {images.length > 0 ? <div className="space-y-4">
               <div className="grid grid-cols-2 gap-2">
                 {images.map((image, index) => <div key={`${image.url}-${index}`} className="relative group rounded-xl overflow-hidden cursor-pointer border border-border/30 hover:border-emerald-500/50 transition-all" onClick={() => handleImageClick(image)}>
                     <img src={image.url} alt={`Generated ${index + 1}`} className="w-full h-24 object-cover" />

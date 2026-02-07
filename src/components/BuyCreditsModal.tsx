@@ -24,7 +24,7 @@ const packages: CreditPackage[] = [
     price: 'R$ 29,90',
     url: 'https://payment.ticto.app/O7EB601F4',
     icon: Coins,
-    label: '50 imagens',
+    label: '500 imagens',
   },
   {
     credits: 1200,
@@ -32,14 +32,14 @@ const packages: CreditPackage[] = [
     url: 'https://payment.ticto.app/O37CE7121',
     icon: Zap,
     popular: true,
-    label: '120 imagens',
+    label: '1.200 imagens',
   },
   {
     credits: 4000,
     price: 'R$ 149,90',
     url: 'https://payment.ticto.app/OD5F04218',
     icon: Crown,
-    label: '400 imagens',
+    label: '4.000 imagens',
   },
 ];
 

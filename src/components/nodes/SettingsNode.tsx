@@ -1,7 +1,7 @@
-import { memo, useState } from 'react';
+import { memo, useState, useEffect } from 'react';
 import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react';
 import { Button } from '@/components/ui/button';
-import { Settings, Sparkles, Copy, Trash2, Square, RectangleVertical, Smartphone } from 'lucide-react';
+import { Settings, Sparkles, Copy, Trash2, Square, RectangleVertical, Smartphone, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { GENERATE_IMAGE_EVENT } from '@/pages/Editor';
@@ -32,7 +32,10 @@ const aspectRatios = [{
 
 const quantities = [1, 2, 4];
 
-const CREDITS_PER_IMAGE = 10;
+const CREDITS_PER_IMAGE = 1;
+
+// Event for loading state
+export const GENERATING_STATE_EVENT = 'editor:generating-state';
 
 export const SettingsNode = memo(({
   data,
@@ -41,6 +44,7 @@ export const SettingsNode = memo(({
   const nodeData = data as unknown as SettingsNodeData;
   const [aspectRatio, setAspectRatio] = useState(nodeData.aspectRatio || '1:1');
   const [quantity, setQuantity] = useState(nodeData.quantity || 1);
+  const [isGenerating, setIsGenerating] = useState(false);
   const {
     profile
   } = useAuth();
@@ -49,6 +53,16 @@ export const SettingsNode = memo(({
     setNodes,
     getNodes
   } = useReactFlow();
+
+  // Listen for generating state events
+  useEffect(() => {
+    const handler = (e: CustomEvent<{ isGenerating: boolean }>) => {
+      setIsGenerating(e.detail.isGenerating);
+    };
+    
+    window.addEventListener(GENERATING_STATE_EVENT, handler as EventListener);
+    return () => window.removeEventListener(GENERATING_STATE_EVENT, handler as EventListener);
+  }, []);
 
   const handleAspectChange = (value: string) => {
     setAspectRatio(value);
@@ -157,17 +171,26 @@ export const SettingsNode = memo(({
         <Button 
           className="w-full h-12 rounded-xl bg-gradient-to-r from-violet-600 via-purple-600 to-violet-600 hover:from-violet-500 hover:via-purple-500 hover:to-violet-500 text-white font-semibold shadow-lg shadow-violet-500/30 transition-all hover:shadow-xl hover:shadow-violet-500/40 disabled:opacity-50 disabled:cursor-not-allowed" 
           onClick={() => window.dispatchEvent(new CustomEvent(GENERATE_IMAGE_EVENT))}
-          disabled={!hasEnoughCredits}
+          disabled={!hasEnoughCredits || isGenerating}
         >
-          <Sparkles className="h-5 w-5 mr-2" />
-          Gerar {quantity} {quantity === 1 ? 'Imagem' : 'Imagens'}
+          {isGenerating ? (
+            <>
+              <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+              Gerando...
+            </>
+          ) : (
+            <>
+              <Sparkles className="h-5 w-5 mr-2" />
+              Gerar {quantity} {quantity === 1 ? 'Imagem' : 'Imagens'}
+            </>
+          )}
         </Button>
 
         <p className={cn(
           "text-center text-xs",
           hasEnoughCredits ? "text-muted-foreground" : "text-destructive"
         )}>
-          {creditsNeeded} créditos por geração • {credits} disponíveis
+          {creditsNeeded} {creditsNeeded === 1 ? 'crédito' : 'créditos'} por geração • {credits} disponíveis
         </p>
       </div>
 
