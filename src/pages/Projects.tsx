@@ -95,13 +95,31 @@ export default function Projects() {
         
         if (template?.canvas_state) {
           const templateState = template.canvas_state as unknown as CanvasState;
-          // Regenerate node IDs to avoid conflicts
-          canvasState = {
-            nodes: templateState.nodes?.map((node: CanvasNode) => ({
+          
+          // Create a mapping from old IDs to new IDs
+          const idMapping: Record<string, string> = {};
+          
+          // Regenerate node IDs and keep track of the mapping
+          const newNodes = templateState.nodes?.map((node: CanvasNode) => {
+            const newId = `${node.type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            idMapping[node.id] = newId;
+            return {
               ...node,
-              id: `${node.type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-            })) || [],
-            edges: [] // Reset edges since node IDs changed
+              id: newId
+            };
+          }) || [];
+          
+          // Remap edges to use new node IDs
+          const newEdges = (templateState.edges || []).map((edge: { id?: string; source: string; target: string; [key: string]: unknown }) => ({
+            ...edge,
+            id: `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            source: idMapping[edge.source] || edge.source,
+            target: idMapping[edge.target] || edge.target
+          }));
+          
+          canvasState = {
+            nodes: newNodes,
+            edges: newEdges
           };
         }
       }
