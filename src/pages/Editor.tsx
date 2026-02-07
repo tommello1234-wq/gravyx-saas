@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ReactFlow, ReactFlowProvider, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, Connection, Node, Edge, BackgroundVariant } from '@xyflow/react';
+import type { Json } from '@/integrations/supabase/types';
 import '@xyflow/react/dist/style.css';
 import { Header } from '@/components/layout/Header';
 import { PromptNode } from '@/components/nodes/PromptNode';
@@ -23,8 +24,103 @@ const nodeTypes = {
 // Custom event for triggering generation
 export const GENERATE_IMAGE_EVENT = 'editor:generate-image';
 
+// Max canvas_state size before triggering auto-repair (1MB)
+const MAX_CANVAS_SIZE = 1_000_000;
+
 interface EditorCanvasProps {
   projectId: string | null;
+}
+
+// Helper: Sanitize canvas state for persistence - removes images and transient fields
+function sanitizeCanvasState(nodes: Node[], edges: Edge[]): Json {
+  const cleanNodes = nodes.map(node => {
+    // Remove transient ReactFlow fields
+    const { selected, dragging, measured, width, height, ...restNode } = node as Node & {
+      selected?: boolean;
+      dragging?: boolean;
+      measured?: { width: number; height: number };
+      width?: number;
+      height?: number;
+    };
+    
+    // Clean data object - create a new object without function refs
+    const cleanData: Record<string, unknown> = {};
+    for (const key in restNode.data) {
+      if (key !== 'onGenerate' && typeof restNode.data[key] !== 'function') {
+        cleanData[key] = restNode.data[key];
+      }
+    }
+    
+    // For output nodes: remove images entirely (they come from generations table)
+    if (node.type === 'output') {
+      delete cleanData.images;
+    }
+    
+    // For media nodes: remove base64 URLs (keep only storage URLs)
+    if (node.type === 'media' && cleanData.url && typeof cleanData.url === 'string') {
+      if ((cleanData.url as string).startsWith('data:image')) {
+        cleanData.url = null;
+      }
+    }
+    
+    return {
+      id: restNode.id,
+      type: restNode.type,
+      position: restNode.position,
+      data: cleanData,
+    };
+  });
+  
+  // Clean edges too - only keep serializable properties
+  const cleanEdges = edges.map(edge => ({
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    sourceHandle: edge.sourceHandle,
+    targetHandle: edge.targetHandle,
+  }));
+  
+  return { nodes: cleanNodes, edges: cleanEdges } as unknown as Json;
+}
+
+// Helper: Detect if canvas needs repair (contains base64 or is too large)
+function needsAutoRepair(canvasState: { nodes?: Node[]; edges?: Edge[] }): boolean {
+  const serialized = JSON.stringify(canvasState);
+  
+  // Check size
+  if (serialized.length > MAX_CANVAS_SIZE) {
+    return true;
+  }
+  
+  // Check for base64 images
+  if (serialized.includes('data:image')) {
+    return true;
+  }
+  
+  return false;
+}
+
+// Helper: Remove base64 and images from canvas state for repair
+function repairCanvasState(canvasState: { nodes?: Node[]; edges?: Edge[] }): { nodes: Node[]; edges: Edge[] } {
+  const nodes = (canvasState.nodes || []).map(node => {
+    const cleanData = { ...node.data };
+    
+    // Remove images from output nodes
+    if (node.type === 'output') {
+      delete cleanData.images;
+    }
+    
+    // Remove base64 URLs from media nodes
+    if (node.type === 'media' && cleanData.url && typeof cleanData.url === 'string') {
+      if (cleanData.url.startsWith('data:image')) {
+        cleanData.url = null;
+      }
+    }
+    
+    return { ...node, data: cleanData };
+  });
+  
+  return { nodes, edges: canvasState.edges || [] };
 }
 
 function EditorCanvas({ projectId }: EditorCanvasProps) {
@@ -44,7 +140,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     toastRef.current = toast;
   }, [toast]);
 
-  // Load project
+  // Load project and populate output node with images from generations table
   useEffect(() => {
     const loadProject = async () => {
       if (!projectId || !user) {
@@ -52,9 +148,10 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
         return;
       }
       try {
+        // Load project with only needed fields
         const { data, error } = await supabase
           .from('projects')
-          .select('*')
+          .select('name, canvas_state')
           .eq('id', projectId)
           .single();
 
@@ -65,11 +162,85 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
             description: error.message,
             variant: 'destructive'
           });
-        } else if (data) {
+          setIsLoading(false);
+          return;
+        }
+        
+        if (data) {
           setProjectName(data.name);
           const canvasState = data.canvas_state as { nodes?: Node[]; edges?: Edge[] };
-          if (canvasState?.nodes) setNodes(canvasState.nodes);
-          if (canvasState?.edges) setEdges(canvasState.edges);
+          
+          // Check if auto-repair is needed
+          const needsRepair = needsAutoRepair(canvasState);
+          
+          let loadedNodes = canvasState?.nodes || [];
+          let loadedEdges = canvasState?.edges || [];
+          
+          if (needsRepair) {
+            console.log('Auto-repair triggered: sanitizing canvas_state');
+            const repaired = repairCanvasState(canvasState);
+            loadedNodes = repaired.nodes;
+            loadedEdges = repaired.edges;
+            
+            // Save repaired state back to database immediately
+            const cleanState = sanitizeCanvasState(loadedNodes, loadedEdges);
+            const { error: updateError } = await supabase
+              .from('projects')
+              .update({
+                canvas_state: cleanState,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', projectId);
+            
+            if (updateError) {
+              console.error('Auto-repair save error:', updateError);
+            } else {
+              console.log('Auto-repair completed successfully');
+              toast({
+                title: 'Projeto otimizado',
+                description: 'Removemos imagens antigas do canvas para melhorar a performance. Suas imagens continuam na Galeria.',
+              });
+              
+              // Update lastSavedDataRef
+              lastSavedDataRef.current = JSON.stringify(cleanState);
+            }
+          }
+          
+          // Load historical images from generations table for output node
+          const { data: generations } = await supabase
+            .from('generations')
+            .select('image_url, prompt, aspect_ratio, created_at')
+            .eq('project_id', projectId)
+            .eq('status', 'completed')
+            .order('created_at', { ascending: false })
+            .limit(50);
+          
+          // Populate output node with images from generations
+          if (generations && generations.length > 0) {
+            const historicalImages = generations.map(gen => ({
+              url: gen.image_url,
+              prompt: gen.prompt,
+              aspectRatio: gen.aspect_ratio,
+              savedToGallery: true,
+              generatedAt: gen.created_at,
+            })).reverse(); // Show oldest first
+            
+            loadedNodes = loadedNodes.map(node => {
+              if (node.type === 'output') {
+                return {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    images: historicalImages,
+                  },
+                };
+              }
+              return node;
+            });
+          }
+          
+          setNodes(loadedNodes);
+          setEdges(loadedEdges);
         }
       } catch (err) {
         console.error('Load project exception:', err);
@@ -79,23 +250,17 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     loadProject();
   }, [projectId, user, setNodes, setEdges, toast]);
 
-  // Save function with error handling - uses ref for toast to avoid dependency issues
+  // Save function with sanitization - uses ref for toast to avoid dependency issues
   const saveProject = useCallback(async (nodesToSave: Node[], edgesToSave: Edge[]) => {
     if (!projectId || !user || isLoading) return;
     
-    // Create a clean copy without functions
-    const cleanNodes = nodesToSave.map(node => ({
-      ...node,
-      data: {
-        ...node.data,
-        onGenerate: undefined,
-      }
-    }));
+    // Sanitize canvas state before saving (removes images, base64, transient fields)
+    const cleanState = sanitizeCanvasState(nodesToSave, edgesToSave);
 
     // Check if data actually changed before saving
     let dataString: string;
     try {
-      dataString = JSON.stringify({ nodes: cleanNodes, edges: edgesToSave });
+      dataString = JSON.stringify(cleanState);
     } catch (serializationError) {
       console.error('Serialization error:', serializationError);
       toastRef.current({
@@ -113,12 +278,10 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
 
     setIsSaving(true);
     try {
-      const canvasData = JSON.parse(dataString);
-
       const { error } = await supabase
         .from('projects')
         .update({
-          canvas_state: canvasData,
+          canvas_state: cleanState,
           updated_at: new Date().toISOString()
         })
         .eq('id', projectId);
@@ -239,20 +402,20 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
         url,
         prompt,
         aspectRatio,
-        savedToGallery: false,
+        savedToGallery: true,
         generatedAt: new Date().toISOString(),
       }));
 
-      // Update output node - ACCUMULATE images instead of replacing
+      // Update output node - ACCUMULATE images (in local state only, not persisted)
       setNodes((nds) => {
-        const updated = nds.map((n) => {
+        return nds.map((n) => {
           if (n.id === outputNode.id) {
             const existingImages = (n.data as { images?: unknown[] }).images || [];
             // Normalize existing images to new format if needed
             const normalizedExisting = Array.isArray(existingImages) 
               ? existingImages.map((img: unknown) => 
                   typeof img === 'string' 
-                    ? { url: img, prompt: '', aspectRatio: '1:1', savedToGallery: false, generatedAt: new Date().toISOString() }
+                    ? { url: img, prompt: '', aspectRatio: '1:1', savedToGallery: true, generatedAt: new Date().toISOString() }
                     : img
                 )
               : [];
@@ -267,9 +430,8 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
           }
           return n;
         });
-        // Force save after generation
-        setTimeout(() => saveProject(updated, currentEdges), 100);
-        return updated;
+        // NOTE: Removed forced saveProject after generation - images are stored in 
+        // generations table, not in canvas_state. This prevents massive DB writes.
       });
 
       // Reset generating state
@@ -286,7 +448,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
         variant: 'destructive'
       });
     }
-  }, [profile, projectId, setNodes, toast, saveProject]);
+  }, [profile, projectId, setNodes, toast]);
 
   // Listen for generate events from SettingsNode
   useEffect(() => {

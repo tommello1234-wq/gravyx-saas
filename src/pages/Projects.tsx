@@ -38,7 +38,6 @@ import { CreateProjectModal } from '@/components/CreateProjectModal';
 interface Project {
   id: string;
   name: string;
-  canvas_state: unknown;
   created_at: string;
   updated_at: string;
 }
@@ -64,13 +63,13 @@ export default function Projects() {
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [editName, setEditName] = useState('');
 
-  // Fetch projects
+  // Fetch projects - only select needed columns to avoid loading huge canvas_state
   const { data: projects, isLoading } = useQuery({
     queryKey: ['projects', user?.id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('projects')
-        .select('*')
+        .select('id, name, created_at, updated_at')
         .eq('user_id', user?.id)
         .order('updated_at', { ascending: false });
       

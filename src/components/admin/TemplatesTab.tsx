@@ -31,7 +31,6 @@ interface Template {
   name: string;
   description: string | null;
   thumbnail_url: string | null;
-  canvas_state: unknown;
   created_at: string;
   created_by: string | null;
 }
@@ -44,13 +43,13 @@ export function TemplatesTab() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [templateToDelete, setTemplateToDelete] = useState<Template | null>(null);
 
-  // Fetch templates
+  // Fetch templates - only select needed columns to avoid loading canvas_state
   const { data: templates, isLoading: templatesLoading } = useQuery({
     queryKey: ['admin-templates'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('project_templates')
-        .select('*')
+        .select('id, name, description, thumbnail_url, created_at, created_by')
         .order('created_at', { ascending: false });
       if (error) throw error;
       return data as Template[];
