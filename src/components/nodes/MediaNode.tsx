@@ -132,7 +132,7 @@ export const MediaNode = memo(({
       </div>
 
       {/* Content */}
-      <div className="p-4">
+      <div className="p-4 nowheel" onWheel={(e) => e.stopPropagation()}>
         {url ? <div className="relative group rounded-xl overflow-hidden">
             <img src={url} alt="Reference" className="w-full h-40 object-cover" />
             <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
@@ -148,7 +148,7 @@ export const MediaNode = memo(({
                 <X className="h-4 w-4" />
               </Button>
             </div>
-          </div> : <div className="space-y-3">
+          </div> : <div className="space-y-3 nowheel" onWheel={(e) => e.stopPropagation()}>
             <Tabs value={activeTab} onValueChange={v => setActiveTab(v as 'upload' | 'library')}>
               <TabsList className="w-full bg-muted/30">
                 <TabsTrigger value="upload" className="flex-1 gap-2 data-[state=active]:bg-blue-500/20">

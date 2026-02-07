@@ -109,6 +109,8 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
   useEffect(() => {
     if (!projectId) return;
 
+    console.log('[useJobQueue] Setting up Realtime subscription for project:', projectId);
+
     const channel = supabase
       .channel(`jobs-${projectId}`)
       .on(
@@ -128,37 +130,46 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
             error: string | null;
           };
 
-          console.log('Job update received:', job.id, job.status);
+          console.log('[useJobQueue] Realtime job update received:', job.id, 'status:', job.status);
 
           if (job.status === 'completed') {
             // CORREÇÃO: Validar que result_urls é um array não vazio antes de chamar callback
             const urls = job.result_urls;
             if (Array.isArray(urls) && urls.length > 0) {
+              console.log('[useJobQueue] Job completed with', urls.length, 'images');
               callbacksRef.current.onJobCompleted({
                 jobId: job.id,
                 resultUrls: urls,
                 resultCount: job.result_count || urls.length
               });
             } else {
-              console.error('Job completed without valid result_urls:', job.id, 'urls:', urls);
+              console.error('[useJobQueue] Job completed WITHOUT valid result_urls:', job.id, 'urls:', urls);
             }
             // Only remove if it was in our pending list
             if (pendingJobIdsRef.current.has(job.id)) {
               removePendingJob(job.id);
             }
           } else if (job.status === 'failed') {
+            console.error('[useJobQueue] Job failed:', job.id, job.error);
             callbacksRef.current.onJobFailed(job.id, job.error || 'Falha na geração');
             if (pendingJobIdsRef.current.has(job.id)) {
               removePendingJob(job.id);
             }
           } else if (job.status === 'processing') {
+            console.log('[useJobQueue] Job processing:', job.id);
             updateJobStatus(job.id, 'processing');
           }
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        console.log('[useJobQueue] Realtime subscription status:', status);
+        if (err) {
+          console.error('[useJobQueue] Realtime subscription error:', err);
+        }
+      });
 
     return () => {
+      console.log('[useJobQueue] Cleaning up Realtime subscription');
       supabase.removeChannel(channel);
     };
   }, [projectId, removePendingJob, updateJobStatus]);
