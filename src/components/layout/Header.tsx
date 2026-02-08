@@ -10,8 +10,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useAuth } from '@/contexts/AuthContext';
-import { Sparkles, User, LogOut, Settings, LayoutGrid, Images, Library, Shield, Coins, CreditCard } from 'lucide-react';
+import { User, LogOut, LayoutGrid, Images, Library, Shield, Coins, CreditCard } from 'lucide-react';
 import { BuyCreditsModal } from '@/components/BuyCreditsModal';
+import gravyxLogo from '@/assets/gravyx-logo.webp';
 
 const navItems = [
   { path: '/projects', label: 'Projetos', icon: LayoutGrid },
@@ -35,10 +36,7 @@ export function Header() {
       <div className="container flex h-16 items-center justify-between">
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-primary">
-            <Sparkles className="h-5 w-5 text-white" />
-          </div>
-          <span className="text-xl font-bold gradient-text">Avion</span>
+          <img src={gravyxLogo} alt="Gravyx" className="h-8" />
         </Link>
 
         {/* Navigation */}
