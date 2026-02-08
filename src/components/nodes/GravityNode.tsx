@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Sparkles, Loader2, MoreVertical, Copy, Trash2, RotateCcw, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GravityPopup } from './GravityPopup';
-import gravityLogo from '@/assets/gravity-logo.webp';
+import gravityLogo from '@/assets/gravity-logo.png';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -217,13 +217,17 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
         <div 
           className={cn(
             "w-24 h-24 rounded-full cursor-pointer transition-all duration-300",
+            "bg-background",
             "flex items-center justify-center",
             "hover:scale-105",
             hasContent && "ring-2 ring-offset-2 ring-offset-card"
           )}
           style={{
-            background: 'linear-gradient(135deg, #0087ff, #001eff)',
-            boxShadow: '0 0 20px rgba(0, 135, 255, 0.4), 0 0 40px rgba(0, 30, 255, 0.2)',
+            border: '3px solid transparent',
+            backgroundImage: `linear-gradient(hsl(var(--background)), hsl(var(--background))), linear-gradient(135deg, #0087ff, #001eff)`,
+            backgroundOrigin: 'border-box',
+            backgroundClip: 'padding-box, border-box',
+            boxShadow: '0 0 20px rgba(0, 135, 255, 0.3), 0 0 40px rgba(0, 30, 255, 0.15)',
             ...(hasContent ? { '--tw-ring-color': '#0087ff' } as React.CSSProperties : {})
           }}
           onClick={() => setIsPopupOpen(true)}
@@ -231,7 +235,7 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
           <img 
             src={gravityLogo} 
             alt="Gravity" 
-            className="w-16 h-16 object-contain drop-shadow-lg"
+            className="w-14 h-14 object-contain"
           />
         </div>
 
