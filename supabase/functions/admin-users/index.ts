@@ -47,7 +47,77 @@ serve(async (req) => {
       });
     }
 
-    const { action, userId, email } = await req.json();
+    const { action, userId, email, credits } = await req.json();
+
+    if (action === "create-user") {
+      // Create a new user with email
+      const { data: createData, error: createError } = await supabaseAdmin.auth.admin.createUser({
+        email: email,
+        email_confirm: false,
+        user_metadata: { invited: true },
+      });
+
+      if (createError) {
+        console.error("Error creating user:", createError);
+        return new Response(JSON.stringify({ error: createError.message }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Set initial credits if provided
+      if (credits && createData.user) {
+        await supabaseAdmin
+          .from("profiles")
+          .update({ credits })
+          .eq("user_id", createData.user.id);
+      }
+
+      // Generate magic link for the user
+      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+        type: "magiclink",
+        email: email,
+        options: {
+          redirectTo: `${req.headers.get("origin") || supabaseUrl}/`,
+        },
+      });
+
+      if (!linkError && linkData.properties?.action_link) {
+        // Send the magic link email using Resend
+        const resendApiKey = Deno.env.get("RESEND_API_KEY");
+        if (resendApiKey) {
+          await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${resendApiKey}`,
+            },
+            body: JSON.stringify({
+              from: "Node Artistry <noreply@upwardacademy.com.br>",
+              to: [email],
+              subject: "Bem-vindo à plataforma!",
+              html: `
+                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+                  <h2>Bem-vindo!</h2>
+                  <p>Olá!</p>
+                  <p>Você foi convidado para acessar a plataforma Node Artistry.</p>
+                  <p>Clique no botão abaixo para acessar:</p>
+                  <a href="${linkData.properties.action_link}" 
+                     style="display: inline-block; background: #7c3aed; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin: 16px 0;">
+                    Acessar Plataforma
+                  </a>
+                  <p style="color: #666; font-size: 14px;">Este link é válido por 24 horas.</p>
+                </div>
+              `,
+            }),
+          });
+        }
+      }
+
+      return new Response(JSON.stringify({ success: true, message: "Usuário criado e convite enviado" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (action === "resend-invite") {
       // Generate magic link for the user
