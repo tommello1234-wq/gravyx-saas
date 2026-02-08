@@ -2,9 +2,10 @@ import { memo, useState, useCallback, useEffect, useRef } from 'react';
 import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Sparkles, Loader2, MoreVertical, Copy, Trash2, RotateCcw, Pencil, Plus } from 'lucide-react';
+import { Sparkles, Loader2, MoreVertical, Copy, Trash2, RotateCcw, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GravityPopup } from './GravityPopup';
+import gravyxIcon from '@/assets/gravyx-icon.png';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,7 +47,6 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
   const [label, setLabel] = useState(nodeData.label || 'Gravity');
   const [isEditing, setIsEditing] = useState(false);
   const [isPopupOpen, setIsPopupOpen] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
   const [generatingState, setGeneratingState] = useState<Omit<GeneratingState, 'gravityId'>>({
     isGenerating: false,
     totalResults: 0,
@@ -209,46 +209,32 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
           <Handle 
             type="target" 
             position={Position.Left} 
-            className="!w-4 !h-4 !bg-gradient-to-br !from-primary !to-secondary !border-4 !border-card !-left-2 !shadow-lg !top-1/2 !-translate-y-1/2" 
+            className="!w-4 !h-4 !bg-gradient-to-br !from-violet-500 !to-purple-600 !border-4 !border-card !-left-2 !shadow-lg !top-1/2 !-translate-y-1/2" 
           />
           
           {/* Main Circle */}
           <div 
             className={cn(
-              "w-24 h-24 rounded-full cursor-pointer transition-all duration-300 relative",
+              "w-24 h-24 rounded-full cursor-pointer transition-all duration-300",
+              "bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-700",
+              "border-4 border-violet-400/30 shadow-2xl shadow-violet-500/40",
               "flex items-center justify-center",
-              "hover:scale-105",
-              hasContent && "ring-2 ring-primary ring-offset-2 ring-offset-card"
+              "hover:scale-105 hover:shadow-violet-500/60",
+              hasContent && "ring-2 ring-violet-400 ring-offset-2 ring-offset-card"
             )}
-            style={{
-              background: 'hsl(220 20% 4%)',
-              boxShadow: '0 0 20px hsl(195 100% 50% / 0.3), 0 0 40px hsl(210 100% 50% / 0.2)'
-            }}
-            onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => setIsHovered(false)}
             onClick={() => setIsPopupOpen(true)}
           >
-            {/* Gradient border */}
-            <div 
-              className="absolute inset-0 rounded-full -z-10"
-              style={{
-                padding: '3px',
-                background: 'linear-gradient(135deg, hsl(195 100% 50%), hsl(210 100% 50%), hsl(220 90% 56%))',
-                WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-                WebkitMaskComposite: 'xor',
-                maskComposite: 'exclude'
-              }}
+            <img 
+              src={gravyxIcon} 
+              alt="Gravity" 
+              className="w-12 h-12 object-contain filter drop-shadow-lg"
             />
-            <Plus className={cn(
-              "w-8 h-8 transition-all duration-200",
-              isHovered ? "text-primary opacity-100 scale-100" : "text-muted-foreground/50 opacity-0 scale-75"
-            )} />
           </div>
 
           <Handle 
             type="source" 
             position={Position.Right} 
-            className="!w-4 !h-4 !bg-gradient-to-br !from-primary !to-secondary !border-4 !border-card !-right-2 !shadow-lg !top-1/2 !-translate-y-1/2" 
+            className="!w-4 !h-4 !bg-gradient-to-br !from-violet-500 !to-purple-600 !border-4 !border-card !-right-2 !shadow-lg !top-1/2 !-translate-y-1/2" 
           />
 
           {/* Menu Button */}
@@ -302,11 +288,9 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
           ) : (
             <>
               <h3 className="font-semibold text-sm text-foreground">{label}</h3>
-              {resultCount > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  {resultCount} resultado{resultCount > 1 ? 's' : ''}
-                </p>
-              )}
+              <p className="text-xs text-muted-foreground">
+                {resultCount > 0 ? `${resultCount} resultado${resultCount > 1 ? 's' : ''}` : 'Clique para editar'}
+              </p>
             </>
           )}
         </div>
@@ -317,8 +301,8 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
             size="sm"
             className={cn(
               "rounded-xl px-4 h-9 font-medium shadow-lg transition-all",
-              "bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90",
-              "text-primary-foreground shadow-primary/30 hover:shadow-primary/50",
+              "bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500",
+              "text-white shadow-violet-500/30 hover:shadow-violet-500/50",
               "disabled:opacity-50 disabled:cursor-not-allowed"
             )}
             onClick={handleGenerateAllClick}
