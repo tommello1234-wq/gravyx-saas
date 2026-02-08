@@ -1,4 +1,4 @@
-import { Type, Image, Settings, Sparkles } from 'lucide-react';
+import { Type, Image, Orbit, Sparkles } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -9,8 +9,8 @@ interface NodeToolbarProps {
 const tools = [
   { type: 'prompt', icon: Type, label: 'Prompt', color: 'text-amber-500' },
   { type: 'media', icon: Image, label: 'Mídia', color: 'text-blue-500' },
-  { type: 'settings', icon: Settings, label: 'Configurações', color: 'text-slate-400' },
-  { type: 'output', icon: Sparkles, label: 'Resultado', color: 'text-emerald-500' },
+  { type: 'gravity', icon: Orbit, label: 'Gravity', color: 'text-violet-500' },
+  { type: 'result', icon: Sparkles, label: 'Resultado', color: 'text-emerald-500' },
 ];
 
 export function NodeToolbar({ onAddNode }: NodeToolbarProps) {

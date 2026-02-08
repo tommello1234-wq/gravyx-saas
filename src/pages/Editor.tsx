@@ -8,6 +8,8 @@ import { PromptNode } from '@/components/nodes/PromptNode';
 import { MediaNode } from '@/components/nodes/MediaNode';
 import { SettingsNode, GENERATING_STATE_EVENT, JOB_QUEUE_STATE_EVENT } from '@/components/nodes/SettingsNode';
 import { OutputNode } from '@/components/nodes/OutputNode';
+import { ResultNode, GENERATE_FOR_RESULT_EVENT, RESULT_GENERATING_STATE_EVENT, RESULT_JOB_QUEUE_STATE_EVENT, ResultNodeData } from '@/components/nodes/ResultNode';
+import { GravityNode, GENERATE_ALL_FROM_GRAVITY_EVENT, GRAVITY_GENERATING_STATE_EVENT, GravityNodeData } from '@/components/nodes/GravityNode';
 import { NodeToolbar } from '@/components/editor/NodeToolbar';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -19,10 +21,12 @@ const nodeTypes = {
   prompt: PromptNode,
   media: MediaNode,
   settings: SettingsNode,
-  output: OutputNode
+  output: OutputNode,
+  result: ResultNode,
+  gravity: GravityNode
 };
 
-// Custom event for triggering generation
+// Custom event for triggering generation (legacy)
 export const GENERATE_IMAGE_EVENT = 'editor:generate-image';
 
 // Max canvas_state size before triggering auto-repair (1MB)
@@ -52,8 +56,8 @@ function sanitizeCanvasState(nodes: Node[], edges: Edge[]): Json {
       }
     }
     
-    // For output nodes: remove images entirely (they come from generations table)
-    if (node.type === 'output') {
+    // For output/result nodes: remove images entirely (they come from generations table)
+    if (node.type === 'output' || node.type === 'result') {
       delete cleanData.images;
     }
     
@@ -106,8 +110,8 @@ function repairCanvasState(canvasState: { nodes?: Node[]; edges?: Edge[] }): { n
   const nodes = (canvasState.nodes || []).map(node => {
     const cleanData = { ...node.data };
     
-    // Remove images from output nodes
-    if (node.type === 'output') {
+    // Remove images from output/result nodes
+    if (node.type === 'output' || node.type === 'result') {
       delete cleanData.images;
     }
     
@@ -122,6 +126,79 @@ function repairCanvasState(canvasState: { nodes?: Node[]; edges?: Edge[] }): { n
   });
   
   return { nodes, edges: canvasState.edges || [] };
+}
+
+// Helper: Collect context from a Gravity node
+function collectGravityContext(
+  gravityId: string, 
+  nodes: Node[], 
+  edges: Edge[]
+): { prompts: string[]; medias: string[] } {
+  const gravityNode = nodes.find(n => n.id === gravityId);
+  if (!gravityNode) return { prompts: [], medias: [] };
+  
+  const gravityData = gravityNode.data as unknown as GravityNodeData;
+  
+  // Prompts connected to the Gravity
+  const inputEdges = edges.filter(e => e.target === gravityId);
+  const connectedPrompts = inputEdges
+    .map(e => nodes.find(n => n.id === e.source && n.type === 'prompt'))
+    .filter(Boolean)
+    .map(n => (n!.data as { value?: string }).value)
+    .filter(Boolean) as string[];
+  
+  // Medias connected to the Gravity
+  const connectedMedias = inputEdges
+    .map(e => nodes.find(n => n.id === e.source && n.type === 'media'))
+    .filter(Boolean)
+    .map(n => (n!.data as { url?: string | null }).url)
+    .filter(Boolean) as string[];
+  
+  // Internal data from the Gravity popup
+  const internalPrompt = gravityData.internalPrompt || '';
+  const internalMedias = gravityData.internalMediaUrls || [];
+  
+  return {
+    prompts: [...connectedPrompts, internalPrompt].filter(Boolean),
+    medias: [...connectedMedias, ...internalMedias]
+  };
+}
+
+// Helper: Find if a Result node is connected to a Gravity
+function findConnectedGravity(resultId: string, nodes: Node[], edges: Edge[]): string | null {
+  const inputEdges = edges.filter(e => e.target === resultId);
+  for (const edge of inputEdges) {
+    const sourceNode = nodes.find(n => n.id === edge.source);
+    if (sourceNode?.type === 'gravity') {
+      return sourceNode.id;
+    }
+  }
+  return null;
+}
+
+// Helper: Collect local context connected directly to a Result node
+function collectLocalContext(
+  resultId: string, 
+  nodes: Node[], 
+  edges: Edge[]
+): { prompts: string[]; medias: string[] } {
+  const inputEdges = edges.filter(e => e.target === resultId);
+  
+  // Local prompts (not from gravity)
+  const localPrompts = inputEdges
+    .map(e => nodes.find(n => n.id === e.source && n.type === 'prompt'))
+    .filter(Boolean)
+    .map(n => (n!.data as { value?: string }).value)
+    .filter(Boolean) as string[];
+  
+  // Local medias (not from gravity)
+  const localMedias = inputEdges
+    .map(e => nodes.find(n => n.id === e.source && n.type === 'media'))
+    .filter(Boolean)
+    .map(n => (n!.data as { url?: string | null }).url)
+    .filter(Boolean) as string[];
+  
+  return { prompts: localPrompts, medias: localMedias };
 }
 
 function EditorCanvas({ projectId }: EditorCanvasProps) {
@@ -145,14 +222,19 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     setNodesRef.current = setNodes;
   }, [toast, setNodes]);
 
-  // Job completed handler - add images to output node
+  // Job completed handler - add images to result/output node
   const handleJobCompleted = useCallback((result: { jobId: string; resultUrls: string[]; resultCount: number }) => {
     const currentNodes = nodesRef.current;
-    const outputNode = currentNodes.find((n) => n.type === 'output');
     
-    if (!outputNode) return;
+    // Try to find result node first, fall back to output node
+    let targetNode = currentNodes.find((n) => n.type === 'result');
+    if (!targetNode) {
+      targetNode = currentNodes.find((n) => n.type === 'output');
+    }
+    
+    if (!targetNode) return;
 
-    // CORREÇÃO: Validar resultUrls antes de usar - evita crash em payloads malformados
+    // Validate resultUrls before use
     const urls = Array.isArray(result.resultUrls) ? result.resultUrls : [];
     if (urls.length === 0) {
       console.warn('Job completed but no result URLs provided:', result.jobId);
@@ -169,7 +251,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
 
     setNodesRef.current((nds) => {
       return nds.map((n) => {
-        if (n.id === outputNode.id) {
+        if (n.id === targetNode!.id) {
           const existingImages = (n.data as { images?: unknown[] }).images || [];
           return {
             ...n,
@@ -187,7 +269,6 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
       title: `${result.resultCount} ${result.resultCount === 1 ? 'imagem gerada' : 'imagens geradas'} com sucesso!` 
     });
     
-    // Refresh profile to update credits display
     refreshProfile();
   }, [refreshProfile]);
 
@@ -199,7 +280,6 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
       variant: 'destructive'
     });
     
-    // Refresh profile to update credits (might have been refunded)
     refreshProfile();
   }, [refreshProfile]);
 
@@ -216,14 +296,14 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     onJobFailed: handleJobFailed
   });
 
-  // Dispatch job queue state to SettingsNode
+  // Dispatch job queue state to SettingsNode (legacy)
   useEffect(() => {
     window.dispatchEvent(new CustomEvent(JOB_QUEUE_STATE_EVENT, { 
       detail: { hasQueuedJobs, hasProcessingJobs, totalPendingImages } 
     }));
   }, [hasQueuedJobs, hasProcessingJobs, totalPendingImages]);
 
-  // Load project and populate output node with images from generations table
+  // Load project and populate output/result node with images from generations table
   useEffect(() => {
     const loadProject = async () => {
       if (!projectId || !user) {
@@ -231,7 +311,6 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
         return;
       }
       try {
-        // Load project with only needed fields
         const { data, error } = await supabase
           .from('projects')
           .select('name, canvas_state')
@@ -253,7 +332,6 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
           setProjectName(data.name);
           const canvasState = data.canvas_state as { nodes?: Node[]; edges?: Edge[] };
           
-          // Check if auto-repair is needed
           const needsRepair = needsAutoRepair(canvasState);
           
           let loadedNodes = canvasState?.nodes || [];
@@ -265,7 +343,6 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
             loadedNodes = repaired.nodes;
             loadedEdges = repaired.edges;
             
-            // Save repaired state back to database immediately
             const cleanState = sanitizeCanvasState(loadedNodes, loadedEdges);
             const { error: updateError } = await supabase
               .from('projects')
@@ -281,15 +358,13 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
               console.log('Auto-repair completed successfully');
               toast({
                 title: 'Projeto otimizado',
-                description: 'Removemos imagens antigas do canvas para melhorar a performance. Suas imagens continuam na Galeria.',
+                description: 'Removemos imagens antigas do canvas para melhorar a performance.',
               });
-              
-              // Update lastSavedDataRef
               lastSavedDataRef.current = JSON.stringify(cleanState);
             }
           }
           
-          // Load historical images from generations table for output node
+          // Load historical images from generations table
           const { data: generations } = await supabase
             .from('generations')
             .select('image_url, prompt, aspect_ratio, created_at')
@@ -298,7 +373,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
             .order('created_at', { ascending: false })
             .limit(50);
           
-          // Populate output node with images from generations
+          // Populate output/result nodes with images from generations
           if (generations && generations.length > 0) {
             const historicalImages = generations.map(gen => ({
               url: gen.image_url,
@@ -306,10 +381,10 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
               aspectRatio: gen.aspect_ratio,
               savedToGallery: true,
               generatedAt: gen.created_at,
-            })).reverse(); // Show oldest first
+            })).reverse();
             
             loadedNodes = loadedNodes.map(node => {
-              if (node.type === 'output') {
+              if (node.type === 'output' || node.type === 'result') {
                 return {
                   ...node,
                   data: {
@@ -333,14 +408,12 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     loadProject();
   }, [projectId, user, setNodes, setEdges, toast]);
 
-  // Save function with sanitization - uses ref for toast to avoid dependency issues
+  // Save function with sanitization
   const saveProject = useCallback(async (nodesToSave: Node[], edgesToSave: Edge[]) => {
     if (!projectId || !user || isLoading) return;
     
-    // Sanitize canvas state before saving (removes images, base64, transient fields)
     const cleanState = sanitizeCanvasState(nodesToSave, edgesToSave);
 
-    // Check if data actually changed before saving
     let dataString: string;
     try {
       dataString = JSON.stringify(cleanState);
@@ -354,7 +427,6 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
       return;
     }
 
-    // Skip save if data hasn't changed
     if (dataString === lastSavedDataRef.current) {
       return;
     }
@@ -372,7 +444,6 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
       if (error) {
         console.error('Save error:', error);
       } else {
-        // Only update lastSavedDataRef on successful save
         lastSavedDataRef.current = dataString;
       }
     } catch (err) {
@@ -409,7 +480,6 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
   const nodesRef = useRef<Node[]>(nodes);
   const edgesRef = useRef<Edge[]>(edges);
   
-  // Keep refs in sync
   useEffect(() => {
     nodesRef.current = nodes;
   }, [nodes]);
@@ -418,8 +488,173 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     edgesRef.current = edges;
   }, [edges]);
 
+  // NEW: Generate for a specific Result node
+  const generateForResult = useCallback(async (resultId: string) => {
+    const currentNodes = nodesRef.current;
+    const currentEdges = edgesRef.current;
+    
+    const resultNode = currentNodes.find(n => n.id === resultId && n.type === 'result');
+    if (!resultNode) {
+      toast({
+        title: 'Erro',
+        description: 'Node de resultado não encontrado.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const resultData = resultNode.data as unknown as ResultNodeData;
+    const quantity = resultData.quantity || 1;
+    const aspectRatio = resultData.aspectRatio || '1:1';
+    const creditsNeeded = quantity;
+
+    if (!profile || profile.credits < creditsNeeded) {
+      toast({
+        title: 'Créditos insuficientes',
+        description: `Você precisa de ${creditsNeeded} ${creditsNeeded === 1 ? 'crédito' : 'créditos'}.`,
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Check if connected to a Gravity
+    const gravityId = findConnectedGravity(resultId, currentNodes, currentEdges);
+    
+    // Collect context
+    let allPrompts: string[] = [];
+    let allMedias: string[] = [];
+    
+    if (gravityId) {
+      const gravityContext = collectGravityContext(gravityId, currentNodes, currentEdges);
+      allPrompts = [...gravityContext.prompts];
+      allMedias = [...gravityContext.medias];
+    }
+    
+    // Add local context
+    const localContext = collectLocalContext(resultId, currentNodes, currentEdges);
+    allPrompts = [...allPrompts, ...localContext.prompts];
+    allMedias = [...allMedias, ...localContext.medias];
+
+    if (allPrompts.length === 0) {
+      toast({
+        title: 'Adicione um prompt',
+        description: 'Conecte pelo menos um nó de prompt ao Resultado ou ao Gravity.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const prompt = allPrompts.join(' ');
+    
+    // Dispatch generating state
+    window.dispatchEvent(new CustomEvent(RESULT_GENERATING_STATE_EVENT, { 
+      detail: { resultId, isGenerating: true } 
+    }));
+
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-image', {
+        body: { prompt, aspectRatio, quantity, imageUrls: allMedias, projectId }
+      });
+
+      if (error) throw error;
+
+      addPendingJob(data.jobId, data.quantity);
+      
+      window.dispatchEvent(new CustomEvent(RESULT_GENERATING_STATE_EVENT, { 
+        detail: { resultId, isGenerating: false } 
+      }));
+
+      toast({ 
+        title: 'Geração iniciada',
+        description: `${quantity} ${quantity === 1 ? 'imagem está sendo gerada' : 'imagens estão sendo geradas'}...`
+      });
+
+      refreshProfile();
+      
+    } catch (error) {
+      console.error('Generation error:', error);
+      window.dispatchEvent(new CustomEvent(RESULT_GENERATING_STATE_EVENT, { 
+        detail: { resultId, isGenerating: false } 
+      }));
+      toast({
+        title: 'Erro na geração',
+        description: (error as Error).message,
+        variant: 'destructive'
+      });
+    }
+  }, [profile, projectId, toast, addPendingJob, refreshProfile]);
+
+  // NEW: Generate all Results connected to a Gravity
+  const generateAllFromGravity = useCallback(async (gravityId: string) => {
+    const currentNodes = nodesRef.current;
+    const currentEdges = edgesRef.current;
+    
+    // Find all Result nodes connected to this Gravity
+    const outputEdges = currentEdges.filter(e => e.source === gravityId);
+    const connectedResults = outputEdges
+      .map(e => currentNodes.find(n => n.id === e.target && n.type === 'result'))
+      .filter(Boolean) as Node[];
+
+    if (connectedResults.length === 0) {
+      toast({
+        title: 'Nenhum Resultado conectado',
+        description: 'Conecte pelo menos um nó de Resultado ao Gravity.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Dispatch generating state to Gravity
+    window.dispatchEvent(new CustomEvent(GRAVITY_GENERATING_STATE_EVENT, { 
+      detail: { 
+        gravityId, 
+        isGenerating: true, 
+        totalResults: connectedResults.length,
+        completedResults: 0 
+      } 
+    }));
+
+    let completed = 0;
+
+    // Generate for each Result sequentially (to avoid overwhelming the API)
+    for (const resultNode of connectedResults) {
+      await generateForResult(resultNode.id);
+      completed++;
+      
+      window.dispatchEvent(new CustomEvent(GRAVITY_GENERATING_STATE_EVENT, { 
+        detail: { 
+          gravityId, 
+          isGenerating: completed < connectedResults.length, 
+          totalResults: connectedResults.length,
+          completedResults: completed 
+        } 
+      }));
+    }
+
+  }, [toast, generateForResult]);
+
+  // Listen for Result generate events
+  useEffect(() => {
+    const handler = (e: CustomEvent<{ resultId: string }>) => {
+      generateForResult(e.detail.resultId);
+    };
+    
+    window.addEventListener(GENERATE_FOR_RESULT_EVENT, handler as EventListener);
+    return () => window.removeEventListener(GENERATE_FOR_RESULT_EVENT, handler as EventListener);
+  }, [generateForResult]);
+
+  // Listen for Gravity generate all events
+  useEffect(() => {
+    const handler = (e: CustomEvent<{ gravityId: string }>) => {
+      generateAllFromGravity(e.detail.gravityId);
+    };
+    
+    window.addEventListener(GENERATE_ALL_FROM_GRAVITY_EVENT, handler as EventListener);
+    return () => window.removeEventListener(GENERATE_ALL_FROM_GRAVITY_EVENT, handler as EventListener);
+  }, [generateAllFromGravity]);
+
+  // Legacy: handleGenerate for old Settings node
   const handleGenerate = useCallback(async () => {
-    // Use refs to access current state without depending on them
     const currentNodes = nodesRef.current;
     const currentEdges = edgesRef.current;
 
@@ -436,12 +671,12 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     }
 
     const quantity = (settingsNode.data as { quantity?: number }).quantity || 1;
-    const creditsNeeded = quantity; // 1 credit per image
+    const creditsNeeded = quantity;
 
     if (!profile || profile.credits < creditsNeeded) {
       toast({
         title: 'Créditos insuficientes',
-        description: `Você precisa de ${creditsNeeded} ${creditsNeeded === 1 ? 'crédito' : 'créditos'} para gerar ${quantity} ${quantity === 1 ? 'imagem' : 'imagens'}.`,
+        description: `Você precisa de ${creditsNeeded} ${creditsNeeded === 1 ? 'crédito' : 'créditos'}.`,
         variant: 'destructive'
       });
       return;
@@ -470,21 +705,16 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
       .map((n) => (n.data as { url: string | null }).url)
       .filter(Boolean) as string[];
 
-    // Dispatch generating state event to SettingsNode (brief "sending" state)
     window.dispatchEvent(new CustomEvent(GENERATING_STATE_EVENT, { detail: { isGenerating: true } }));
 
     try {
-      // Call generate-image which now only enqueues the job
       const { data, error } = await supabase.functions.invoke('generate-image', {
         body: { prompt, aspectRatio, quantity, imageUrls, projectId }
       });
 
       if (error) throw error;
 
-      // Add job to pending queue - images will arrive via Realtime
       addPendingJob(data.jobId, data.quantity);
-
-      // Reset "sending" state - job is now queued
       window.dispatchEvent(new CustomEvent(GENERATING_STATE_EVENT, { detail: { isGenerating: false } }));
 
       toast({ 
@@ -492,12 +722,10 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
         description: `${quantity} ${quantity === 1 ? 'imagem está sendo gerada' : 'imagens estão sendo geradas'}...`
       });
 
-      // Refresh profile to show updated credits
       refreshProfile();
       
     } catch (error) {
       console.error('Generation error:', error);
-      // Reset generating state on error
       window.dispatchEvent(new CustomEvent(GENERATING_STATE_EVENT, { detail: { isGenerating: false } }));
       toast({
         title: 'Erro na geração',
@@ -507,7 +735,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     }
   }, [profile, projectId, toast, addPendingJob, refreshProfile]);
 
-  // Listen for generate events from SettingsNode
+  // Listen for generate events from SettingsNode (legacy)
   useEffect(() => {
     const handler = () => {
       handleGenerate();
@@ -529,7 +757,6 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
 
     const checkForNewImages = async () => {
       try {
-        // Fetch recent generations from DB
         const { data: generations, error } = await supabase
           .from('generations')
           .select('image_url, prompt, aspect_ratio, created_at')
@@ -540,13 +767,11 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
 
         if (error || !generations) return;
 
-        // Check if we have new images since last sync
         const newestCreatedAt = generations[0]?.created_at || '';
         if (newestCreatedAt && newestCreatedAt !== lastSyncedAtRef.current) {
           console.log('Polling fallback: detected new images, syncing...');
           lastSyncedAtRef.current = newestCreatedAt;
 
-          // Get all images and update output node
           const allImages = generations.map(gen => ({
             url: gen.image_url,
             prompt: gen.prompt,
@@ -557,7 +782,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
 
           setNodesRef.current((nds) =>
             nds.map((n) => {
-              if (n.type === 'output') {
+              if (n.type === 'output' || n.type === 'result') {
                 return {
                   ...n,
                   data: {
@@ -575,10 +800,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
       }
     };
 
-    // Initial check after 2 seconds
     const initialTimeout = setTimeout(checkForNewImages, 2000);
-    
-    // Then poll every 5 seconds
     pollingFallbackRef.current = setInterval(checkForNewImages, 5000);
 
     return () => {
@@ -596,12 +818,10 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
   // Copy/Paste keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if typing in input/textarea
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
       if (e.ctrlKey || e.metaKey) {
         if (e.key === 'c') {
-          // Copy: get selected nodes and edges between them
           const selectedNodes = nodesRef.current.filter(n => n.selected);
           if (selectedNodes.length === 0) return;
 
@@ -619,14 +839,12 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
         }
 
         if (e.key === 'v') {
-          // Paste: create new nodes/edges with unique IDs
           if (!clipboardRef.current || clipboardRef.current.nodes.length === 0) return;
 
           const { nodes: copiedNodes, edges: copiedEdges } = clipboardRef.current;
           const timestamp = Date.now();
           const idMap = new Map<string, string>();
 
-          // Create new nodes with unique IDs and offset position
           const newNodes = copiedNodes.map((node, index) => {
             const newId = `${node.type}-${timestamp}-${index}`;
             idMap.set(node.id, newId);
@@ -642,7 +860,6 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
             };
           });
 
-          // Recreate edges with new IDs
           const newEdges = copiedEdges.map((edge, index) => ({
             ...edge,
             id: `edge-${timestamp}-${index}`,
@@ -683,6 +900,12 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
           break;
         case 'output':
           data = { label: 'Resultado', images: [], isLoading: false };
+          break;
+        case 'result':
+          data = { label: 'Resultado', aspectRatio: '1:1', quantity: 1, images: [] };
+          break;
+        case 'gravity':
+          data = { label: 'Gravity', internalPrompt: '', internalMediaUrls: [] };
           break;
       }
 
