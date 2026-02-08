@@ -856,41 +856,77 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
       try {
         const { data: generations, error } = await supabase
           .from('generations')
-          .select('image_url, prompt, aspect_ratio, created_at')
+          .select('image_url, prompt, aspect_ratio, created_at, result_node_id')
           .eq('project_id', projectId)
           .eq('status', 'completed')
           .order('created_at', { ascending: false })
-          .limit(20);
+          .limit(50);
 
         if (error || !generations) return;
 
         const newestCreatedAt = generations[0]?.created_at || '';
         if (newestCreatedAt && newestCreatedAt !== lastSyncedAtRef.current) {
-          console.log('Polling fallback: detected new images, syncing...');
+          console.log('Polling fallback: detected new images, syncing by node...');
           lastSyncedAtRef.current = newestCreatedAt;
 
-          const allImages = generations.map(gen => ({
-            url: gen.image_url,
-            prompt: gen.prompt,
-            aspectRatio: gen.aspect_ratio,
-            savedToGallery: true,
-            generatedAt: gen.created_at,
-          })).reverse();
+          // Group images by result_node_id (same logic as initial load)
+          type NodeImage = {
+            url: string | null;
+            prompt: string;
+            aspectRatio: string;
+            savedToGallery: boolean;
+            generatedAt: string;
+          };
+          
+          const imagesByNode = new Map<string, NodeImage[]>();
+          
+          generations.forEach(gen => {
+            const nodeId = (gen as { result_node_id?: string | null }).result_node_id || '__shared__';
+            const existing = imagesByNode.get(nodeId) || [];
+            existing.push({
+              url: gen.image_url,
+              prompt: gen.prompt,
+              aspectRatio: gen.aspect_ratio,
+              savedToGallery: true,
+              generatedAt: gen.created_at,
+            });
+            imagesByNode.set(nodeId, existing);
+          });
+          
+          const sharedImages = imagesByNode.get('__shared__') || [];
 
-          setNodesRef.current((nds) =>
-            nds.map((n) => {
-              if (n.type === 'output' || n.type === 'result') {
+          setNodesRef.current((nds) => {
+            const resultNodes = nds.filter(n => n.type === 'result');
+            
+            return nds.map((n) => {
+              if (n.type === 'result') {
+                const nodeImages = imagesByNode.get(n.id) || [];
+                const isFirstResult = resultNodes.length > 0 && resultNodes[0].id === n.id;
+                // First Result Node gets legacy images too; slice().reverse() to avoid mutation
+                const finalImages = isFirstResult 
+                  ? [...nodeImages, ...sharedImages].slice().reverse()
+                  : nodeImages.slice().reverse();
                 return {
                   ...n,
                   data: {
                     ...n.data,
-                    images: allImages,
+                    images: finalImages,
+                  },
+                };
+              }
+              // Legacy output nodes only get shared images
+              if (n.type === 'output') {
+                return {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    images: sharedImages.slice().reverse(),
                   },
                 };
               }
               return n;
-            })
-          );
+            });
+          });
         }
       } catch (err) {
         console.error('Polling fallback error:', err);
