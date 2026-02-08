@@ -164,9 +164,10 @@ serve(async (req) => {
       aspectRatio: string;
       quantity: number;
       imageUrls: string[];
+      resultId?: string;
     };
 
-    const { prompt, aspectRatio, quantity, imageUrls = [] } = payload;
+    const { prompt, aspectRatio, quantity, imageUrls = [], resultId } = payload;
 
     // Build message content for AI
     let fullPrompt = prompt;
@@ -227,7 +228,7 @@ serve(async (req) => {
         throw new Error("All image generations failed");
       }
 
-      // Save successful generations to database
+      // Save successful generations to database with result_node_id
       const generationInserts = successfulImages.map(imageUrl => ({
         user_id: claimedJob.user_id,
         project_id: claimedJob.project_id,
@@ -235,7 +236,8 @@ serve(async (req) => {
         aspect_ratio: aspectRatio || '1:1',
         image_url: imageUrl,
         status: 'completed',
-        saved_to_gallery: true
+        saved_to_gallery: true,
+        result_node_id: resultId || null
       }));
 
       await supabaseAdmin.from('generations').insert(generationInserts);

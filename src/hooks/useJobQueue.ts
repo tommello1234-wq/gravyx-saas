@@ -79,10 +79,18 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
   // (e.g. job completes before it was added to pendingJobs)
   const processedJobIdsRef = useRef<Set<string>>(new Set());
 
+  // Ref to access latest pendingJobs state inside callbacks (avoids stale closure)
+  const pendingJobsStateRef = useRef<PendingJob[]>([]);
+
   // Keep callbacks ref in sync
   useEffect(() => {
     callbacksRef.current = { onJobCompleted, onJobFailed };
   }, [onJobCompleted, onJobFailed]);
+
+  // Keep pendingJobs state ref in sync
+  useEffect(() => {
+    pendingJobsStateRef.current = pendingJobs;
+  }, [pendingJobs]);
 
   // Add a new job to the pending list
   const addPendingJob = useCallback((jobId: string, quantity: number, resultId?: string) => {
@@ -120,6 +128,7 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
     result_urls: string[] | null;
     result_count: number | null;
     error: string | null;
+    payload?: { resultId?: string };
   }) => {
     if (!job?.id) return;
 
@@ -128,19 +137,21 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
 
     console.log('[useJobQueue] Processing job update:', job.id, 'status:', job.status);
 
-    // Find the job in pending list to get its resultId
-    const pendingJob = pendingJobs.find(pj => pj.id === job.id);
+    // Find the job in pending list to get its resultId (using ref to avoid stale closure)
+    const pendingJob = pendingJobsStateRef.current.find(pj => pj.id === job.id);
+    // Fallback: get resultId from the job payload if not in local state
+    const resultId = pendingJob?.resultId || job.payload?.resultId;
 
     if (job.status === 'completed') {
       const urls = job.result_urls;
 
       if (Array.isArray(urls) && urls.length > 0) {
-        console.log('[useJobQueue] Job completed with', urls.length, 'images');
+        console.log('[useJobQueue] Job completed with', urls.length, 'images, resultId:', resultId);
         callbacksRef.current.onJobCompleted({
           jobId: job.id,
           resultUrls: urls,
           resultCount: job.result_count || urls.length,
-          resultId: pendingJob?.resultId
+          resultId
         });
       } else {
         console.error('[useJobQueue] Job completed WITHOUT valid result_urls:', job.id, 'urls:', urls);
@@ -159,7 +170,7 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
     } else if (job.status === 'processing') {
       updateJobStatus(job.id, 'processing');
     }
-  }, [pendingJobs, removePendingJob, updateJobStatus]);
+  }, [removePendingJob, updateJobStatus]);
 
   // Poll the worker to process jobs
   const pollWorker = useCallback(async () => {
@@ -269,7 +280,7 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
       try {
         const { data, error } = await supabase
           .from('jobs')
-          .select('id,status,result_urls,result_count,error')
+          .select('id,status,result_urls,result_count,error,payload')
           .in('id', ids);
 
         if (error) {
@@ -277,7 +288,20 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
           return;
         }
 
-        (data ?? []).forEach((row) => processJobUpdate(row as any));
+        (data ?? []).forEach((row) => {
+          const jobData = row as { 
+            id: string; 
+            status: string; 
+            result_urls: string[] | null; 
+            result_count: number | null; 
+            error: string | null;
+            payload: { resultId?: string } | null;
+          };
+          processJobUpdate({
+            ...jobData,
+            payload: jobData.payload || undefined
+          });
+        });
       } catch (err) {
         console.error('[useJobQueue] Status polling exception:', err);
       }
