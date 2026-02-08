@@ -147,23 +147,22 @@ export default function Gallery() {
             </p>
           </motion.div>
         ) : (
-          <div className="columns-2 sm:columns-3 lg:columns-4 xl:columns-5 gap-4 space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             {generations?.map((gen, index) => (
               <motion.div
                 key={gen.id}
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: index * 0.03 }}
-                className="break-inside-avoid"
               >
                 <div
-                  className="group relative rounded-xl overflow-hidden border border-border/50 cursor-pointer hover:border-primary/50 transition-all bg-card"
+                  className="group relative rounded-xl overflow-hidden border border-border/50 cursor-pointer hover:border-primary/50 transition-all bg-card aspect-square"
                   onClick={() => setSelectedImage(gen)}
                 >
                   <img
                     src={gen.image_url}
                     alt={gen.prompt}
-                    className="w-full object-cover"
+                    className="w-full h-full object-cover"
                     loading="lazy"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
