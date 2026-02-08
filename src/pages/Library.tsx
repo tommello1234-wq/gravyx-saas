@@ -3,12 +3,15 @@ import { motion } from 'framer-motion';
 import { Header } from '@/components/layout/Header';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
+import { useAuth } from '@/contexts/AuthContext';
 import { 
   Loader2, 
   Library as LibraryIcon,
+  Plus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ImageViewerModal } from '@/components/ImageViewerModal';
+import { AddReferenceModal } from '@/components/AddReferenceModal';
 
 interface ReferenceImage {
   id: string;
@@ -25,8 +28,10 @@ interface ReferenceCategory {
 }
 
 export default function Library() {
+  const { isAdmin } = useAuth();
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedImage, setSelectedImage] = useState<ReferenceImage | null>(null);
+  const [addModalOpen, setAddModalOpen] = useState(false);
 
   // Fetch categories from database
   const { data: categories = [] } = useQuery({
@@ -74,11 +79,19 @@ export default function Library() {
       <Header />
       
       <main className="container py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Biblioteca</h1>
-          <p className="text-muted-foreground">
-            Explore imagens de referência e copie os prompts
-          </p>
+        <div className="mb-8 flex items-start justify-between">
+          <div>
+            <h1 className="text-3xl font-bold mb-2">Biblioteca</h1>
+            <p className="text-muted-foreground">
+              Explore imagens de referência e copie os prompts
+            </p>
+          </div>
+          {isAdmin && (
+            <Button onClick={() => setAddModalOpen(true)} className="rounded-full">
+              <Plus className="h-4 w-4 mr-2" />
+              Adicionar
+            </Button>
+          )}
         </div>
 
         {/* Category Filter */}
@@ -158,6 +171,8 @@ export default function Library() {
           category: getCategoryLabel(selectedImage.category),
         } : null}
       />
+
+      <AddReferenceModal open={addModalOpen} onOpenChange={setAddModalOpen} />
     </div>
   );
 }
