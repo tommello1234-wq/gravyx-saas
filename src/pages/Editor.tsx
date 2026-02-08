@@ -215,6 +215,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
   const setNodesRef = useRef(setNodes);
   const pollingFallbackRef = useRef<NodeJS.Timeout | null>(null);
   const lastSyncedAtRef = useRef<string>('');
+  const activeResultIdsRef = useRef<Set<string>>(new Set());
 
   // Keep refs in sync
   useEffect(() => {
@@ -222,14 +223,23 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     setNodesRef.current = setNodes;
   }, [toast, setNodes]);
 
-  // Job completed handler - add images to result/output node
-  const handleJobCompleted = useCallback((result: { jobId: string; resultUrls: string[]; resultCount: number }) => {
+  // Job completed handler - add images to the SPECIFIC result/output node that started the job
+  const handleJobCompleted = useCallback((result: { jobId: string; resultUrls: string[]; resultCount: number; resultId?: string }) => {
     const currentNodes = nodesRef.current;
     
-    // Try to find result node first, fall back to output node
-    let targetNode = currentNodes.find((n) => n.type === 'result');
+    // Use resultId from the job to find the correct target node
+    let targetNode: Node | undefined;
+    
+    if (result.resultId) {
+      targetNode = currentNodes.find((n) => n.id === result.resultId);
+    }
+    
+    // Fallback for legacy jobs without resultId
     if (!targetNode) {
-      targetNode = currentNodes.find((n) => n.type === 'output');
+      targetNode = currentNodes.find((n) => n.type === 'result');
+      if (!targetNode) {
+        targetNode = currentNodes.find((n) => n.type === 'output');
+      }
     }
     
     if (!targetNode) return;
@@ -249,9 +259,11 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
       generatedAt: new Date().toISOString(),
     }));
 
+    const targetId = targetNode.id;
+
     setNodesRef.current((nds) => {
       return nds.map((n) => {
-        if (n.id === targetNode!.id) {
+        if (n.id === targetId) {
           const existingImages = (n.data as { images?: unknown[] }).images || [];
           return {
             ...n,
@@ -302,6 +314,56 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
       detail: { hasQueuedJobs, hasProcessingJobs, totalPendingImages } 
     }));
   }, [hasQueuedJobs, hasProcessingJobs, totalPendingImages]);
+
+  // NEW: Dispatch job queue state events per resultId for ResultNode
+  useEffect(() => {
+    // Group jobs by resultId
+    const jobsByResult = new Map<string, typeof pendingJobs>();
+    
+    for (const job of pendingJobs) {
+      if (job.resultId) {
+        const jobs = jobsByResult.get(job.resultId) || [];
+        jobs.push(job);
+        jobsByResult.set(job.resultId, jobs);
+      }
+    }
+    
+    // Track which resultIds currently have jobs
+    const currentActiveIds = new Set(jobsByResult.keys());
+    
+    // Clear state for resultIds that no longer have pending jobs
+    for (const prevResultId of activeResultIdsRef.current) {
+      if (!currentActiveIds.has(prevResultId)) {
+        window.dispatchEvent(new CustomEvent(RESULT_JOB_QUEUE_STATE_EVENT, {
+          detail: { 
+            resultId: prevResultId, 
+            hasQueuedJobs: false, 
+            hasProcessingJobs: false, 
+            totalPendingImages: 0 
+          }
+        }));
+      }
+    }
+    
+    // Dispatch event for each resultId with active jobs
+    for (const [resultId, jobs] of jobsByResult) {
+      const hasQueuedJobsForResult = jobs.some(j => j.status === 'queued');
+      const hasProcessingJobsForResult = jobs.some(j => j.status === 'processing');
+      const totalPendingImagesForResult = jobs.reduce((acc, j) => acc + j.quantity, 0);
+      
+      window.dispatchEvent(new CustomEvent(RESULT_JOB_QUEUE_STATE_EVENT, {
+        detail: { 
+          resultId, 
+          hasQueuedJobs: hasQueuedJobsForResult, 
+          hasProcessingJobs: hasProcessingJobsForResult, 
+          totalPendingImages: totalPendingImagesForResult 
+        }
+      }));
+    }
+    
+    // Update the ref for next comparison
+    activeResultIdsRef.current = currentActiveIds;
+  }, [pendingJobs]);
 
   // Load project and populate output/result node with images from generations table
   useEffect(() => {
@@ -553,16 +615,16 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
 
     try {
       const { data, error } = await supabase.functions.invoke('generate-image', {
-        body: { prompt, aspectRatio, quantity, imageUrls: allMedias, projectId }
+        body: { prompt, aspectRatio, quantity, imageUrls: allMedias, projectId, resultId }
       });
 
       if (error) throw error;
 
-      addPendingJob(data.jobId, data.quantity);
+      // Add job with resultId so we know where to deliver images
+      addPendingJob(data.jobId, data.quantity, resultId);
       
-      window.dispatchEvent(new CustomEvent(RESULT_GENERATING_STATE_EVENT, { 
-        detail: { resultId, isGenerating: false } 
-      }));
+      // DON'T set isGenerating to false here - let job queue state control the UI
+      // The ResultNode listens to RESULT_JOB_QUEUE_STATE_EVENT for its state
 
       toast({ 
         title: 'Geração iniciada',

@@ -40,7 +40,7 @@ serve(async (req) => {
       );
     }
 
-    const { prompt, aspectRatio, quantity = 1, imageUrls = [], projectId } = await req.json();
+    const { prompt, aspectRatio, quantity = 1, imageUrls = [], projectId, resultId } = await req.json();
 
     if (!prompt) {
       return new Response(
@@ -103,7 +103,8 @@ serve(async (req) => {
           prompt,
           aspectRatio: aspectRatio || '1:1',
           quantity: safeQuantity,
-          imageUrls
+          imageUrls,
+          resultId
         },
         max_retries: 3
       })
