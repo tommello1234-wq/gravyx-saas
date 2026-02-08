@@ -127,10 +127,10 @@ export const OutputNode = memo(({
         </div>
 
         {/* Content */}
-        <div className="p-4 nowheel" onWheel={(e) => e.stopPropagation()}>
+        <div className="p-4 nowheel nodrag" onWheel={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
           {images.length > 0 ? <div className="space-y-4">
               {images.length > 6 ? (
-                <ScrollArea className="h-[200px] nowheel" onWheel={(e) => e.stopPropagation()}>
+                <ScrollArea className="h-[200px] nowheel nodrag" onWheel={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
                   <div className="grid grid-cols-2 gap-2 pr-2">
                     {images.map((image, index) => (
                       <div 

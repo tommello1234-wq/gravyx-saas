@@ -45,7 +45,9 @@ import {
   Upload,
   X,
   Send,
-  MoreHorizontal
+  MoreHorizontal,
+  Tags,
+  Pencil
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -64,15 +66,11 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
-const categories = [
-  { value: 'photography', label: 'Fotografia' },
-  { value: 'creative', label: 'Criativo' },
-  { value: 'food', label: 'Comida' },
-  { value: 'product', label: 'Produto' },
-  { value: 'portrait', label: 'Retrato' },
-  { value: 'landscape', label: 'Paisagem' },
-  { value: 'abstract', label: 'Abstrato' },
-];
+interface ReferenceCategory {
+  id: string;
+  slug: string;
+  label: string;
+}
 
 export default function Admin() {
   const { user } = useAuth();
@@ -81,7 +79,7 @@ export default function Admin() {
   
   // References state
   const [refDialogOpen, setRefDialogOpen] = useState(false);
-  const [newRef, setNewRef] = useState({ title: '', prompt: '', category: 'photography', image_url: '' });
+  const [newRef, setNewRef] = useState({ title: '', prompt: '', category: '', image_url: '' });
   const [uploadingImage, setUploadingImage] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -89,6 +87,26 @@ export default function Admin() {
   // User management state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<{ id: string; email: string } | null>(null);
+
+  // Category management state
+  const [catDialogOpen, setCatDialogOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<ReferenceCategory | null>(null);
+  const [newCategory, setNewCategory] = useState({ slug: '', label: '' });
+  const [deleteCatDialogOpen, setDeleteCatDialogOpen] = useState(false);
+  const [categoryToDelete, setCategoryToDelete] = useState<ReferenceCategory | null>(null);
+
+  // Fetch categories
+  const { data: categories = [], isLoading: categoriesLoading } = useQuery({
+    queryKey: ['reference-categories'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('reference_categories')
+        .select('*')
+        .order('label', { ascending: true });
+      if (error) throw error;
+      return data as ReferenceCategory[];
+    },
+  });
 
   // Fetch references
   const { data: references, isLoading: refsLoading } = useQuery({
@@ -124,7 +142,7 @@ export default function Admin() {
         .insert({ 
           title: ref.title, 
           prompt: ref.prompt, 
-          category: ref.category as 'photography' | 'creative' | 'food' | 'product' | 'portrait' | 'landscape' | 'abstract',
+          category: ref.category,
           image_url: ref.image_url,
           created_by: user?.id 
         });
@@ -133,7 +151,7 @@ export default function Admin() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-references'] });
       setRefDialogOpen(false);
-      setNewRef({ title: '', prompt: '', category: 'photography', image_url: '' });
+      setNewRef({ title: '', prompt: '', category: '', image_url: '' });
       setPreviewUrl(null);
       toast({ title: 'Referência criada!' });
     },
@@ -141,6 +159,87 @@ export default function Admin() {
       toast({ title: 'Erro', description: error.message, variant: 'destructive' });
     },
   });
+
+  // Category CRUD mutations
+  const createCategoryMutation = useMutation({
+    mutationFn: async (cat: { slug: string; label: string }) => {
+      const { error } = await supabase
+        .from('reference_categories')
+        .insert({ slug: cat.slug, label: cat.label });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['reference-categories'] });
+      setCatDialogOpen(false);
+      setNewCategory({ slug: '', label: '' });
+      setEditingCategory(null);
+      toast({ title: 'Categoria criada!' });
+    },
+    onError: (error) => {
+      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const updateCategoryMutation = useMutation({
+    mutationFn: async ({ id, slug, label }: { id: string; slug: string; label: string }) => {
+      const { error } = await supabase
+        .from('reference_categories')
+        .update({ slug, label })
+        .eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['reference-categories'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-references'] });
+      setCatDialogOpen(false);
+      setNewCategory({ slug: '', label: '' });
+      setEditingCategory(null);
+      toast({ title: 'Categoria atualizada!' });
+    },
+    onError: (error) => {
+      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const deleteCategoryMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('reference_categories').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['reference-categories'] });
+      setDeleteCatDialogOpen(false);
+      setCategoryToDelete(null);
+      toast({ title: 'Categoria excluída!' });
+    },
+    onError: (error) => {
+      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const handleSaveCategory = () => {
+    if (editingCategory) {
+      updateCategoryMutation.mutate({
+        id: editingCategory.id,
+        slug: newCategory.slug,
+        label: newCategory.label,
+      });
+    } else {
+      createCategoryMutation.mutate(newCategory);
+    }
+  };
+
+  const openEditCategory = (cat: ReferenceCategory) => {
+    setEditingCategory(cat);
+    setNewCategory({ slug: cat.slug, label: cat.label });
+    setCatDialogOpen(true);
+  };
+
+  const openNewCategory = () => {
+    setEditingCategory(null);
+    setNewCategory({ slug: '', label: '' });
+    setCatDialogOpen(true);
+  };
 
   // Delete reference mutation
   const deleteRefMutation = useMutation({
@@ -283,6 +382,10 @@ export default function Admin() {
               <Images className="h-4 w-4" />
               Referências
             </TabsTrigger>
+            <TabsTrigger value="categories" className="gap-2">
+              <Tags className="h-4 w-4" />
+              Categorias
+            </TabsTrigger>
             <TabsTrigger value="templates" className="gap-2">
               <LayoutTemplate className="h-4 w-4" />
               Templates
@@ -331,11 +434,11 @@ export default function Admin() {
                           onValueChange={(v) => setNewRef({ ...newRef, category: v })}
                         >
                           <SelectTrigger>
-                            <SelectValue />
+                            <SelectValue placeholder="Selecione uma categoria" />
                           </SelectTrigger>
                           <SelectContent>
                             {categories.map((cat) => (
-                              <SelectItem key={cat.value} value={cat.value}>
+                              <SelectItem key={cat.id} value={cat.slug}>
                                 {cat.label}
                               </SelectItem>
                             ))}
@@ -415,7 +518,7 @@ export default function Admin() {
                         <TableRow key={ref.id}>
                           <TableCell className="font-medium">{ref.title}</TableCell>
                           <TableCell>
-                            {categories.find((c) => c.value === ref.category)?.label}
+                            {categories.find((c) => c.slug === ref.category)?.label || ref.category}
                           </TableCell>
                           <TableCell className="max-w-[300px] truncate">
                             {ref.prompt}
@@ -429,6 +532,67 @@ export default function Admin() {
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Categories Tab */}
+          <TabsContent value="categories">
+            <Card className="glass-card">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle>Categorias</CardTitle>
+                <Button size="sm" className="rounded-full" onClick={openNewCategory}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Nova Categoria
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {categoriesLoading ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Slug</TableHead>
+                        <TableHead>Nome</TableHead>
+                        <TableHead className="w-[100px]">Ações</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {categories.map((cat) => (
+                        <TableRow key={cat.id}>
+                          <TableCell className="font-mono text-sm">{cat.slug}</TableCell>
+                          <TableCell className="font-medium">{cat.label}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => openEditCategory(cat)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-destructive"
+                                onClick={() => {
+                                  setCategoryToDelete(cat);
+                                  setDeleteCatDialogOpen(true);
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -533,6 +697,79 @@ export default function Admin() {
           </TabsContent>
         </Tabs>
       </main>
+
+      {/* Category Dialog */}
+      <Dialog open={catDialogOpen} onOpenChange={setCatDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {editingCategory ? 'Editar Categoria' : 'Nova Categoria'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Slug (identificador único)</Label>
+              <Input
+                value={newCategory.slug}
+                onChange={(e) => setNewCategory({ ...newCategory, slug: e.target.value.toLowerCase().replace(/\s+/g, '-') })}
+                placeholder="ex: paisagem-urbana"
+                disabled={!!editingCategory}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Usado internamente para identificar a categoria
+              </p>
+            </div>
+            <div>
+              <Label>Nome</Label>
+              <Input
+                value={newCategory.label}
+                onChange={(e) => setNewCategory({ ...newCategory, label: e.target.value })}
+                placeholder="ex: Paisagem Urbana"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={handleSaveCategory}
+              disabled={createCategoryMutation.isPending || updateCategoryMutation.isPending || !newCategory.slug || !newCategory.label}
+            >
+              {(createCategoryMutation.isPending || updateCategoryMutation.isPending) && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
+              {editingCategory ? 'Salvar' : 'Criar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Category Confirmation */}
+      <AlertDialog open={deleteCatDialogOpen} onOpenChange={setDeleteCatDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir categoria?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir a categoria{' '}
+              <strong>{categoryToDelete?.label}</strong>? 
+              Referências existentes com esta categoria não serão afetadas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (categoryToDelete) {
+                  deleteCategoryMutation.mutate(categoryToDelete.id);
+                }
+              }}
+              disabled={deleteCategoryMutation.isPending}
+            >
+              {deleteCategoryMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete User Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
