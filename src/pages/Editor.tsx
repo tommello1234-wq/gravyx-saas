@@ -334,6 +334,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     // Clear state for resultIds that no longer have pending jobs
     for (const prevResultId of activeResultIdsRef.current) {
       if (!currentActiveIds.has(prevResultId)) {
+        // Reset job queue state
         window.dispatchEvent(new CustomEvent(RESULT_JOB_QUEUE_STATE_EVENT, {
           detail: { 
             resultId: prevResultId, 
@@ -341,6 +342,10 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
             hasProcessingJobs: false, 
             totalPendingImages: 0 
           }
+        }));
+        // Also reset generating state (important: this was missing!)
+        window.dispatchEvent(new CustomEvent(RESULT_GENERATING_STATE_EVENT, {
+          detail: { resultId: prevResultId, isGenerating: false }
         }));
       }
     }
