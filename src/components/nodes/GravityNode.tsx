@@ -221,11 +221,10 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
               hasContent && "ring-2 ring-primary ring-offset-2 ring-offset-card"
             )}
             style={{
-              background: 'hsl(var(--background))',
               border: '3px solid transparent',
               backgroundImage: `
-                linear-gradient(hsl(var(--background)), hsl(var(--background))),
-                linear-gradient(135deg, hsl(var(--gradient-start)), hsl(var(--gradient-mid)), hsl(var(--gradient-end)))
+                linear-gradient(hsl(220 20% 4%), hsl(220 20% 4%)),
+                linear-gradient(135deg, hsl(195 100% 50%), hsl(210 100% 50%), hsl(220 90% 56%))
               `,
               backgroundOrigin: 'border-box',
               backgroundClip: 'padding-box, border-box',
