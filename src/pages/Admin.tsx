@@ -380,7 +380,7 @@ export default function Admin() {
           <TabsList className="bg-muted/50">
             <TabsTrigger value="references" className="gap-2">
               <Images className="h-4 w-4" />
-              Referências
+              Biblioteca
             </TabsTrigger>
             <TabsTrigger value="categories" className="gap-2">
               <Tags className="h-4 w-4" />
