@@ -215,25 +215,30 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
           {/* Main Circle */}
           <div 
             className={cn(
-              "w-24 h-24 rounded-full cursor-pointer transition-all duration-300",
+              "w-24 h-24 rounded-full cursor-pointer transition-all duration-300 relative",
               "flex items-center justify-center",
               "hover:scale-105",
               hasContent && "ring-2 ring-primary ring-offset-2 ring-offset-card"
             )}
             style={{
-              border: '3px solid transparent',
-              backgroundImage: `
-                linear-gradient(hsl(220 20% 4%), hsl(220 20% 4%)),
-                linear-gradient(135deg, hsl(195 100% 50%), hsl(210 100% 50%), hsl(220 90% 56%))
-              `,
-              backgroundOrigin: 'border-box',
-              backgroundClip: 'padding-box, border-box',
+              background: 'hsl(220 20% 4%)',
               boxShadow: '0 0 20px hsl(195 100% 50% / 0.3), 0 0 40px hsl(210 100% 50% / 0.2)'
             }}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
             onClick={() => setIsPopupOpen(true)}
           >
+            {/* Gradient border */}
+            <div 
+              className="absolute inset-0 rounded-full -z-10"
+              style={{
+                padding: '3px',
+                background: 'linear-gradient(135deg, hsl(195 100% 50%), hsl(210 100% 50%), hsl(220 90% 56%))',
+                WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+                WebkitMaskComposite: 'xor',
+                maskComposite: 'exclude'
+              }}
+            />
             <Plus className={cn(
               "w-8 h-8 transition-all duration-200",
               isHovered ? "text-primary opacity-100 scale-100" : "text-muted-foreground/50 opacity-0 scale-75"
