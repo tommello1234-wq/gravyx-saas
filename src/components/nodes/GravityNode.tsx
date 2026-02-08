@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Sparkles, Loader2, MoreVertical, Copy, Trash2, RotateCcw, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GravityPopup } from './GravityPopup';
-import gravyxIcon from '@/assets/gravyx-icon.png';
+import gravityLogo from '@/assets/gravity-logo.webp';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -206,36 +206,41 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
       <div className="flex flex-col items-center gap-3">
         {/* Circular Node */}
         <div className="relative">
-          <Handle 
-            type="target" 
-            position={Position.Left} 
-            className="!w-4 !h-4 !bg-gradient-to-br !from-violet-500 !to-purple-600 !border-4 !border-card !-left-2 !shadow-lg !top-1/2 !-translate-y-1/2" 
+        <Handle 
+          type="target" 
+          position={Position.Left} 
+          className="!w-4 !h-4 !border-4 !border-card !-left-2 !shadow-lg !top-1/2 !-translate-y-1/2"
+          style={{ background: 'linear-gradient(135deg, #0087ff, #001eff)' }}
+        />
+        
+        {/* Main Circle */}
+        <div 
+          className={cn(
+            "w-24 h-24 rounded-full cursor-pointer transition-all duration-300",
+            "flex items-center justify-center",
+            "hover:scale-105",
+            hasContent && "ring-2 ring-offset-2 ring-offset-card"
+          )}
+          style={{
+            background: 'linear-gradient(135deg, #0087ff, #001eff)',
+            boxShadow: '0 0 20px rgba(0, 135, 255, 0.4), 0 0 40px rgba(0, 30, 255, 0.2)',
+            ...(hasContent ? { '--tw-ring-color': '#0087ff' } as React.CSSProperties : {})
+          }}
+          onClick={() => setIsPopupOpen(true)}
+        >
+          <img 
+            src={gravityLogo} 
+            alt="Gravity" 
+            className="w-12 h-12 object-contain filter brightness-0 invert drop-shadow-lg"
           />
-          
-          {/* Main Circle */}
-          <div 
-            className={cn(
-              "w-24 h-24 rounded-full cursor-pointer transition-all duration-300",
-              "bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-700",
-              "border-4 border-violet-400/30 shadow-2xl shadow-violet-500/40",
-              "flex items-center justify-center",
-              "hover:scale-105 hover:shadow-violet-500/60",
-              hasContent && "ring-2 ring-violet-400 ring-offset-2 ring-offset-card"
-            )}
-            onClick={() => setIsPopupOpen(true)}
-          >
-            <img 
-              src={gravyxIcon} 
-              alt="Gravity" 
-              className="w-12 h-12 object-contain filter drop-shadow-lg"
-            />
-          </div>
+        </div>
 
-          <Handle 
-            type="source" 
-            position={Position.Right} 
-            className="!w-4 !h-4 !bg-gradient-to-br !from-violet-500 !to-purple-600 !border-4 !border-card !-right-2 !shadow-lg !top-1/2 !-translate-y-1/2" 
-          />
+        <Handle 
+          type="source" 
+          position={Position.Right} 
+          className="!w-4 !h-4 !border-4 !border-card !-right-2 !shadow-lg !top-1/2 !-translate-y-1/2"
+          style={{ background: 'linear-gradient(135deg, #0087ff, #001eff)' }}
+        />
 
           {/* Menu Button */}
           <div className="absolute -top-1 -right-1">
@@ -301,10 +306,13 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
             size="sm"
             className={cn(
               "rounded-xl px-4 h-9 font-medium shadow-lg transition-all",
-              "bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500",
-              "text-white shadow-violet-500/30 hover:shadow-violet-500/50",
+              "text-white",
               "disabled:opacity-50 disabled:cursor-not-allowed"
             )}
+            style={{
+              background: 'linear-gradient(135deg, #0087ff, #001eff)',
+              boxShadow: '0 4px 15px rgba(0, 135, 255, 0.3)'
+            }}
             onClick={handleGenerateAllClick}
             disabled={isGenerating}
           >
