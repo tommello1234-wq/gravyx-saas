@@ -5,7 +5,6 @@ import { Input } from '@/components/ui/input';
 import { Sparkles, Loader2, MoreVertical, Copy, Trash2, RotateCcw, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GravityPopup } from './GravityPopup';
-import gravyxIcon from '@/assets/gravyx-icon.png';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,6 +53,7 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
   });
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [totalImages, setTotalImages] = useState(0);
+  const [isHovered, setIsHovered] = useState(false);
   
   const inputRef = useRef<HTMLInputElement>(null);
   const { setNodes, setEdges, getNode, getEdges, getNodes } = useReactFlow();
@@ -201,44 +201,94 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
   const hasContent = (nodeData.internalPrompt?.length > 0) || (nodeData.internalMediaUrls?.length > 0);
   const isGenerating = generatingState.isGenerating;
 
+  // Unique gradient ID for this node instance
+  const gradientId = `orbital-gradient-${id}`;
+
   return (
     <>
-      <div className="flex flex-col items-center gap-3">
-        {/* Circular Node */}
-        <div className="relative">
+      <div 
+        className="flex flex-col items-center gap-3"
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        {/* Orbital Container */}
+        <div className="relative w-40 h-40 flex items-center justify-center">
+          
+          {/* SVG Orbital Ring */}
+          <svg 
+            viewBox="0 0 160 160" 
+            className="absolute inset-0 w-full h-full"
+          >
+            <defs>
+              <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="hsl(210 100% 50%)" />
+                <stop offset="50%" stopColor="hsl(195 100% 60%)" />
+                <stop offset="100%" stopColor="hsl(210 100% 50%)" />
+              </linearGradient>
+            </defs>
+            {/* Upper arc */}
+            <path
+              d="M 20 80 A 60 60 0 0 1 140 80"
+              fill="none"
+              stroke={`url(#${gradientId})`}
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+            {/* Lower arc */}
+            <path
+              d="M 140 80 A 60 60 0 0 1 20 80"
+              fill="none"
+              stroke={`url(#${gradientId})`}
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          </svg>
+
+          {/* Left Handle */}
           <Handle 
             type="target" 
             position={Position.Left} 
-            className="!w-4 !h-4 !bg-gradient-to-br !from-violet-500 !to-purple-600 !border-4 !border-card !-left-2 !shadow-lg !top-1/2 !-translate-y-1/2" 
+            className={cn(
+              "!w-6 !h-6 !rounded-full !border-0",
+              "!bg-gradient-to-b !from-cyan-400 !to-blue-600",
+              "!shadow-lg !shadow-blue-500/50",
+              "!-left-3 !top-1/2 !-translate-y-1/2",
+              "transition-all duration-300",
+              "hover:!shadow-blue-400/70 hover:!scale-110"
+            )}
           />
-          
-          {/* Main Circle */}
+
+          {/* Central Sphere */}
           <div 
             className={cn(
-              "w-24 h-24 rounded-full cursor-pointer transition-all duration-300",
-              "bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-700",
-              "border-4 border-violet-400/30 shadow-2xl shadow-violet-500/40",
-              "flex items-center justify-center",
-              "hover:scale-105 hover:shadow-violet-500/60",
-              hasContent && "ring-2 ring-violet-400 ring-offset-2 ring-offset-card"
+              "w-20 h-20 rounded-full cursor-pointer transition-all duration-300",
+              "bg-gradient-to-b from-cyan-400 via-blue-500 to-blue-700",
+              "shadow-xl shadow-blue-500/40",
+              "hover:shadow-2xl hover:shadow-blue-400/60 hover:scale-105",
+              hasContent && "ring-2 ring-cyan-400/50 ring-offset-2 ring-offset-background"
             )}
             onClick={() => setIsPopupOpen(true)}
-          >
-            <img 
-              src={gravyxIcon} 
-              alt="Gravity" 
-              className="w-12 h-12 object-contain filter drop-shadow-lg"
-            />
-          </div>
+          />
 
+          {/* Right Handle */}
           <Handle 
             type="source" 
             position={Position.Right} 
-            className="!w-4 !h-4 !bg-gradient-to-br !from-violet-500 !to-purple-600 !border-4 !border-card !-right-2 !shadow-lg !top-1/2 !-translate-y-1/2" 
+            className={cn(
+              "!w-6 !h-6 !rounded-full !border-0",
+              "!bg-gradient-to-b !from-cyan-400 !to-blue-600",
+              "!shadow-lg !shadow-blue-500/50",
+              "!-right-3 !top-1/2 !-translate-y-1/2",
+              "transition-all duration-300",
+              "hover:!shadow-blue-400/70 hover:!scale-110"
+            )}
           />
 
-          {/* Menu Button */}
-          <div className="absolute -top-1 -right-1">
+          {/* Menu Button - appears on hover */}
+          <div className={cn(
+            "absolute -top-2 -right-2 transition-opacity duration-200",
+            isHovered ? "opacity-100" : "opacity-0"
+          )}>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button 
@@ -301,8 +351,8 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
             size="sm"
             className={cn(
               "rounded-xl px-4 h-9 font-medium shadow-lg transition-all",
-              "bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500",
-              "text-white shadow-violet-500/30 hover:shadow-violet-500/50",
+              "bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500",
+              "text-white shadow-blue-500/30 hover:shadow-blue-400/50",
               "disabled:opacity-50 disabled:cursor-not-allowed"
             )}
             onClick={handleGenerateAllClick}
