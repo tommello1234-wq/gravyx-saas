@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
@@ -46,8 +47,9 @@ import {
   X,
   Send,
   MoreHorizontal,
-  Tags,
-  Pencil
+  Pencil,
+  UserPlus,
+  Settings2,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -65,11 +67,25 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 
 interface ReferenceCategory {
   id: string;
   slug: string;
   label: string;
+}
+
+interface ReferenceImage {
+  id: string;
+  title: string;
+  prompt: string;
+  category: string;
+  image_url: string;
+  created_at: string;
 }
 
 export default function Admin() {
@@ -79,6 +95,7 @@ export default function Admin() {
   
   // References state
   const [refDialogOpen, setRefDialogOpen] = useState(false);
+  const [editingRef, setEditingRef] = useState<ReferenceImage | null>(null);
   const [newRef, setNewRef] = useState({ title: '', prompt: '', category: '', image_url: '' });
   const [uploadingImage, setUploadingImage] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -87,8 +104,12 @@ export default function Admin() {
   // User management state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<{ id: string; email: string } | null>(null);
+  const [createUserDialogOpen, setCreateUserDialogOpen] = useState(false);
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserCredits, setNewUserCredits] = useState(5);
 
   // Category management state
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [catDialogOpen, setCatDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<ReferenceCategory | null>(null);
   const [newCategory, setNewCategory] = useState({ slug: '', label: '' });
@@ -117,7 +138,7 @@ export default function Admin() {
         .select('*')
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return data;
+      return data as ReferenceImage[];
     },
   });
 
@@ -150,10 +171,27 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-references'] });
-      setRefDialogOpen(false);
-      setNewRef({ title: '', prompt: '', category: '', image_url: '' });
-      setPreviewUrl(null);
+      closeRefDialog();
       toast({ title: 'Referência criada!' });
+    },
+    onError: (error) => {
+      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  // Update reference mutation
+  const updateRefMutation = useMutation({
+    mutationFn: async ({ id, ...ref }: { id: string; title: string; prompt: string; category: string; image_url: string }) => {
+      const { error } = await supabase
+        .from('reference_images')
+        .update({ title: ref.title, prompt: ref.prompt, category: ref.category, image_url: ref.image_url })
+        .eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-references'] });
+      closeRefDialog();
+      toast({ title: 'Referência atualizada!' });
     },
     onError: (error) => {
       toast({ title: 'Erro', description: error.message, variant: 'destructive' });
@@ -241,6 +279,36 @@ export default function Admin() {
     setCatDialogOpen(true);
   };
 
+  // Reference dialog helpers
+  const openNewRef = () => {
+    setEditingRef(null);
+    setNewRef({ title: '', prompt: '', category: '', image_url: '' });
+    setPreviewUrl(null);
+    setRefDialogOpen(true);
+  };
+
+  const openEditRef = (ref: ReferenceImage) => {
+    setEditingRef(ref);
+    setNewRef({ title: ref.title, prompt: ref.prompt, category: ref.category, image_url: ref.image_url });
+    setPreviewUrl(ref.image_url);
+    setRefDialogOpen(true);
+  };
+
+  const closeRefDialog = () => {
+    setRefDialogOpen(false);
+    setEditingRef(null);
+    setNewRef({ title: '', prompt: '', category: '', image_url: '' });
+    setPreviewUrl(null);
+  };
+
+  const handleSaveRef = () => {
+    if (editingRef) {
+      updateRefMutation.mutate({ id: editingRef.id, ...newRef });
+    } else {
+      createRefMutation.mutate(newRef);
+    }
+  };
+
   // Delete reference mutation
   const deleteRefMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -259,7 +327,6 @@ export default function Admin() {
     setUploadingImage(true);
     try {
       const fileExt = file.name.split('.').pop();
-      // Use user.id as folder name to match RLS policy
       const fileName = `${user.id}/${Date.now()}.${fileExt}`;
       
       const { error: uploadError } = await supabase.storage
@@ -314,6 +381,32 @@ export default function Admin() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-profiles'] });
       toast({ title: 'Créditos atualizados!' });
+    },
+  });
+
+  // Create user mutation
+  const createUserMutation = useMutation({
+    mutationFn: async ({ email, credits }: { email: string; credits: number }) => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const response = await supabase.functions.invoke('admin-users', {
+        body: { action: 'create-user', email, credits },
+        headers: {
+          Authorization: `Bearer ${sessionData.session?.access_token}`,
+        },
+      });
+      if (response.error) throw new Error(response.error.message);
+      if (response.data?.error) throw new Error(response.data.error);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-profiles'] });
+      setCreateUserDialogOpen(false);
+      setNewUserEmail('');
+      setNewUserCredits(5);
+      toast({ title: 'Usuário criado!', description: 'Um email de convite foi enviado.' });
+    },
+    onError: (error) => {
+      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
     },
   });
 
@@ -372,7 +465,7 @@ export default function Admin() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold mb-2">Painel Admin</h1>
           <p className="text-muted-foreground">
-            Gerencie referências, templates e usuários
+            Gerencie biblioteca, templates e usuários
           </p>
         </div>
 
@@ -381,10 +474,6 @@ export default function Admin() {
             <TabsTrigger value="references" className="gap-2">
               <Images className="h-4 w-4" />
               Biblioteca
-            </TabsTrigger>
-            <TabsTrigger value="categories" className="gap-2">
-              <Tags className="h-4 w-4" />
-              Categorias
             </TabsTrigger>
             <TabsTrigger value="templates" className="gap-2">
               <LayoutTemplate className="h-4 w-4" />
@@ -398,209 +487,137 @@ export default function Admin() {
 
           {/* References Tab */}
           <TabsContent value="references">
-            <Card className="glass-card">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle>Imagens de Referência</CardTitle>
-                <Dialog open={refDialogOpen} onOpenChange={setRefDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button size="sm" className="rounded-full">
-                      <Plus className="h-4 w-4 mr-2" />
-                      Adicionar
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Nova Referência</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <div>
-                        <Label>Título</Label>
-                        <Input
-                          value={newRef.title}
-                          onChange={(e) => setNewRef({ ...newRef, title: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <Label>Prompt</Label>
-                        <Textarea
-                          value={newRef.prompt}
-                          onChange={(e) => setNewRef({ ...newRef, prompt: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <Label>Categoria</Label>
-                        <Select
-                          value={newRef.category}
-                          onValueChange={(v) => setNewRef({ ...newRef, category: v })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecione uma categoria" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {categories.map((cat) => (
-                              <SelectItem key={cat.id} value={cat.slug}>
-                                {cat.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label>Imagem</Label>
-                        <input
-                          type="file"
-                          ref={fileInputRef}
-                          onChange={handleFileChange}
-                          accept="image/*"
-                          className="hidden"
-                        />
-                        {previewUrl ? (
-                          <div className="relative mt-2">
-                            <img 
-                              src={previewUrl} 
-                              alt="Preview" 
-                              className="w-full h-40 object-cover rounded-lg"
-                            />
-                            <Button
-                              type="button"
-                              variant="destructive"
-                              size="icon"
-                              className="absolute top-2 right-2 h-8 w-8"
-                              onClick={clearImage}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => fileInputRef.current?.click()}
-                            disabled={uploadingImage}
-                            className="w-full mt-2 border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary/50 transition-colors"
-                          >
-                            <Upload className={`h-8 w-8 mx-auto text-muted-foreground mb-2 ${uploadingImage ? 'animate-pulse' : ''}`} />
-                            <p className="text-sm text-muted-foreground">
-                              {uploadingImage ? 'Enviando...' : 'Clique para upload'}
-                            </p>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button
-                        onClick={() => createRefMutation.mutate(newRef)}
-                        disabled={createRefMutation.isPending || !newRef.image_url}
-                      >
-                        {createRefMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                        Criar
+            <div className="space-y-6">
+              {/* Categories Management Collapsible */}
+              <Card className="glass-card">
+                <Collapsible open={categoriesOpen} onOpenChange={setCategoriesOpen}>
+                  <CardHeader className="flex flex-row items-center justify-between py-4">
+                    <CollapsibleTrigger asChild>
+                      <Button variant="ghost" className="flex items-center gap-2 p-0 h-auto hover:bg-transparent">
+                        <Settings2 className="h-5 w-5" />
+                        <CardTitle className="text-lg">Gerenciar Categorias</CardTitle>
+                        <Badge variant="secondary" className="ml-2">{categories.length}</Badge>
                       </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </CardHeader>
-              <CardContent>
-                {refsLoading ? (
-                  <div className="flex justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin" />
-                  </div>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Título</TableHead>
-                        <TableHead>Categoria</TableHead>
-                        <TableHead>Prompt</TableHead>
-                        <TableHead className="w-[100px]">Ações</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {references?.map((ref) => (
-                        <TableRow key={ref.id}>
-                          <TableCell className="font-medium">{ref.title}</TableCell>
-                          <TableCell>
-                            {categories.find((c) => c.slug === ref.category)?.label || ref.category}
-                          </TableCell>
-                          <TableCell className="max-w-[300px] truncate">
-                            {ref.prompt}
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="text-destructive"
-                              onClick={() => deleteRefMutation.mutate(ref.id)}
+                    </CollapsibleTrigger>
+                    <Button size="sm" className="rounded-full" onClick={openNewCategory}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Nova
+                    </Button>
+                  </CardHeader>
+                  <CollapsibleContent>
+                    <CardContent className="pt-0">
+                      {categoriesLoading ? (
+                        <div className="flex justify-center py-4">
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {categories.map((cat) => (
+                            <div
+                              key={cat.id}
+                              className="flex items-center gap-1 bg-secondary/50 rounded-full pl-3 pr-1 py-1"
                             >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Categories Tab */}
-          <TabsContent value="categories">
-            <Card className="glass-card">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle>Categorias</CardTitle>
-                <Button size="sm" className="rounded-full" onClick={openNewCategory}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Nova Categoria
-                </Button>
-              </CardHeader>
-              <CardContent>
-                {categoriesLoading ? (
-                  <div className="flex justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin" />
-                  </div>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Slug</TableHead>
-                        <TableHead>Nome</TableHead>
-                        <TableHead className="w-[100px]">Ações</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {categories.map((cat) => (
-                        <TableRow key={cat.id}>
-                          <TableCell className="font-mono text-sm">{cat.slug}</TableCell>
-                          <TableCell className="font-medium">{cat.label}</TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1">
+                              <span className="text-sm">{cat.label}</span>
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-8 w-8"
+                                className="h-6 w-6 rounded-full"
                                 onClick={() => openEditCategory(cat)}
                               >
-                                <Pencil className="h-4 w-4" />
+                                <Pencil className="h-3 w-3" />
                               </Button>
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-8 w-8 text-destructive"
+                                className="h-6 w-6 rounded-full text-destructive hover:text-destructive"
                                 onClick={() => {
                                   setCategoryToDelete(cat);
                                   setDeleteCatDialogOpen(true);
                                 }}
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <X className="h-3 w-3" />
                               </Button>
                             </div>
-                          </TableCell>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </CollapsibleContent>
+                </Collapsible>
+              </Card>
+
+              {/* Reference Images */}
+              <Card className="glass-card">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <CardTitle>Imagens de Referência</CardTitle>
+                  <Button size="sm" className="rounded-full" onClick={openNewRef}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Adicionar
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  {refsLoading ? (
+                    <div className="flex justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin" />
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[80px]">Imagem</TableHead>
+                          <TableHead>Título</TableHead>
+                          <TableHead>Categoria</TableHead>
+                          <TableHead className="max-w-[200px]">Prompt</TableHead>
+                          <TableHead className="w-[100px]">Ações</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
+                      </TableHeader>
+                      <TableBody>
+                        {references?.map((ref) => (
+                          <TableRow key={ref.id}>
+                            <TableCell>
+                              <img
+                                src={ref.image_url}
+                                alt={ref.title}
+                                className="w-14 h-14 object-cover rounded-lg border border-border"
+                              />
+                            </TableCell>
+                            <TableCell className="font-medium">{ref.title}</TableCell>
+                            <TableCell>
+                              <Badge variant="secondary">
+                                {categories.find((c) => c.slug === ref.category)?.label || ref.category}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="max-w-[200px] truncate text-muted-foreground text-sm">
+                              {ref.prompt}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => openEditRef(ref)}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-destructive"
+                                  onClick={() => deleteRefMutation.mutate(ref.id)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           {/* Templates Tab */}
@@ -611,8 +628,12 @@ export default function Admin() {
           {/* Users Tab */}
           <TabsContent value="users">
             <Card className="glass-card">
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>Usuários</CardTitle>
+                <Button size="sm" className="rounded-full" onClick={() => setCreateUserDialogOpen(true)}>
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Adicionar Usuário
+                </Button>
               </CardHeader>
               <CardContent>
                 {profilesLoading ? (
@@ -698,6 +719,100 @@ export default function Admin() {
         </Tabs>
       </main>
 
+      {/* Reference Dialog (Create/Edit) */}
+      <Dialog open={refDialogOpen} onOpenChange={setRefDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingRef ? 'Editar Referência' : 'Nova Referência'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Título</Label>
+              <Input
+                value={newRef.title}
+                onChange={(e) => setNewRef({ ...newRef, title: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>Prompt</Label>
+              <Textarea
+                value={newRef.prompt}
+                onChange={(e) => setNewRef({ ...newRef, prompt: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>Categoria</Label>
+              <Select
+                value={newRef.category}
+                onValueChange={(v) => setNewRef({ ...newRef, category: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione uma categoria" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.slug}>
+                      {cat.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Imagem</Label>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                accept="image/*"
+                className="hidden"
+              />
+              {previewUrl ? (
+                <div className="relative mt-2">
+                  <img 
+                    src={previewUrl} 
+                    alt="Preview" 
+                    className="w-full h-40 object-cover rounded-lg"
+                  />
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="icon"
+                    className="absolute top-2 right-2 h-8 w-8"
+                    onClick={clearImage}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingImage}
+                  className="w-full mt-2 border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary/50 transition-colors"
+                >
+                  <Upload className={`h-8 w-8 mx-auto text-muted-foreground mb-2 ${uploadingImage ? 'animate-pulse' : ''}`} />
+                  <p className="text-sm text-muted-foreground">
+                    {uploadingImage ? 'Enviando...' : 'Clique para upload'}
+                  </p>
+                </button>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={handleSaveRef}
+              disabled={createRefMutation.isPending || updateRefMutation.isPending || !newRef.image_url}
+            >
+              {(createRefMutation.isPending || updateRefMutation.isPending) && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
+              {editingRef ? 'Salvar' : 'Criar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Category Dialog */}
       <Dialog open={catDialogOpen} onOpenChange={setCatDialogOpen}>
         <DialogContent>
@@ -742,6 +857,44 @@ export default function Admin() {
         </DialogContent>
       </Dialog>
 
+      {/* Create User Dialog */}
+      <Dialog open={createUserDialogOpen} onOpenChange={setCreateUserDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Adicionar Usuário</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Email</Label>
+              <Input
+                type="email"
+                value={newUserEmail}
+                onChange={(e) => setNewUserEmail(e.target.value)}
+                placeholder="email@exemplo.com"
+              />
+            </div>
+            <div>
+              <Label>Créditos iniciais</Label>
+              <Input
+                type="number"
+                value={newUserCredits}
+                onChange={(e) => setNewUserCredits(parseInt(e.target.value) || 0)}
+                min={0}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={() => createUserMutation.mutate({ email: newUserEmail, credits: newUserCredits })}
+              disabled={createUserMutation.isPending || !newUserEmail}
+            >
+              {createUserMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Criar e Enviar Convite
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Delete Category Confirmation */}
       <AlertDialog open={deleteCatDialogOpen} onOpenChange={setDeleteCatDialogOpen}>
         <AlertDialogContent>
@@ -750,7 +903,7 @@ export default function Admin() {
             <AlertDialogDescription>
               Tem certeza que deseja excluir a categoria{' '}
               <strong>{categoryToDelete?.label}</strong>? 
-              Referências existentes com esta categoria não serão afetadas.
+              Imagens existentes com esta categoria não serão afetadas.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
