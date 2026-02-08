@@ -231,7 +231,7 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
           <img 
             src={gravityLogo} 
             alt="Gravity" 
-            className="w-12 h-12 object-contain filter brightness-0 invert drop-shadow-lg"
+            className="w-16 h-16 object-contain drop-shadow-lg"
           />
         </div>
 
