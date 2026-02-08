@@ -28,6 +28,8 @@ import { PromptNode } from '@/components/nodes/PromptNode';
 import { MediaNode } from '@/components/nodes/MediaNode';
 import { SettingsNode } from '@/components/nodes/SettingsNode';
 import { OutputNode } from '@/components/nodes/OutputNode';
+import { ResultNode } from '@/components/nodes/ResultNode';
+import { GravityNode } from '@/components/nodes/GravityNode';
 import {
   ArrowLeft,
   Loader2,
@@ -41,7 +43,9 @@ const nodeTypes = {
   prompt: PromptNode,
   media: MediaNode,
   settings: SettingsNode,
-  output: OutputNode
+  output: OutputNode,
+  result: ResultNode,
+  gravity: GravityNode
 };
 
 interface TemplateEditorCanvasProps {
@@ -261,6 +265,12 @@ function TemplateEditorCanvas({ templateIdParam }: TemplateEditorCanvasProps) {
           break;
         case 'output':
           data = { label: 'Resultado', images: [], isLoading: false };
+          break;
+        case 'result':
+          data = { label: 'Resultado', aspectRatio: '1:1', quantity: 1, images: [] };
+          break;
+        case 'gravity':
+          data = { label: 'Gravity', internalPrompt: '', internalMediaUrls: [] };
           break;
       }
 
