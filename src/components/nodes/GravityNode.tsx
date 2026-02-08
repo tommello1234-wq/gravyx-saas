@@ -13,6 +13,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { ResultNodeData } from './ResultNode';
 
 // Events
 export const GENERATE_ALL_FROM_GRAVITY_EVENT = 'editor:generate-all-from-gravity';
@@ -41,6 +52,8 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
     totalResults: 0,
     completedResults: 0
   });
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [totalImages, setTotalImages] = useState(0);
   
   const inputRef = useRef<HTMLInputElement>(null);
   const { setNodes, setEdges, getNode, getEdges, getNodes } = useReactFlow();
@@ -77,6 +90,23 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
       const targetNode = nodes.find(n => n.id === e.target);
       return targetNode?.type === 'result';
     }).length;
+  }, [id, getEdges, getNodes]);
+
+  // Calculate total images from connected Result nodes
+  const calculateTotalImages = useCallback(() => {
+    const edges = getEdges();
+    const nodes = getNodes();
+    const outputEdges = edges.filter(e => e.source === id);
+    
+    let total = 0;
+    for (const edge of outputEdges) {
+      const targetNode = nodes.find(n => n.id === edge.target);
+      if (targetNode?.type === 'result') {
+        const resultData = targetNode.data as unknown as ResultNodeData;
+        total += resultData.quantity || 1;
+      }
+    }
+    return total;
   }, [id, getEdges, getNodes]);
 
   const handleReset = useCallback(() => {
@@ -154,7 +184,14 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
     ));
   }, [id, setNodes]);
 
-  const handleGenerateAll = () => {
+  const handleGenerateAllClick = () => {
+    const total = calculateTotalImages();
+    setTotalImages(total);
+    setIsConfirmOpen(true);
+  };
+
+  const handleConfirmGenerate = () => {
+    setIsConfirmOpen(false);
     window.dispatchEvent(new CustomEvent(GENERATE_ALL_FROM_GRAVITY_EVENT, { 
       detail: { gravityId: id } 
     }));
@@ -268,7 +305,7 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
               "text-white shadow-violet-500/30 hover:shadow-violet-500/50",
               "disabled:opacity-50 disabled:cursor-not-allowed"
             )}
-            onClick={handleGenerateAll}
+            onClick={handleGenerateAllClick}
             disabled={isGenerating}
           >
             {isGenerating ? (
@@ -294,6 +331,27 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
         initialMediaUrls={nodeData.internalMediaUrls || []}
         onSave={handlePopupSave}
       />
+
+      {/* Confirmation Modal */}
+      <AlertDialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar geração</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <p>
+                Você vai gerar <strong className="text-foreground">{totalImages} {totalImages === 1 ? 'imagem' : 'imagens'}</strong> e 
+                gastará <strong className="text-foreground">{totalImages} {totalImages === 1 ? 'crédito' : 'créditos'}</strong>.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmGenerate}>
+              Confirmar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 });
