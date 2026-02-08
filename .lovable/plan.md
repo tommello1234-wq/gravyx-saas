@@ -1,39 +1,158 @@
 
-# Plano: Correção dos Bugs do Sistema de Geração
+# Plano: Modal de Confirmação no Gravity Node
 
-## ✅ IMPLEMENTADO
+## Objetivo
 
-### Bug 1: Status "Gerando" termina antes da imagem aparecer
-**Solução:** Removido o dispatch de `isGenerating: false` após a API retornar. Agora o estado é controlado pelo `RESULT_JOB_QUEUE_STATE_EVENT` que é disparado por `resultId` específico quando os jobs mudam de status.
-
-### Bug 2: Imagem aparece em todos os Result Nodes
-**Solução:** O `resultId` agora é enviado na API, armazenado no payload do job, e rastreado pelo `useJobQueue`. Quando o job completa, o `handleJobCompleted` usa o `resultId` para entregar as imagens apenas ao node correto.
+Adicionar um modal de confirmação quando o usuário clicar em "Gerar Todos" no Gravity Node, mostrando quantas imagens serão geradas e quantos créditos serão gastos.
 
 ---
 
-## Arquivos Modificados
+## Comportamento Esperado
 
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/generate-image/index.ts` | Aceita e armazena `resultId` no payload |
-| `src/pages/Editor.tsx` | Envia `resultId` na API, mapeia jobs por resultId, entrega imagens corretamente, dispara eventos por resultId |
-| `src/hooks/useJobQueue.ts` | Interface `PendingJob` inclui `resultId`, `addPendingJob` aceita `resultId`, `processJobUpdate` passa `resultId` para callback |
+Ao clicar em "Gerar Todos":
+
+1. O sistema calcula o total de imagens baseado nos Result Nodes conectados
+2. Exibe um AlertDialog com a mensagem:
+   > "Você tem certeza que deseja gerar?"
+   > "Você vai gerar **X imagens** e gastará **X créditos**."
+3. Botões: "Cancelar" e "Confirmar"
+4. Ao confirmar, dispara o evento `GENERATE_ALL_FROM_GRAVITY_EVENT`
 
 ---
 
-## Fluxo Implementado
+## Mudanças Necessárias
+
+### Arquivo: `src/components/nodes/GravityNode.tsx`
+
+**Novos imports:**
+```typescript
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+```
+
+**Novo estado:**
+```typescript
+const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+const [totalImages, setTotalImages] = useState(0);
+```
+
+**Nova função para calcular total:**
+```typescript
+const calculateTotalImages = useCallback(() => {
+  const edges = getEdges();
+  const nodes = getNodes();
+  const outputEdges = edges.filter(e => e.source === id);
+  
+  let total = 0;
+  for (const edge of outputEdges) {
+    const targetNode = nodes.find(n => n.id === edge.target);
+    if (targetNode?.type === 'result') {
+      const resultData = targetNode.data as ResultNodeData;
+      total += resultData.quantity || 1;
+    }
+  }
+  return total;
+}, [id, getEdges, getNodes]);
+```
+
+**Modificar `handleGenerateAll`:**
+```typescript
+// ANTES: Dispara direto
+const handleGenerateAll = () => {
+  window.dispatchEvent(new CustomEvent(GENERATE_ALL_FROM_GRAVITY_EVENT, { 
+    detail: { gravityId: id } 
+  }));
+};
+
+// DEPOIS: Abre modal de confirmação
+const handleGenerateAllClick = () => {
+  const total = calculateTotalImages();
+  setTotalImages(total);
+  setIsConfirmOpen(true);
+};
+
+const handleConfirmGenerate = () => {
+  setIsConfirmOpen(false);
+  window.dispatchEvent(new CustomEvent(GENERATE_ALL_FROM_GRAVITY_EVENT, { 
+    detail: { gravityId: id } 
+  }));
+};
+```
+
+**Adicionar AlertDialog no JSX:**
+```tsx
+<AlertDialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
+  <AlertDialogContent>
+    <AlertDialogHeader>
+      <AlertDialogTitle>Confirmar geração</AlertDialogTitle>
+      <AlertDialogDescription>
+        Você vai gerar <strong>{totalImages} {totalImages === 1 ? 'imagem' : 'imagens'}</strong> e 
+        gastará <strong>{totalImages} {totalImages === 1 ? 'crédito' : 'créditos'}</strong>.
+      </AlertDialogDescription>
+    </AlertDialogHeader>
+    <AlertDialogFooter>
+      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+      <AlertDialogAction onClick={handleConfirmGenerate}>
+        Confirmar
+      </AlertDialogAction>
+    </AlertDialogFooter>
+  </AlertDialogContent>
+</AlertDialog>
+```
+
+**Atualizar o onClick do botão:**
+```tsx
+// ANTES
+onClick={handleGenerateAll}
+
+// DEPOIS
+onClick={handleGenerateAllClick}
+```
+
+---
+
+## Estrutura Visual do Modal
 
 ```text
-1. Usuário clica "Gerar" no Result Node X
-2. Editor envia request com resultId=X
-3. Edge Function armazena resultId no payload do job
-4. Editor chama addPendingJob(jobId, quantity, resultId)
-5. useEffect detecta mudança em pendingJobs
-6. Dispara RESULT_JOB_QUEUE_STATE_EVENT com resultId=X
-7. Result Node X mostra "Na fila..." ou "Gerando..."
-8. Job completa, useJobQueue notifica com resultId
-9. handleJobCompleted usa o resultId para encontrar Result Node X
-10. Imagens são adicionadas APENAS ao Result Node X
-11. pendingJobs é atualizado, useEffect dispara evento com hasProcessingJobs=false
-12. Result Node X mostra botão normal "Gerar"
+┌─────────────────────────────────────────────┐
+│  Confirmar geração                      [X] │
+├─────────────────────────────────────────────┤
+│                                             │
+│  Você vai gerar 20 imagens e gastará        │
+│  20 créditos.                               │
+│                                             │
+├─────────────────────────────────────────────┤
+│                    [Cancelar]  [Confirmar]  │
+└─────────────────────────────────────────────┘
 ```
+
+---
+
+## Import Necessário para ResultNodeData
+
+Para acessar o tipo `ResultNodeData` e obter a `quantity`:
+
+```typescript
+import { ResultNodeData } from './ResultNode';
+```
+
+---
+
+## Resumo
+
+| Aspecto | Detalhe |
+|---------|---------|
+| Arquivo modificado | `src/components/nodes/GravityNode.tsx` |
+| Novo componente usado | `AlertDialog` (já existe em ui/) |
+| Cálculo | Soma de `quantity` de cada Result Node conectado |
+| UX | Modal aparece antes de disparar geração |
+| Custo | 1 crédito por imagem (já definido no sistema) |
+
