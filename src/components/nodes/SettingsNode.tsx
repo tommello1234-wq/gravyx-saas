@@ -2,10 +2,17 @@ import { memo, useState, useEffect, useCallback, useRef } from 'react';
 import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Settings, Sparkles, Pencil, RotateCcw, Square, RectangleVertical, Smartphone, Loader2 } from 'lucide-react';
+import { Settings, Sparkles, Pencil, RotateCcw, Square, RectangleVertical, Smartphone, Loader2, MoreVertical, Copy, Trash2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { GENERATE_IMAGE_EVENT } from '@/pages/Editor';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface SettingsNodeData {
   label: string;
@@ -64,7 +71,7 @@ export const SettingsNode = memo(({
   });
   const inputRef = useRef<HTMLInputElement>(null);
   const { profile } = useAuth();
-  const { setNodes, setEdges } = useReactFlow();
+  const { setNodes, setEdges, getNode, getEdges } = useReactFlow();
 
   // Focus input when editing starts
   useEffect(() => {
@@ -125,6 +132,38 @@ export const SettingsNode = memo(({
     setEdges(edges => edges.filter(e => e.source !== id && e.target !== id));
   }, [id, setNodes, setEdges]);
 
+  const handleDuplicate = useCallback(() => {
+    const currentNode = getNode(id);
+    if (!currentNode) return;
+    
+    const currentEdges = getEdges();
+    const newId = `${currentNode.type}-${Date.now()}`;
+    const newNode = {
+      ...currentNode,
+      id: newId,
+      position: { x: currentNode.position.x + 50, y: currentNode.position.y + 50 },
+      selected: false,
+      data: { ...currentNode.data }
+    };
+    
+    // Recreate edges connected to this node
+    const connectedEdges = currentEdges.filter(e => e.source === id || e.target === id);
+    const newEdges = connectedEdges.map((edge, i) => ({
+      ...edge,
+      id: `edge-dup-${Date.now()}-${i}`,
+      source: edge.source === id ? newId : edge.source,
+      target: edge.target === id ? newId : edge.target,
+    }));
+    
+    setNodes(nds => [...nds, newNode]);
+    setEdges(eds => [...eds, ...newEdges]);
+  }, [id, getNode, getEdges, setNodes, setEdges]);
+
+  const handleDelete = useCallback(() => {
+    setNodes(nds => nds.filter(n => n.id !== id));
+    setEdges(eds => eds.filter(e => e.source !== id && e.target !== id));
+  }, [id, setNodes, setEdges]);
+
   const handleLabelChange = useCallback((newLabel: string) => {
     setLabel(newLabel);
     setNodes(nodes => nodes.map(n =>
@@ -172,14 +211,32 @@ export const SettingsNode = memo(({
             <p className="text-xs text-muted-foreground">Configure a saída</p>
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50" onClick={handleReset} title="Resetar">
-            <RotateCcw className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50" onClick={() => setIsEditing(true)} title="Renomear">
-            <Pencil className="h-4 w-4" />
-          </Button>
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50">
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuItem onClick={handleDuplicate}>
+              <Copy className="h-4 w-4 mr-2" />
+              Duplicar
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleReset}>
+              <RotateCcw className="h-4 w-4 mr-2" />
+              Resetar
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setIsEditing(true)}>
+              <Pencil className="h-4 w-4 mr-2" />
+              Renomear
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={handleDelete} className="text-destructive focus:text-destructive">
+              <Trash2 className="h-4 w-4 mr-2" />
+              Excluir
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Content */}

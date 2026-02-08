@@ -729,6 +729,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           nodeTypes={memoizedNodeTypes}
+          deleteKeyCode={['Backspace', 'Delete']}
           fitView
           className="bg-background"
         >
