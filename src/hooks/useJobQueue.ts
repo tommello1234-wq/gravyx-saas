@@ -242,10 +242,14 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
             result_urls: string[] | null;
             result_count: number | null;
             error: string | null;
+            payload: { resultId?: string } | null;
           };
 
           console.log('[useJobQueue] Realtime job update received:', job.id, 'status:', job.status);
-          processJobUpdate(job);
+          processJobUpdate({
+            ...job,
+            payload: job.payload || undefined
+          });
         }
       )
       .subscribe((status, err) => {
