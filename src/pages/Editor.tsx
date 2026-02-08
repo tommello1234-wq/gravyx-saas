@@ -590,20 +590,80 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     };
   }, [projectId, pendingJobs.length]);
 
-  const addNode = useCallback(
-    (type: string) => {
-      if (type === 'settings') {
-        const existingSettings = nodes.find((n) => n.type === 'settings');
-        if (existingSettings) {
-          toast({
-            title: 'Limite atingido',
-            description: 'Só é permitido um nó de configurações por projeto.',
-            variant: 'destructive'
+  // Clipboard ref for copy/paste
+  const clipboardRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
+
+  // Copy/Paste keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if typing in input/textarea
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'c') {
+          // Copy: get selected nodes and edges between them
+          const selectedNodes = nodesRef.current.filter(n => n.selected);
+          if (selectedNodes.length === 0) return;
+
+          const selectedNodeIds = new Set(selectedNodes.map(n => n.id));
+          const connectedEdges = edgesRef.current.filter(
+            e => selectedNodeIds.has(e.source) && selectedNodeIds.has(e.target)
+          );
+
+          clipboardRef.current = {
+            nodes: selectedNodes.map(n => ({ ...n, data: { ...n.data } })),
+            edges: connectedEdges.map(e => ({ ...e }))
+          };
+
+          toastRef.current({ title: `${selectedNodes.length} nó${selectedNodes.length > 1 ? 's' : ''} copiado${selectedNodes.length > 1 ? 's' : ''}` });
+        }
+
+        if (e.key === 'v') {
+          // Paste: create new nodes/edges with unique IDs
+          if (!clipboardRef.current || clipboardRef.current.nodes.length === 0) return;
+
+          const { nodes: copiedNodes, edges: copiedEdges } = clipboardRef.current;
+          const timestamp = Date.now();
+          const idMap = new Map<string, string>();
+
+          // Create new nodes with unique IDs and offset position
+          const newNodes = copiedNodes.map((node, index) => {
+            const newId = `${node.type}-${timestamp}-${index}`;
+            idMap.set(node.id, newId);
+            return {
+              ...node,
+              id: newId,
+              position: {
+                x: node.position.x + 50,
+                y: node.position.y + 50
+              },
+              selected: false,
+              data: { ...node.data }
+            };
           });
-          return;
+
+          // Recreate edges with new IDs
+          const newEdges = copiedEdges.map((edge, index) => ({
+            ...edge,
+            id: `edge-${timestamp}-${index}`,
+            source: idMap.get(edge.source) || edge.source,
+            target: idMap.get(edge.target) || edge.target
+          }));
+
+          setNodes(nds => [...nds, ...newNodes]);
+          setEdges(eds => [...eds, ...newEdges]);
+
+          toastRef.current({ title: `${newNodes.length} nó${newNodes.length > 1 ? 's' : ''} colado${newNodes.length > 1 ? 's' : ''}` });
         }
       }
+    };
 
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [setNodes, setEdges]);
+
+  const addNode = useCallback(
+    (type: string) => {
       const id = `${type}-${Date.now()}`;
       const position = {
         x: 100 + Math.random() * 200,
@@ -629,7 +689,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
       const newNode: Node = { id, type, position, data };
       setNodes((nds) => [...nds, newNode]);
     },
-    [nodes, setNodes, toast]
+    [setNodes]
   );
 
   const memoizedNodeTypes = useMemo(() => nodeTypes, []);

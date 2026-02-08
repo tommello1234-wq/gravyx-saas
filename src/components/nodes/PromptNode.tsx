@@ -1,7 +1,8 @@
 import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react';
 import { Textarea } from '@/components/ui/textarea';
-import { Type, Copy, Trash2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Type, Pencil, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface PromptNodeData {
@@ -15,11 +16,13 @@ export const PromptNode = memo(({
 }: NodeProps) => {
   const nodeData = data as unknown as PromptNodeData;
   const [value, setValue] = useState(nodeData.value || '');
+  const [label, setLabel] = useState(nodeData.label || 'Prompt');
+  const [isEditing, setIsEditing] = useState(false);
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const {
-    deleteElements,
     setNodes,
-    getNodes
+    setEdges
   } = useReactFlow();
 
   // Cleanup timeout on unmount
@@ -31,30 +34,35 @@ export const PromptNode = memo(({
     };
   }, []);
 
-  const handleDelete = () => {
-    deleteElements({
-      nodes: [{
-        id
-      }]
-    });
-  };
+  // Focus input when editing starts
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
 
-  const handleDuplicate = () => {
-    const nodes = getNodes();
-    const currentNode = nodes.find(n => n.id === id);
-    if (currentNode) {
-      const newNode = {
-        ...currentNode,
-        id: `prompt-${Date.now()}`,
-        position: {
-          x: currentNode.position.x + 50,
-          y: currentNode.position.y + 50
-        },
-        data: {
-          ...currentNode.data
-        }
-      };
-      setNodes([...nodes, newNode]);
+  const handleReset = useCallback(() => {
+    setValue('');
+    setNodes(nodes => nodes.map(n =>
+      n.id === id ? { ...n, data: { ...n.data, value: '' } } : n
+    ));
+    setEdges(edges => edges.filter(e => e.source !== id && e.target !== id));
+  }, [id, setNodes, setEdges]);
+
+  const handleLabelChange = useCallback((newLabel: string) => {
+    setLabel(newLabel);
+    setNodes(nodes => nodes.map(n =>
+      n.id === id ? { ...n, data: { ...n.data, label: newLabel } } : n
+    ));
+  }, [id, setNodes]);
+
+  const handleLabelKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      setIsEditing(false);
+    } else if (e.key === 'Escape') {
+      setLabel(nodeData.label || 'Prompt');
+      setIsEditing(false);
     }
   };
 
@@ -86,16 +94,29 @@ export const PromptNode = memo(({
             <Type className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h3 className="font-semibold text-primary-foreground">Prompt</h3>
+            {isEditing ? (
+              <Input
+                ref={inputRef}
+                value={label}
+                onChange={e => handleLabelChange(e.target.value)}
+                onBlur={() => setIsEditing(false)}
+                onKeyDown={handleLabelKeyDown}
+                className="h-7 w-32 text-sm font-semibold bg-muted/50 border-border/50"
+                onMouseDown={e => e.stopPropagation()}
+                onPointerDown={e => e.stopPropagation()}
+              />
+            ) : (
+              <h3 className="font-semibold text-primary-foreground">{label}</h3>
+            )}
             <p className="text-xs text-muted-foreground">Descreva sua imagem</p>
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50" onClick={handleDuplicate}>
-            <Copy className="h-4 w-4" />
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50" onClick={handleReset} title="Resetar">
+            <RotateCcw className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={handleDelete}>
-            <Trash2 className="h-4 w-4" />
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50" onClick={() => setIsEditing(true)} title="Renomear">
+            <Pencil className="h-4 w-4" />
           </Button>
         </div>
       </div>
