@@ -7,12 +7,14 @@ interface PendingJob {
   status: 'queued' | 'processing' | 'completed' | 'failed';
   quantity: number;
   createdAt: string;
+  resultId?: string;
 }
 
 interface JobResult {
   jobId: string;
   resultUrls: string[];
   resultCount: number;
+  resultId?: string;
 }
 
 interface UseJobQueueOptions {
@@ -50,7 +52,8 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
             id: job.id,
             status: job.status as 'queued' | 'processing',
             quantity: (job.payload as { quantity?: number })?.quantity || 1,
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            resultId: (job.payload as { resultId?: string })?.resultId
           }));
           setPendingJobs(restoredJobs);
         }
@@ -82,7 +85,7 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
   }, [onJobCompleted, onJobFailed]);
 
   // Add a new job to the pending list
-  const addPendingJob = useCallback((jobId: string, quantity: number) => {
+  const addPendingJob = useCallback((jobId: string, quantity: number, resultId?: string) => {
     // If the job already completed/failed (Realtime can arrive before state updates), don't add it.
     if (processedJobIdsRef.current.has(jobId)) {
       console.log('[useJobQueue] Skipping addPendingJob for already-processed job:', jobId);
@@ -95,7 +98,8 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
         id: jobId,
         status: 'queued',
         quantity,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        resultId
       }
     ]);
   }, []);
@@ -124,6 +128,9 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
 
     console.log('[useJobQueue] Processing job update:', job.id, 'status:', job.status);
 
+    // Find the job in pending list to get its resultId
+    const pendingJob = pendingJobs.find(pj => pj.id === job.id);
+
     if (job.status === 'completed') {
       const urls = job.result_urls;
 
@@ -132,7 +139,8 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
         callbacksRef.current.onJobCompleted({
           jobId: job.id,
           resultUrls: urls,
-          resultCount: job.result_count || urls.length
+          resultCount: job.result_count || urls.length,
+          resultId: pendingJob?.resultId
         });
       } else {
         console.error('[useJobQueue] Job completed WITHOUT valid result_urls:', job.id, 'urls:', urls);
@@ -151,7 +159,7 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
     } else if (job.status === 'processing') {
       updateJobStatus(job.id, 'processing');
     }
-  }, [removePendingJob, updateJobStatus]);
+  }, [pendingJobs, removePendingJob, updateJobStatus]);
 
   // Poll the worker to process jobs
   const pollWorker = useCallback(async () => {
