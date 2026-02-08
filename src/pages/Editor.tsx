@@ -426,32 +426,67 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
             }
           }
           
-          // Load historical images from generations table
+          // Load historical images from generations table WITH result_node_id
           const { data: generations } = await supabase
             .from('generations')
-            .select('image_url, prompt, aspect_ratio, created_at')
+            .select('image_url, prompt, aspect_ratio, created_at, result_node_id')
             .eq('project_id', projectId)
             .eq('status', 'completed')
             .order('created_at', { ascending: false })
-            .limit(50);
+            .limit(200);
           
-          // Populate output/result nodes with images from generations
+          // Group images by result_node_id for isolated display per node
           if (generations && generations.length > 0) {
-            const historicalImages = generations.map(gen => ({
-              url: gen.image_url,
-              prompt: gen.prompt,
-              aspectRatio: gen.aspect_ratio,
-              savedToGallery: true,
-              generatedAt: gen.created_at,
-            })).reverse();
+            type NodeImage = {
+              url: string | null;
+              prompt: string;
+              aspectRatio: string;
+              savedToGallery: boolean;
+              generatedAt: string;
+            };
+            
+            const imagesByNode = new Map<string, NodeImage[]>();
+            
+            generations.forEach(gen => {
+              const nodeId = (gen as { result_node_id?: string | null }).result_node_id || '__shared__';
+              const existing = imagesByNode.get(nodeId) || [];
+              existing.push({
+                url: gen.image_url,
+                prompt: gen.prompt,
+                aspectRatio: gen.aspect_ratio,
+                savedToGallery: true,
+                generatedAt: gen.created_at,
+              });
+              imagesByNode.set(nodeId, existing);
+            });
+            
+            // Legacy images (without result_node_id) go to the first Result Node
+            const sharedImages = imagesByNode.get('__shared__') || [];
+            const resultNodes = loadedNodes.filter(n => n.type === 'result');
             
             loadedNodes = loadedNodes.map(node => {
-              if (node.type === 'output' || node.type === 'result') {
+              if (node.type === 'result') {
+                const nodeImages = imagesByNode.get(node.id) || [];
+                const isFirstResult = resultNodes.length > 0 && resultNodes[0].id === node.id;
+                // First Result Node gets legacy images too; reverse for chronological display
+                const finalImages = isFirstResult 
+                  ? [...nodeImages, ...sharedImages].reverse()
+                  : nodeImages.reverse();
                 return {
                   ...node,
                   data: {
                     ...node.data,
-                    images: historicalImages,
+                    images: finalImages,
+                  },
+                };
+              }
+              // Legacy output nodes also get shared images
+              if (node.type === 'output') {
+                return {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    images: sharedImages.reverse(),
                   },
                 };
               }
