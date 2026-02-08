@@ -1,9 +1,11 @@
-import { memo, useState, useCallback } from 'react';
+import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react';
-import { Sparkles, Download, Copy, Trash2 } from 'lucide-react';
+import { Sparkles, Download, Pencil, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { OutputImageModal, NodeImage } from './OutputImageModal';
+
 interface OutputNodeData {
   label: string;
   images: NodeImage[] | string[]; // Support both old and new format
@@ -27,6 +29,7 @@ const normalizeImages = (images: NodeImage[] | string[] | undefined): NodeImage[
     generatedAt: new Date().toISOString()
   }));
 };
+
 export const OutputNode = memo(({
   data,
   id
@@ -34,13 +37,21 @@ export const OutputNode = memo(({
   const nodeData = data as unknown as OutputNodeData;
   // Reverse to show newest images first
   const images = normalizeImages(nodeData.images).slice().reverse();
-  const {
-    deleteElements,
-    setNodes,
-    getNodes
-  } = useReactFlow();
+  const [label, setLabel] = useState(nodeData.label || 'Resultado');
+  const [isEditing, setIsEditing] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const { setNodes, setEdges } = useReactFlow();
   const [selectedImage, setSelectedImage] = useState<NodeImage | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Focus input when editing starts
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+
   const downloadImage = async (url: string, index: number) => {
     const response = await fetch(url);
     const blob = await response.blob();
@@ -53,38 +64,36 @@ export const OutputNode = memo(({
     document.body.removeChild(a);
     window.URL.revokeObjectURL(downloadUrl);
   };
+
   const downloadAll = async () => {
     for (let i = 0; i < images.length; i++) {
       await downloadImage(images[i].url, i);
     }
   };
-  const handleDelete = () => {
-    deleteElements({
-      nodes: [{
-        id
-      }]
-    });
-  };
-  const handleDuplicate = () => {
-    const nodes = getNodes();
-    const currentNode = nodes.find(n => n.id === id);
-    if (currentNode) {
-      const newNode = {
-        ...currentNode,
-        id: `output-${Date.now()}`,
-        position: {
-          x: currentNode.position.x + 50,
-          y: currentNode.position.y + 50
-        },
-        data: {
-          ...currentNode.data,
-          images: [],
-          isLoading: false
-        }
-      };
-      setNodes([...nodes, newNode]);
+
+  const handleReset = useCallback(() => {
+    setNodes(nodes => nodes.map(n =>
+      n.id === id ? { ...n, data: { ...n.data, images: [] } } : n
+    ));
+    setEdges(edges => edges.filter(e => e.source !== id && e.target !== id));
+  }, [id, setNodes, setEdges]);
+
+  const handleLabelChange = useCallback((newLabel: string) => {
+    setLabel(newLabel);
+    setNodes(nodes => nodes.map(n =>
+      n.id === id ? { ...n, data: { ...n.data, label: newLabel } } : n
+    ));
+  }, [id, setNodes]);
+
+  const handleLabelKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      setIsEditing(false);
+    } else if (e.key === 'Escape') {
+      setLabel(nodeData.label || 'Resultado');
+      setIsEditing(false);
     }
   };
+
   const handleImageClick = (image: NodeImage) => {
     setSelectedImage(image);
     setIsModalOpen(true);
@@ -99,6 +108,7 @@ export const OutputNode = memo(({
       }
     } : n));
   }, [id, setNodes]);
+
   return <>
       <div className="bg-card border border-emerald-500/30 rounded-2xl min-w-[320px] shadow-2xl shadow-emerald-500/10">
         <Handle type="target" position={Position.Left} className="!w-4 !h-4 !bg-gradient-to-br !from-violet-500 !to-purple-600 !border-4 !border-card !-left-2 !shadow-lg" />
@@ -110,18 +120,31 @@ export const OutputNode = memo(({
               <Sparkles className="h-5 w-5 text-white" />
             </div>
             <div>
-              <h3 className="font-semibold text-primary-foreground">Resultado</h3>
+              {isEditing ? (
+                <Input
+                  ref={inputRef}
+                  value={label}
+                  onChange={e => handleLabelChange(e.target.value)}
+                  onBlur={() => setIsEditing(false)}
+                  onKeyDown={handleLabelKeyDown}
+                  className="h-7 w-32 text-sm font-semibold bg-muted/50 border-border/50"
+                  onMouseDown={e => e.stopPropagation()}
+                  onPointerDown={e => e.stopPropagation()}
+                />
+              ) : (
+                <h3 className="font-semibold text-primary-foreground">{label}</h3>
+              )}
               <p className="text-xs text-muted-foreground">
                 {images.length > 0 ? `${images.length} imagen${images.length > 1 ? 's' : ''}` : 'Clique para salvar'}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50" onClick={handleDuplicate}>
-              <Copy className="h-4 w-4" />
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50" onClick={handleReset} title="Resetar">
+              <RotateCcw className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={handleDelete}>
-              <Trash2 className="h-4 w-4" />
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50" onClick={() => setIsEditing(true)} title="Renomear">
+              <Pencil className="h-4 w-4" />
             </Button>
           </div>
         </div>

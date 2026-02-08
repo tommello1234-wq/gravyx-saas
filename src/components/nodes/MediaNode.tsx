@@ -1,40 +1,47 @@
-import { memo, useState, useRef, useCallback } from 'react';
+import { memo, useState, useRef, useCallback, useEffect } from 'react';
 import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Image, Upload, X, Copy, Trash2, Library, Loader2 } from 'lucide-react';
+import { Image, Upload, X, Pencil, RotateCcw, Library, Loader2, Copy } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { LibraryModal } from './LibraryModal';
 import type { Tables } from '@/integrations/supabase/types';
 type ReferenceImage = Tables<'reference_images'>;
+
 interface MediaNodeData {
   label: string;
   url: string | null;
   libraryPrompt?: string | null;
 }
+
 export const MediaNode = memo(({
   data,
   id
 }: NodeProps) => {
   const nodeData = data as unknown as MediaNodeData;
   const [url, setUrl] = useState(nodeData.url || null);
+  const [label, setLabel] = useState(nodeData.label || 'Mídia');
+  const [isEditing, setIsEditing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
   const [activeTab, setActiveTab] = useState<'upload' | 'library'>('upload');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const {
-    user
-  } = useAuth();
-  const {
-    toast
-  } = useToast();
-  const {
-    deleteElements,
-    setNodes,
-    getNodes
-  } = useReactFlow();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const { setNodes, setEdges } = useReactFlow();
+
+  // Focus input when editing starts
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+
   const handleUrlChange = useCallback((newUrl: string | null, libraryPrompt?: string | null) => {
     setUrl(newUrl);
     setNodes((nodes) =>
@@ -45,6 +52,31 @@ export const MediaNode = memo(({
       )
     );
   }, [id, setNodes]);
+
+  const handleReset = useCallback(() => {
+    setUrl(null);
+    setNodes(nodes => nodes.map(n =>
+      n.id === id ? { ...n, data: { ...n.data, url: null, libraryPrompt: null } } : n
+    ));
+    setEdges(edges => edges.filter(e => e.source !== id && e.target !== id));
+  }, [id, setNodes, setEdges]);
+
+  const handleLabelChange = useCallback((newLabel: string) => {
+    setLabel(newLabel);
+    setNodes(nodes => nodes.map(n =>
+      n.id === id ? { ...n, data: { ...n.data, label: newLabel } } : n
+    ));
+  }, [id, setNodes]);
+
+  const handleLabelKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      setIsEditing(false);
+    } else if (e.key === 'Escape') {
+      setLabel(nodeData.label || 'Mídia');
+      setIsEditing(false);
+    }
+  };
+
   const handleSelectFromLibrary = (image: ReferenceImage) => {
     handleUrlChange(image.image_url, image.prompt);
     setShowLibrary(false);
@@ -53,6 +85,7 @@ export const MediaNode = memo(({
       description: 'Use o botão de copiar para copiar o prompt.'
     });
   };
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
@@ -60,13 +93,9 @@ export const MediaNode = memo(({
     try {
       const fileExt = file.name.split('.').pop();
       const fileName = `${user.id}/${Date.now()}.${fileExt}`;
-      const {
-        error: uploadError
-      } = await supabase.storage.from('reference-images').upload(fileName, file);
+      const { error: uploadError } = await supabase.storage.from('reference-images').upload(fileName, file);
       if (uploadError) throw uploadError;
-      const {
-        data: urlData
-      } = supabase.storage.from('reference-images').getPublicUrl(fileName);
+      const { data: urlData } = supabase.storage.from('reference-images').getPublicUrl(fileName);
       handleUrlChange(urlData.publicUrl);
       toast({
         title: 'Imagem enviada com sucesso!'
@@ -82,31 +111,7 @@ export const MediaNode = memo(({
       setIsUploading(false);
     }
   };
-  const handleDelete = () => {
-    deleteElements({
-      nodes: [{
-        id
-      }]
-    });
-  };
-  const handleDuplicate = () => {
-    const nodes = getNodes();
-    const currentNode = nodes.find(n => n.id === id);
-    if (currentNode) {
-      const newNode = {
-        ...currentNode,
-        id: `media-${Date.now()}`,
-        position: {
-          x: currentNode.position.x + 50,
-          y: currentNode.position.y + 50
-        },
-        data: {
-          ...currentNode.data
-        }
-      };
-      setNodes([...nodes, newNode]);
-    }
-  };
+
   return <div className="bg-card border border-blue-500/30 rounded-2xl min-w-[280px] shadow-2xl shadow-blue-500/10">
       <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept="image/*" className="hidden" />
 
@@ -117,16 +122,29 @@ export const MediaNode = memo(({
             <Image className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h3 className="font-semibold text-primary-foreground">Mídia</h3>
+            {isEditing ? (
+              <Input
+                ref={inputRef}
+                value={label}
+                onChange={e => handleLabelChange(e.target.value)}
+                onBlur={() => setIsEditing(false)}
+                onKeyDown={handleLabelKeyDown}
+                className="h-7 w-32 text-sm font-semibold bg-muted/50 border-border/50"
+                onMouseDown={e => e.stopPropagation()}
+                onPointerDown={e => e.stopPropagation()}
+              />
+            ) : (
+              <h3 className="font-semibold text-primary-foreground">{label}</h3>
+            )}
             <p className="text-xs text-muted-foreground">Imagem de referência</p>
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50" onClick={handleDuplicate}>
-            <Copy className="h-4 w-4" />
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50" onClick={handleReset} title="Resetar">
+            <RotateCcw className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={handleDelete}>
-            <Trash2 className="h-4 w-4" />
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50" onClick={() => setIsEditing(true)} title="Renomear">
+            <Pencil className="h-4 w-4" />
           </Button>
         </div>
       </div>

@@ -1,7 +1,8 @@
-import { memo, useState, useEffect, useCallback } from 'react';
+import { memo, useState, useEffect, useCallback, useRef } from 'react';
 import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react';
 import { Button } from '@/components/ui/button';
-import { Settings, Sparkles, Copy, Trash2, Square, RectangleVertical, Smartphone, Loader2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Settings, Sparkles, Pencil, RotateCcw, Square, RectangleVertical, Smartphone, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { GENERATE_IMAGE_EVENT } from '@/pages/Editor';
@@ -53,20 +54,25 @@ export const SettingsNode = memo(({
   const nodeData = data as unknown as SettingsNodeData;
   const [aspectRatio, setAspectRatio] = useState(nodeData.aspectRatio || '1:1');
   const [quantity, setQuantity] = useState(nodeData.quantity || 1);
+  const [label, setLabel] = useState(nodeData.label || 'Configurações');
+  const [isEditing, setIsEditing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [jobQueueState, setJobQueueState] = useState<JobQueueState>({
     hasQueuedJobs: false,
     hasProcessingJobs: false,
     totalPendingImages: 0
   });
-  const {
-    profile
-  } = useAuth();
-  const {
-    deleteElements,
-    setNodes,
-    getNodes
-  } = useReactFlow();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const { profile } = useAuth();
+  const { setNodes, setEdges } = useReactFlow();
+
+  // Focus input when editing starts
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
 
   // Listen for generating state events
   useEffect(() => {
@@ -110,30 +116,28 @@ export const SettingsNode = memo(({
     );
   }, [id, setNodes]);
 
-  const handleDelete = () => {
-    deleteElements({
-      nodes: [{
-        id
-      }]
-    });
-  };
+  const handleReset = useCallback(() => {
+    setAspectRatio('1:1');
+    setQuantity(1);
+    setNodes(nodes => nodes.map(n =>
+      n.id === id ? { ...n, data: { ...n.data, aspectRatio: '1:1', quantity: 1 } } : n
+    ));
+    setEdges(edges => edges.filter(e => e.source !== id && e.target !== id));
+  }, [id, setNodes, setEdges]);
 
-  const handleDuplicate = () => {
-    const nodes = getNodes();
-    const currentNode = nodes.find(n => n.id === id);
-    if (currentNode) {
-      const newNode = {
-        ...currentNode,
-        id: `settings-${Date.now()}`,
-        position: {
-          x: currentNode.position.x + 50,
-          y: currentNode.position.y + 50
-        },
-        data: {
-          ...currentNode.data
-        }
-      };
-      setNodes([...nodes, newNode]);
+  const handleLabelChange = useCallback((newLabel: string) => {
+    setLabel(newLabel);
+    setNodes(nodes => nodes.map(n =>
+      n.id === id ? { ...n, data: { ...n.data, label: newLabel } } : n
+    ));
+  }, [id, setNodes]);
+
+  const handleLabelKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      setIsEditing(false);
+    } else if (e.key === 'Escape') {
+      setLabel(nodeData.label || 'Configurações');
+      setIsEditing(false);
     }
   };
 
@@ -151,16 +155,29 @@ export const SettingsNode = memo(({
             <Settings className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h3 className="font-semibold text-primary-foreground">Configurações</h3>
+            {isEditing ? (
+              <Input
+                ref={inputRef}
+                value={label}
+                onChange={e => handleLabelChange(e.target.value)}
+                onBlur={() => setIsEditing(false)}
+                onKeyDown={handleLabelKeyDown}
+                className="h-7 w-32 text-sm font-semibold bg-muted/50 border-border/50"
+                onMouseDown={e => e.stopPropagation()}
+                onPointerDown={e => e.stopPropagation()}
+              />
+            ) : (
+              <h3 className="font-semibold text-primary-foreground">{label}</h3>
+            )}
             <p className="text-xs text-muted-foreground">Configure a saída</p>
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50" onClick={handleDuplicate}>
-            <Copy className="h-4 w-4" />
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50" onClick={handleReset} title="Resetar">
+            <RotateCcw className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={handleDelete}>
-            <Trash2 className="h-4 w-4" />
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50" onClick={() => setIsEditing(true)} title="Renomear">
+            <Pencil className="h-4 w-4" />
           </Button>
         </div>
       </div>
