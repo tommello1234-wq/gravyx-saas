@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
-import { Sparkles, Loader2, Mail, Lock, ArrowLeft } from 'lucide-react';
+import { Loader2, Mail, Lock } from 'lucide-react';
+import gravyxLogo from '@/assets/gravyx-logo.webp';
 import { useToast } from '@/hooks/use-toast';
 
 const authSchema = z.object({
@@ -95,21 +96,10 @@ export default function Auth() {
       <div className="orb w-96 h-96 bg-primary/30 -top-48 -left-48" />
       <div className="orb w-80 h-80 bg-secondary/30 -bottom-40 -right-40" style={{ animationDelay: '2s' }} />
 
-      {/* Back link */}
-      <Link 
-        to="/" 
-        className="absolute top-6 left-6 flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Voltar
-      </Link>
-
       <Card className="w-full max-w-md mx-4 glass-card">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-primary glow-primary">
-              <Sparkles className="h-6 w-6 text-white" />
-            </div>
+            <img src={gravyxLogo} alt="Gravyx" className="h-10" />
           </div>
           <CardTitle className="text-2xl gradient-text">
             {isLogin ? 'Bem-vindo de volta' : 'Criar conta'}

@@ -24,7 +24,45 @@ interface UseJobQueueOptions {
 export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQueueOptions) {
   const [pendingJobs, setPendingJobs] = useState<PendingJob[]>([]);
   const [isPolling, setIsPolling] = useState(false);
+  const [initialized, setInitialized] = useState(false);
   const { toast } = useToast();
+
+  // On mount, fetch any existing pending jobs from the database to restore state
+  useEffect(() => {
+    if (!projectId || initialized) return;
+
+    const fetchPendingJobs = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('jobs')
+          .select('id, status, payload')
+          .eq('project_id', projectId)
+          .in('status', ['queued', 'processing']);
+
+        if (error) {
+          console.error('[useJobQueue] Error fetching pending jobs:', error);
+          return;
+        }
+
+        if (data && data.length > 0) {
+          console.log('[useJobQueue] Restoring', data.length, 'pending jobs from database');
+          const restoredJobs: PendingJob[] = data.map((job) => ({
+            id: job.id,
+            status: job.status as 'queued' | 'processing',
+            quantity: (job.payload as { quantity?: number })?.quantity || 1,
+            createdAt: new Date().toISOString()
+          }));
+          setPendingJobs(restoredJobs);
+        }
+      } catch (err) {
+        console.error('[useJobQueue] Exception fetching pending jobs:', err);
+      } finally {
+        setInitialized(true);
+      }
+    };
+
+    fetchPendingJobs();
+  }, [projectId, initialized]);
 
   // Polling that triggers the worker execution (keeps the queue moving)
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);

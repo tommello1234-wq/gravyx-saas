@@ -18,20 +18,28 @@ interface ReferenceImage {
   image_url: string;
 }
 
-const categories = [
-  { value: 'all', label: 'Todas' },
-  { value: 'photography', label: 'Fotografia' },
-  { value: 'creative', label: 'Criativo' },
-  { value: 'food', label: 'Comida' },
-  { value: 'product', label: 'Produto' },
-  { value: 'portrait', label: 'Retrato' },
-  { value: 'landscape', label: 'Paisagem' },
-  { value: 'abstract', label: 'Abstrato' },
-];
+interface ReferenceCategory {
+  id: string;
+  slug: string;
+  label: string;
+}
 
 export default function Library() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedImage, setSelectedImage] = useState<ReferenceImage | null>(null);
+
+  // Fetch categories from database
+  const { data: categories = [] } = useQuery({
+    queryKey: ['reference-categories'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('reference_categories')
+        .select('*')
+        .order('label', { ascending: true });
+      if (error) throw error;
+      return data as ReferenceCategory[];
+    },
+  });
 
   const { data: references, isLoading } = useQuery({
     queryKey: ['references', selectedCategory],
@@ -42,7 +50,7 @@ export default function Library() {
         .order('created_at', { ascending: false });
       
       if (selectedCategory !== 'all') {
-        query = query.eq('category', selectedCategory as 'photography' | 'creative' | 'food' | 'product' | 'portrait' | 'landscape' | 'abstract');
+        query = query.eq('category', selectedCategory);
       }
       
       const { data, error } = await query;
@@ -50,6 +58,16 @@ export default function Library() {
       return data as ReferenceImage[];
     },
   });
+
+  // Build filter options with "Todas" first
+  const filterOptions = [
+    { value: 'all', label: 'Todas' },
+    ...categories.map(cat => ({ value: cat.slug, label: cat.label }))
+  ];
+
+  const getCategoryLabel = (slug: string) => {
+    return categories.find(c => c.slug === slug)?.label || slug;
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -65,7 +83,7 @@ export default function Library() {
 
         {/* Category Filter */}
         <div className="flex flex-wrap gap-2 mb-8">
-          {categories.map((cat) => (
+          {filterOptions.map((cat) => (
             <Button
               key={cat.value}
               variant={selectedCategory === cat.value ? 'default' : 'outline'}
@@ -120,7 +138,7 @@ export default function Library() {
                   <div className="absolute bottom-0 left-0 right-0 p-4 translate-y-full group-hover:translate-y-0 transition-transform">
                     <p className="text-white font-medium truncate">{ref.title}</p>
                     <p className="text-white/70 text-sm capitalize">
-                      {categories.find(c => c.value === ref.category)?.label || ref.category}
+                      {getCategoryLabel(ref.category)}
                     </p>
                   </div>
                 </div>
@@ -137,7 +155,7 @@ export default function Library() {
           url: selectedImage.image_url,
           title: selectedImage.title,
           prompt: selectedImage.prompt,
-          category: categories.find(c => c.value === selectedImage.category)?.label || selectedImage.category,
+          category: getCategoryLabel(selectedImage.category),
         } : null}
       />
     </div>

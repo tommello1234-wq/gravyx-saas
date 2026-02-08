@@ -17,15 +17,11 @@ import type { Tables } from '@/integrations/supabase/types';
 
 type ReferenceImage = Tables<'reference_images'>;
 
-const categoryLabels: Record<string, string> = {
-  photography: 'Fotografia',
-  creative: 'Criativo',
-  food: 'Comida',
-  product: 'Produto',
-  portrait: 'Retrato',
-  landscape: 'Paisagem',
-  abstract: 'Abstrato',
-};
+interface ReferenceCategory {
+  id: string;
+  slug: string;
+  label: string;
+}
 
 interface LibraryModalProps {
   open: boolean;
@@ -33,12 +29,24 @@ interface LibraryModalProps {
   onSelect: (image: ReferenceImage) => void;
 }
 
-const allCategories = Object.keys(categoryLabels) as Array<keyof typeof categoryLabels>;
-
 export function LibraryModal({ open, onOpenChange, onSelect }: LibraryModalProps) {
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const { toast } = useToast();
+
+  // Fetch categories
+  const { data: categories = [] } = useQuery({
+    queryKey: ['reference-categories'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('reference_categories')
+        .select('*')
+        .order('label', { ascending: true });
+      if (error) throw error;
+      return data as ReferenceCategory[];
+    },
+    enabled: open,
+  });
 
   const { data: images, isLoading } = useQuery({
     queryKey: ['library-images'],
@@ -52,6 +60,10 @@ export function LibraryModal({ open, onOpenChange, onSelect }: LibraryModalProps
     },
     enabled: open,
   });
+
+  const getCategoryLabel = (slug: string) => {
+    return categories.find(c => c.slug === slug)?.label || slug;
+  };
 
   const filteredImages = images?.filter((img) => {
     // Filter by category first
@@ -100,14 +112,14 @@ export function LibraryModal({ open, onOpenChange, onSelect }: LibraryModalProps
           >
             Todas
           </Badge>
-          {allCategories.map((cat) => (
+          {categories.map((cat) => (
             <Badge
-              key={cat}
-              variant={selectedCategory === cat ? "default" : "secondary"}
+              key={cat.id}
+              variant={selectedCategory === cat.slug ? "default" : "secondary"}
               className="cursor-pointer hover:bg-primary/80 transition-colors"
-              onClick={() => setSelectedCategory(cat)}
+              onClick={() => setSelectedCategory(cat.slug)}
             >
-              {categoryLabels[cat]}
+              {cat.label}
             </Badge>
           ))}
         </div>
@@ -142,7 +154,7 @@ export function LibraryModal({ open, onOpenChange, onSelect }: LibraryModalProps
                           {image.title}
                         </p>
                         <Badge variant="secondary" className="mt-1 text-xs">
-                          {categoryLabels[image.category]}
+                          {getCategoryLabel(image.category)}
                         </Badge>
                       </div>
                       <Button
