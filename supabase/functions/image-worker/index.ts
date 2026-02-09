@@ -116,6 +116,39 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  // Authenticate: accept either WORKER_SECRET or valid user JWT
+  const WORKER_SECRET = Deno.env.get("WORKER_SECRET");
+  const authHeader = req.headers.get("Authorization");
+  const token = authHeader?.replace("Bearer ", "");
+
+  let isAuthenticated = false;
+
+  // Check worker secret first
+  if (WORKER_SECRET && token === WORKER_SECRET) {
+    isAuthenticated = true;
+  }
+
+  // Fallback: validate as user JWT
+  if (!isAuthenticated && token) {
+    const { createClient: createAuthClient } = await import("https://esm.sh/@supabase/supabase-js@2.49.1");
+    const supabaseAuth = createAuthClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+      { global: { headers: { Authorization: authHeader! } } }
+    );
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
+    if (!authError && user) {
+      isAuthenticated = true;
+    }
+  }
+
+  if (!isAuthenticated) {
+    return new Response(
+      JSON.stringify({ error: "Unauthorized" }),
+      { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
   const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;

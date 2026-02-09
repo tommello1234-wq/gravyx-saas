@@ -175,7 +175,12 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
   // Poll the worker to process jobs
   const pollWorker = useCallback(async () => {
     try {
-      const { error } = await supabase.functions.invoke('image-worker');
+      const { data: { session } } = await supabase.auth.getSession();
+      const { error } = await supabase.functions.invoke('image-worker', {
+        headers: {
+          Authorization: `Bearer ${session?.access_token || ''}`
+        }
+      });
       if (error) {
         console.error('Worker invocation error:', error.message || error);
       }
