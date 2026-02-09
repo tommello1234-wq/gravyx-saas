@@ -7,6 +7,26 @@ const corsHeaders = {
 
 const CREDITS_PER_IMAGE = 1;
 
+// In-memory rate limiting per user (max 15 requests per minute)
+const userRateLimits = new Map<string, { count: number; resetAt: number }>();
+
+function checkUserRateLimit(userId: string, maxPerMinute: number = 15): boolean {
+  const now = Date.now();
+  const limit = userRateLimits.get(userId);
+
+  if (!limit || now > limit.resetAt) {
+    userRateLimits.set(userId, { count: 1, resetAt: now + 60000 });
+    return true;
+  }
+
+  if (limit.count >= maxPerMinute) {
+    return false;
+  }
+
+  limit.count++;
+  return true;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -37,6 +57,14 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ error: "Invalid user" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Rate limit: max 15 image generation requests per minute per user
+    if (!checkUserRateLimit(user.id)) {
+      return new Response(
+        JSON.stringify({ error: "Rate limit exceeded. Please wait before generating more images." }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
