@@ -11,18 +11,18 @@ import {
 } from 'npm:@react-email/components@0.0.22'
 import * as React from 'npm:react@18.3.1'
 
-// Cores do tema Avion
+// Cores do tema Gravyx - Blue Orbital
 const colors = {
-  background: '#0a0a0f',
-  card: '#0f0f14',
-  cardBorder: 'rgba(167, 139, 250, 0.1)',
-  primary: '#a78bfa',
-  secondary: '#c084fc',
-  accent: '#818cf8',
+  background: '#0a0a14',
+  card: '#0f0f1a',
+  cardBorder: 'rgba(0, 135, 255, 0.15)',
+  primary: '#00b8ff',
+  secondary: '#0066ff',
+  accent: '#3b82f6',
   text: '#fafafa',
   muted: '#71717a',
-  gradientStart: '#a78bfa',
-  gradientEnd: '#c084fc',
+  gradientStart: '#00b8ff',
+  gradientEnd: '#001eff',
 }
 
 const styles = {
@@ -46,7 +46,7 @@ const styles = {
     WebkitBackgroundClip: 'text',
     WebkitTextFillColor: 'transparent',
     backgroundClip: 'text',
-    color: colors.primary, // Fallback
+    color: colors.primary,
     margin: '0',
   },
   logoIcon: {
@@ -58,7 +58,7 @@ const styles = {
     border: `1px solid ${colors.cardBorder}`,
     borderRadius: '16px',
     padding: '32px',
-    boxShadow: `0 0 40px rgba(167, 139, 250, 0.1)`,
+    boxShadow: `0 0 40px rgba(0, 135, 255, 0.1)`,
   },
   title: {
     color: colors.text,
@@ -76,7 +76,7 @@ const styles = {
   },
   button: {
     display: 'block',
-    background: `linear-gradient(135deg, ${colors.primary}, ${colors.secondary})`,
+    background: `linear-gradient(135deg, ${colors.gradientStart}, ${colors.gradientEnd})`,
     color: '#ffffff',
     fontSize: '16px',
     fontWeight: 'bold',
@@ -84,7 +84,7 @@ const styles = {
     textAlign: 'center' as const,
     padding: '14px 32px',
     borderRadius: '9999px',
-    boxShadow: `0 0 20px rgba(167, 139, 250, 0.4)`,
+    boxShadow: `0 0 20px rgba(0, 135, 255, 0.4)`,
     margin: '0 auto',
   },
   codeContainer: {
@@ -143,7 +143,7 @@ export const BaseLayout = ({ preview, children }: BaseLayoutProps) => (
         {/* Logo Header */}
         <Section style={styles.logo}>
           <Text style={styles.logoText}>
-            <span style={styles.logoIcon}>✨</span>
+            <span style={styles.logoIcon}>🚀</span>
             Gravyx
           </Text>
         </Section>

@@ -13,15 +13,15 @@ interface EmailChangeEmailProps {
 }
 
 export const EmailChangeEmail = ({ confirmationUrl, token, newEmail }: EmailChangeEmailProps) => (
-  <BaseLayout preview="Confirme a alteração do seu email no Avion.">
+  <BaseLayout preview="Confirme a alteração do seu email no Gravyx.">
     <Text style={styles.title}>
       Confirmar Novo Email 📧
     </Text>
     
     <Text style={styles.text}>
-      Você solicitou a alteração do email da sua conta no Avion
+      Você solicitou a alteração do email da sua conta no Gravyx
       {newEmail && (
-        <> para <strong style={{ color: '#a78bfa' }}>{newEmail}</strong></>
+        <> para <strong style={{ color: '#00b8ff' }}>{newEmail}</strong></>
       )}
       . Clique no botão abaixo para confirmar esta alteração.
     </Text>

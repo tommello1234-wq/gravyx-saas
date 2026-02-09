@@ -12,9 +12,9 @@ interface WelcomeEmailProps {
 }
 
 export const WelcomeEmail = ({ confirmationUrl, token }: WelcomeEmailProps) => (
-  <BaseLayout preview="Bem-vindo ao Avion! Confirme seu email para começar a criar imagens incríveis com IA.">
+  <BaseLayout preview="Bem-vindo ao Gravyx! Confirme seu email para começar a criar imagens incríveis com IA.">
     <Text style={styles.title}>
-      Bem-vindo ao Avion! 🎉
+      Bem-vindo ao Gravyx! 🎉
     </Text>
     
     <Text style={styles.text}>
@@ -40,7 +40,7 @@ export const WelcomeEmail = ({ confirmationUrl, token }: WelcomeEmailProps) => (
     <Hr style={styles.hr} />
 
     <Text style={styles.disclaimer}>
-      Se você não criou uma conta no Avion, pode ignorar este email com segurança.
+      Se você não criou uma conta no Gravyx, pode ignorar este email com segurança.
     </Text>
   </BaseLayout>
 )
