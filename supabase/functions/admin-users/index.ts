@@ -49,6 +49,37 @@ serve(async (req) => {
 
     const { action, userId, email } = await req.json();
 
+    // Validate action
+    const validActions = ["resend-invite", "delete-user"];
+    if (!action || !validActions.includes(action)) {
+      return new Response(JSON.stringify({ error: "Invalid action" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Validate email format when needed
+    if (action === "resend-invite") {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!email || typeof email !== 'string' || !emailRegex.test(email) || email.length > 255) {
+        return new Response(JSON.stringify({ error: "Invalid email" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // Validate userId when needed
+    if (action === "delete-user") {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!userId || typeof userId !== 'string' || !uuidRegex.test(userId)) {
+        return new Response(JSON.stringify({ error: "Invalid userId" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     if (action === "resend-invite") {
       // Generate magic link for the user
       const { data, error } = await supabaseAdmin.auth.admin.generateLink({

@@ -42,9 +42,27 @@ serve(async (req) => {
 
     const { prompt, aspectRatio, quantity = 1, imageUrls = [], projectId, resultId } = await req.json();
 
-    if (!prompt) {
+    // Validate prompt
+    if (!prompt || typeof prompt !== 'string' || prompt.length > 5000) {
       return new Response(
-        JSON.stringify({ error: "Prompt is required" }),
+        JSON.stringify({ error: "Invalid prompt (must be a string, max 5000 chars)" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validate aspect ratio
+    const validAspectRatios = ['1:1', '16:9', '9:16', '4:3', '3:4'];
+    if (aspectRatio && !validAspectRatios.includes(aspectRatio)) {
+      return new Response(
+        JSON.stringify({ error: "Invalid aspect ratio" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validate imageUrls
+    if (!Array.isArray(imageUrls) || imageUrls.length > 10) {
+      return new Response(
+        JSON.stringify({ error: "imageUrls must be an array with max 10 items" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

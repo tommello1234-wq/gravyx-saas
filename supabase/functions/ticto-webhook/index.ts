@@ -64,12 +64,23 @@ Deno.serve(async (req: Request) => {
   let body: TictoPayload;
   
   try {
-    body = await req.json();
+    const rawBody = await req.text();
+    if (rawBody.length > 50000) {
+      await logWebhook(supabase, 'payload_too_large', {}, false, 'Payload exceeds 50KB limit');
+      return new Response('Payload too large', { status: 413, headers: corsHeaders });
+    }
+    body = JSON.parse(rawBody);
     console.log('Webhook recebido:', JSON.stringify(body, null, 2));
   } catch (e) {
     console.error('Erro ao parsear JSON:', e);
     await logWebhook(supabase, 'parse_error', {}, false, 'Failed to parse JSON body');
     return new Response('Invalid JSON', { status: 400, headers: corsHeaders });
+  }
+
+  // Validate required structure
+  if (!body || typeof body !== 'object') {
+    await logWebhook(supabase, 'invalid_payload', {}, false, 'Payload must be a JSON object');
+    return new Response('Invalid payload', { status: 400, headers: corsHeaders });
   }
 
   // Validar token de segurança
