@@ -144,7 +144,7 @@ export const BaseLayout = ({ preview, children }: BaseLayoutProps) => (
         <Section style={styles.logo}>
           <Text style={styles.logoText}>
             <span style={styles.logoIcon}>✨</span>
-            Avion
+            Gravyx
           </Text>
         </Section>
 
@@ -156,14 +156,14 @@ export const BaseLayout = ({ preview, children }: BaseLayoutProps) => (
         {/* Footer */}
         <Section style={styles.footer}>
           <Text style={styles.footerText}>
-            © {new Date().getFullYear()} Avion · Geração de Imagens com IA
+            © {new Date().getFullYear()} Gravyx · Geração de Imagens com IA
           </Text>
           <Text style={styles.footerText}>
-            <Link href="https://node-artistry-12.lovable.app" style={styles.footerLink}>
-              Acessar Avion
+            <Link href="https://app.gravyx.com.br" style={styles.footerLink}>
+              Acessar Gravyx
             </Link>
             {' · '}
-            <Link href="https://node-artistry-12.lovable.app" style={styles.footerLink}>
+            <Link href="https://app.gravyx.com.br" style={styles.footerLink}>
               Termos de Uso
             </Link>
           </Text>
