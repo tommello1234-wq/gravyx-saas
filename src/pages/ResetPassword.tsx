@@ -54,23 +54,6 @@ export default function ResetPassword() {
     setIsLoading(true);
 
     try {
-      // Verificar se o email existe antes de enviar reset
-      const { data: existingUser } = await supabase
-        .from('profiles')
-        .select('email')
-        .eq('email', data.email)
-        .maybeSingle();
-
-      if (!existingUser) {
-        toast({
-          title: 'Email não encontrado',
-          description: 'Este email não está cadastrado. Crie uma conta primeiro.',
-          variant: 'destructive',
-        });
-        setIsLoading(false);
-        return;
-      }
-
       const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
