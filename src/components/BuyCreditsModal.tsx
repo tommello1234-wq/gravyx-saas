@@ -1,23 +1,17 @@
 import { motion } from 'framer-motion';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Rocket, Calendar, MessageCircle } from 'lucide-react';
-
 interface BuyCreditsModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
-
-export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
+export function BuyCreditsModal({
+  open,
+  onOpenChange
+}: BuyCreditsModalProps) {
   const whatsappLink = "https://chat.whatsapp.com/HlrgOxOWRPlLjr0wFXCoff";
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+  return <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md bg-card border-border p-0 overflow-hidden">
         <DialogHeader className="p-6 pb-4 border-b border-border">
           <DialogTitle className="flex items-center gap-2 text-xl">
@@ -27,15 +21,17 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
         </DialogHeader>
 
         <div className="p-6 text-center">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="mb-6"
-          >
+          <motion.div initial={{
+          opacity: 0,
+          scale: 0.9
+        }} animate={{
+          opacity: 1,
+          scale: 1
+        }} className="mb-6">
             {/* Data de lançamento */}
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary mb-6">
               <Calendar className="h-4 w-4" />
-              <span className="font-semibold">14/02/2025</span>
+              <span className="font-semibold">14/02/2026</span>
             </div>
 
             {/* Mensagem principal */}
@@ -48,11 +44,9 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
             </p>
 
             {/* Botão WhatsApp */}
-            <Button
-              onClick={() => window.open(whatsappLink, '_blank')}
-              className="w-full h-12 rounded-xl font-semibold text-white hover:opacity-90"
-              style={{ background: '#25D366' }}
-            >
+            <Button onClick={() => window.open(whatsappLink, '_blank')} className="w-full h-12 rounded-xl font-semibold text-white hover:opacity-90" style={{
+            background: '#25D366'
+          }}>
               <MessageCircle className="h-5 w-5 mr-2" />
               Entrar no Grupo WhatsApp
             </Button>
@@ -63,6 +57,5 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
           </p>
         </div>
       </DialogContent>
-    </Dialog>
-  );
+    </Dialog>;
 }
