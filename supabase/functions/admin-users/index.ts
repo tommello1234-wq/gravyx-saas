@@ -6,6 +6,46 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// In-memory rate limiting for email actions
+const emailRateLimits = new Map<string, { count: number; resetAt: number }>();
+
+function checkEmailRateLimit(email: string, maxPerHour: number = 5): boolean {
+  const now = Date.now();
+  const limit = emailRateLimits.get(email);
+
+  if (!limit || now > limit.resetAt) {
+    emailRateLimits.set(email, { count: 1, resetAt: now + 3600000 });
+    return true;
+  }
+
+  if (limit.count >= maxPerHour) {
+    return false;
+  }
+
+  limit.count++;
+  return true;
+}
+
+// In-memory rate limiting for admin actions per admin user
+const adminActionLimits = new Map<string, { count: number; resetAt: number }>();
+
+function checkAdminActionRateLimit(adminId: string, maxPerMinute: number = 10): boolean {
+  const now = Date.now();
+  const limit = adminActionLimits.get(adminId);
+
+  if (!limit || now > limit.resetAt) {
+    adminActionLimits.set(adminId, { count: 1, resetAt: now + 60000 });
+    return true;
+  }
+
+  if (limit.count >= maxPerMinute) {
+    return false;
+  }
+
+  limit.count++;
+  return true;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -47,6 +87,14 @@ serve(async (req) => {
       });
     }
 
+    // Rate limit admin actions (10 per minute per admin)
+    if (!checkAdminActionRateLimit(user.id)) {
+      return new Response(JSON.stringify({ error: "Rate limit exceeded. Try again later." }), {
+        status: 429,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { action, userId, email } = await req.json();
 
     // Validate action
@@ -81,6 +129,14 @@ serve(async (req) => {
     }
 
     if (action === "resend-invite") {
+      // Rate limit email sends (5 per hour per email address)
+      if (!checkEmailRateLimit(email)) {
+        return new Response(JSON.stringify({ error: "Email rate limit exceeded. Max 5 per hour per address." }), {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       // Generate magic link for the user
       const { data, error } = await supabaseAdmin.auth.admin.generateLink({
         type: "magiclink",
