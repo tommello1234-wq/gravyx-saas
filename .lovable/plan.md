@@ -1,182 +1,127 @@
 
-# Redesign do Gravity Node - Estilo Orbital Azul
+# Plano: Modal de Pré-Lançamento
 
-## Visão Geral
+## Objetivo
 
-Redesenhar o GravityNode para seguir a identidade visual "Blue Orbital" do site, removendo elementos roxos e aplicando o gradiente azul do design system.
+Substituir temporariamente o conteúdo do modal de compra de créditos por uma mensagem de pré-lançamento, incentivando os usuários a entrarem no grupo do WhatsApp para acompanhar e ganhar mais créditos.
 
 ---
 
-## Mudanças Visuais
+## Design do Modal
 
-### Antes → Depois
+O modal atual com os 3 planos de preços será substituído por um layout mais simples e focado:
 
-| Elemento | Atual | Novo |
-|----------|-------|------|
-| Fundo do círculo | Gradiente violeta/roxo | Cor do background (`--background`) |
-| Borda/Stroke | Violeta com opacidade | Gradiente azul (`cyan → blue → accent`) com glow |
-| Centro | Logo gravyx-icon.png | Vazio por padrão, ícone "+" no hover |
-| Texto abaixo | "Clique para editar" | Apenas label + contagem de resultados |
-| Handles | Gradiente roxo | Gradiente azul |
-| Botão Gerar | Gradiente roxo | Gradiente azul |
-| Glow/Shadow | Violeta | Cyan/azul |
+```text
+╭─────────────────────────────────────╮
+│  🚀 Lançamento em breve!            │
+├─────────────────────────────────────┤
+│                                     │
+│        📅 14/02/2025                │
+│                                     │
+│   Lançamento oficial no dia 14/02   │
+│                                     │
+│   Entre no grupo do WhatsApp para   │
+│   acompanhar as novidades e ganhar  │
+│   mais créditos grátis pra testar!  │
+│                                     │
+│   ┌─────────────────────────────┐   │
+│   │  Entrar no Grupo WhatsApp   │   │
+│   └─────────────────────────────┘   │
+│                                     │
+│   Por enquanto, você pode testar    │
+│   com seus 5 créditos gratuitos.    │
+│                                     │
+╰─────────────────────────────────────╯
+```
+
+---
+
+## Mudanças Técnicas
+
+### Arquivo: `src/components/BuyCreditsModal.tsx`
+
+1. **Remover imports não utilizados**: `Check`, `Zap`, `Crown`, `Coins` e a interface `CreditPackage`
+
+2. **Remover array `packages`**: Todo o bloco com os planos de preços (linhas 25-72)
+
+3. **Remover função `handleBuy`**: Não será mais necessária
+
+4. **Adicionar imports**: 
+   - `Rocket` e `Calendar` do lucide-react para os ícones
+   - Ícone do WhatsApp (pode ser MessageCircle ou um SVG customizado)
+
+5. **Substituir conteúdo do modal**:
+
+```tsx
+export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
+  const whatsappLink = "https://chat.whatsapp.com/HlrgOxOWRPlLjr0wFXCoff";
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md bg-card border-border p-0 overflow-hidden">
+        <DialogHeader className="p-6 pb-4 border-b border-border">
+          <DialogTitle className="flex items-center gap-2 text-xl">
+            <Rocket className="h-5 w-5 text-primary" />
+            Lançamento em breve!
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="p-6 text-center">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="mb-6"
+          >
+            {/* Data de lançamento */}
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary mb-6">
+              <Calendar className="h-4 w-4" />
+              <span className="font-semibold">14/02/2025</span>
+            </div>
+
+            {/* Mensagem principal */}
+            <p className="text-lg text-foreground mb-2">
+              Lançamento oficial no dia 14/02
+            </p>
+            <p className="text-muted-foreground mb-6">
+              Entre no grupo do WhatsApp para acompanhar as novidades 
+              e ganhar mais créditos grátis pra testar!
+            </p>
+
+            {/* Botão WhatsApp */}
+            <Button
+              onClick={() => window.open(whatsappLink, '_blank')}
+              className="w-full h-12 rounded-xl font-semibold text-white mb-4"
+              style={{ background: '#25D366' }}
+            >
+              <MessageCircle className="h-5 w-5 mr-2" />
+              Entrar no Grupo WhatsApp
+            </Button>
+          </motion.div>
+
+          <p className="text-sm text-muted-foreground">
+            Por enquanto, você pode testar com seus 5 créditos gratuitos.
+          </p>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+```
+
+---
+
+## Resultado
+
+- Modal menor e mais focado (`max-w-md` ao invés de `max-w-4xl`)
+- Mensagem clara sobre o lançamento no dia 14/02
+- Botão verde do WhatsApp que abre o link do grupo
+- Nota informando que podem testar com os 5 créditos gratuitos
+- O código dos planos de preços será comentado/removido (pode ser facilmente restaurado depois do lançamento)
 
 ---
 
 ## Arquivo a Modificar
 
-**`src/components/nodes/GravityNode.tsx`**
-
-### 1. Remover import da logo
-
-```typescript
-// REMOVER esta linha:
-import gravyxIcon from '@/assets/gravyx-icon.png';
-
-// ADICIONAR import do ícone Plus:
-import { Plus } from 'lucide-react';
-```
-
-### 2. Adicionar estado de hover
-
-```typescript
-const [isHovered, setIsHovered] = useState(false);
-```
-
-### 3. Redesenhar o círculo principal
-
-De:
-```tsx
-<div className={cn(
-  "w-24 h-24 rounded-full cursor-pointer transition-all duration-300",
-  "bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-700",
-  "border-4 border-violet-400/30 shadow-2xl shadow-violet-500/40",
-  ...
-)}>
-  <img src={gravyxIcon} ... />
-</div>
-```
-
-Para:
-```tsx
-<div 
-  className={cn(
-    "w-24 h-24 rounded-full cursor-pointer transition-all duration-300",
-    "bg-background",
-    "flex items-center justify-center",
-    "hover:scale-105 group",
-    hasContent && "ring-2 ring-primary ring-offset-2 ring-offset-card"
-  )}
-  style={{
-    border: '3px solid transparent',
-    backgroundImage: `
-      linear-gradient(hsl(var(--background)), hsl(var(--background))),
-      linear-gradient(135deg, hsl(var(--gradient-start)), hsl(var(--gradient-mid)), hsl(var(--gradient-end)))
-    `,
-    backgroundOrigin: 'border-box',
-    backgroundClip: 'padding-box, border-box',
-    boxShadow: '0 0 20px hsl(195 100% 50% / 0.3), 0 0 40px hsl(210 100% 50% / 0.2)'
-  }}
-  onMouseEnter={() => setIsHovered(true)}
-  onMouseLeave={() => setIsHovered(false)}
-  onClick={() => setIsPopupOpen(true)}
->
-  {/* Ícone "+" aparece no hover */}
-  <Plus className={cn(
-    "w-8 h-8 transition-all duration-200",
-    isHovered ? "text-primary opacity-100 scale-100" : "text-muted-foreground/50 opacity-0 scale-75"
-  )} />
-</div>
-```
-
-### 4. Atualizar Handles para gradiente azul
-
-De:
-```tsx
-className="!bg-gradient-to-br !from-violet-500 !to-purple-600 ..."
-```
-
-Para:
-```tsx
-className="!bg-gradient-to-br !from-primary !to-secondary ..."
-```
-
-### 5. Remover texto "Clique para editar"
-
-De:
-```tsx
-<p className="text-xs text-muted-foreground">
-  {resultCount > 0 ? `${resultCount} resultado${resultCount > 1 ? 's' : ''}` : 'Clique para editar'}
-</p>
-```
-
-Para:
-```tsx
-{resultCount > 0 && (
-  <p className="text-xs text-muted-foreground">
-    {resultCount} resultado{resultCount > 1 ? 's' : ''}
-  </p>
-)}
-```
-
-### 6. Atualizar botão "Gerar Todos"
-
-De:
-```tsx
-"bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500",
-"shadow-violet-500/30 hover:shadow-violet-500/50"
-```
-
-Para:
-```tsx
-"bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90",
-"shadow-primary/30 hover:shadow-primary/50"
-```
-
----
-
-## Resultado Visual Esperado
-
-```text
-                    ┌───┐ (menu)
-                    └───┘
-      ╭─────────────────────────────╮
-      │                             │
-  ◉───│           (+)               │───◉
-      │                             │
-      ╰─────────────────────────────╯
-         ↑ gradiente azul + glow
-         
-              Gravity
-           2 resultados
-
-        ┌────────────────┐
-        │  ✨ Gerar Todos │  ← gradiente azul
-        └────────────────┘
-```
-
-- Círculo com fundo escuro (igual ao canvas)
-- Borda com gradiente cyan → blue → accent
-- Glow azul suave ao redor
-- Ícone "+" aparece ao passar o mouse
-- Quando tem conteúdo, ring azul indica que há dados
-
----
-
-## Seção Técnica
-
-### CSS Variables utilizadas
-- `--background`: HSL 220 20% 4% (fundo escuro)
-- `--gradient-start`: HSL 195 100% 50% (cyan)
-- `--gradient-mid`: HSL 210 100% 50% (deep blue)
-- `--gradient-end`: HSL 220 90% 56% (royal blue)
-- `--primary`: HSL 195 100% 50% (cyan)
-- `--secondary`: HSL 210 100% 50% (deep blue)
-
-### Técnica de borda gradiente
-Para criar uma borda com gradiente em um elemento circular, usamos a técnica de `background-clip` com dois backgrounds:
-1. Background interno sólido (cor do fundo)
-2. Background externo com gradiente (visível apenas na borda)
-
-### Glow effect
-Box-shadow com cores primárias em múltiplas camadas com opacidade decrescente cria o efeito de brilho característico.
+| Arquivo | Mudança |
+|---------|---------|
+| `src/components/BuyCreditsModal.tsx` | Substituir grid de preços por mensagem de pré-lançamento com link do WhatsApp |
