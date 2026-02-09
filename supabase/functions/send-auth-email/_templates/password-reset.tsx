@@ -12,13 +12,13 @@ interface PasswordResetEmailProps {
 }
 
 export const PasswordResetEmail = ({ resetUrl, token }: PasswordResetEmailProps) => (
-  <BaseLayout preview="Redefina sua senha do Avion de forma segura.">
+  <BaseLayout preview="Redefina sua senha do Gravyx de forma segura.">
     <Text style={styles.title}>
       Redefinir Senha 🔐
     </Text>
     
     <Text style={styles.text}>
-      Recebemos uma solicitação para redefinir a senha da sua conta no Avion. Clique no botão abaixo para criar uma nova senha.
+      Recebemos uma solicitação para redefinir a senha da sua conta no Gravyx. Clique no botão abaixo para criar uma nova senha.
     </Text>
 
     <Link href={resetUrl} style={styles.button}>

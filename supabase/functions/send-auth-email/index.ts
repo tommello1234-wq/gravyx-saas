@@ -112,7 +112,7 @@ Deno.serve(async (req) => {
             token,
           })
         )
-        subject = 'Bem-vindo ao Avion! Confirme seu email 🎉'
+        subject = 'Bem-vindo ao Gravyx! Confirme seu email 🎉'
         break
       }
 
@@ -124,7 +124,7 @@ Deno.serve(async (req) => {
             token,
           })
         )
-        subject = 'Seu link de acesso ao Avion ✨'
+        subject = 'Seu link de acesso ao Gravyx ✨'
         break
       }
 
@@ -149,7 +149,7 @@ Deno.serve(async (req) => {
             token,
           })
         )
-        subject = 'Redefinir sua senha do Avion 🔐'
+        subject = 'Redefinir sua senha do Gravyx 🔐'
         break
       }
 
@@ -161,7 +161,7 @@ Deno.serve(async (req) => {
             token,
           })
         )
-        subject = 'Confirme seu novo email no Avion 📧'
+        subject = 'Confirme seu novo email no Gravyx 📧'
         break
       }
 

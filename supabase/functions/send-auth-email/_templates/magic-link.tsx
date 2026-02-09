@@ -12,17 +12,17 @@ interface MagicLinkEmailProps {
 }
 
 export const MagicLinkEmail = ({ magicLinkUrl, token }: MagicLinkEmailProps) => (
-  <BaseLayout preview="Seu link de acesso ao Avion está aqui! Clique para entrar.">
+  <BaseLayout preview="Seu link de acesso ao Gravyx está aqui! Clique para entrar.">
     <Text style={styles.title}>
       Acesse sua conta ✨
     </Text>
     
     <Text style={styles.text}>
-      Você solicitou um link mágico para entrar no Avion. Clique no botão abaixo para acessar sua conta instantaneamente.
+      Você solicitou um link mágico para entrar no Gravyx. Clique no botão abaixo para acessar sua conta instantaneamente.
     </Text>
 
     <Link href={magicLinkUrl} style={styles.button}>
-      Entrar no Avion
+      Entrar no Gravyx
     </Link>
 
     {token && (
