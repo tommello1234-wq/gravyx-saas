@@ -15,6 +15,7 @@ import Library from "./pages/Library";
 import Admin from "./pages/Admin";
 import TemplateEditor from "./pages/TemplateEditor";
 import NotFound from "./pages/NotFound";
+import { WhatsAppButton } from "@/components/WhatsAppButton";
 
 const queryClient = new QueryClient();
 
@@ -80,6 +81,7 @@ const App = () => (
               />
               <Route path="*" element={<NotFound />} />
             </Routes>
+            <WhatsAppButton />
           </BrowserRouter>
         </TooltipProvider>
       </AuthProvider>
