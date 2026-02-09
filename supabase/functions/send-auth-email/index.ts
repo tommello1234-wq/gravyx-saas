@@ -17,7 +17,7 @@ const hookSecret = rawHookSecret?.startsWith('v1,')
 
 console.log('[send-auth-email] Function initialized')
 
-const DEFAULT_SITE_URL = 'https://node-artistry-12.lovable.app'
+const DEFAULT_SITE_URL = 'https://app.gravyx.com.br'
 
 const normalizeRedirectUrl = (value: string) => {
   const v = (value ?? '').trim()
@@ -176,7 +176,7 @@ Deno.serve(async (req) => {
     console.log('[send-auth-email] Sending email to:', user.email, 'subject:', subject)
 
     const { error } = await resend.emails.send({
-      from: 'Avion <noreply@upwardacademy.com.br>',
+      from: 'Gravyx <noreply@upwardacademy.com.br>',
       to: [user.email],
       subject,
       html,
