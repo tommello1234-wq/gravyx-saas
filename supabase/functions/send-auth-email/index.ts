@@ -19,13 +19,41 @@ console.log('[send-auth-email] Function initialized')
 
 const DEFAULT_SITE_URL = 'https://app.gravyx.com.br'
 
+const ALLOWED_DOMAINS = [
+  'app.gravyx.com.br',
+  'gravyx.com.br',
+  'localhost',
+  '127.0.0.1',
+]
+
 const normalizeRedirectUrl = (value: string) => {
   const v = (value ?? '').trim()
   if (!v) return ''
-  if (v.startsWith('http://') || v.startsWith('https://')) return v
-  if (v.startsWith('//')) return `https:${v}`
-  // If the value is just a domain (common misconfig), prefix https://
-  return `https://${v}`
+
+  let url: URL
+  try {
+    if (v.startsWith('http://') || v.startsWith('https://')) {
+      url = new URL(v)
+    } else if (v.startsWith('//')) {
+      url = new URL(`https:${v}`)
+    } else {
+      url = new URL(`https://${v}`)
+    }
+  } catch {
+    return ''
+  }
+
+  const hostname = url.hostname
+  const isAllowed = ALLOWED_DOMAINS.some(domain =>
+    hostname === domain || hostname.endsWith(`.${domain}`)
+  )
+
+  if (!isAllowed) {
+    console.warn(`[send-auth-email] Blocked redirect to untrusted domain: ${hostname}`)
+    return DEFAULT_SITE_URL
+  }
+
+  return url.toString()
 }
 
 const ensurePath = (rawUrl: string, defaultPath: string) => {

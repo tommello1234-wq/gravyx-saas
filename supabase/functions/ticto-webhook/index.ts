@@ -85,7 +85,12 @@ Deno.serve(async (req: Request) => {
 
   // Validar token de segurança
   const expectedToken = Deno.env.get('TICTO_WEBHOOK_TOKEN');
-  if (expectedToken && body.token !== expectedToken) {
+  if (!expectedToken) {
+    console.error('TICTO_WEBHOOK_TOKEN not configured');
+    await logWebhook(supabase, 'missing_token', {}, false, 'TICTO_WEBHOOK_TOKEN not configured');
+    return new Response('Server misconfiguration', { status: 500, headers: corsHeaders });
+  }
+  if (body.token !== expectedToken) {
     console.error('Token inválido');
     await logWebhook(supabase, 'invalid_token', body, false, 'Invalid webhook token');
     return new Response('Invalid token', { status: 401, headers: corsHeaders });
