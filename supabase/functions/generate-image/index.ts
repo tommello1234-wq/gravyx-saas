@@ -127,11 +127,10 @@ serve(async (req) => {
 
     if (updateError) {
       console.error("Error decrementing credits:", updateError);
-      // Fallback to direct update
-      await supabaseAdmin
-        .from('profiles')
-        .update({ credits: profile.credits - creditsNeeded })
-        .eq('user_id', user.id);
+      return new Response(
+        JSON.stringify({ error: "Failed to deduct credits. Please try again." }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const creditsAfterDeduction = typeof newCredits === 'number' ? newCredits : profile.credits - creditsNeeded;

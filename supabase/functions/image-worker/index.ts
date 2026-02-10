@@ -234,12 +234,6 @@ serve(async (req) => {
       // Refund credits for failed generations
       if (failedCount > 0) {
         const refundAmount = failedCount * CREDITS_PER_IMAGE;
-        await supabaseAdmin
-          .from('profiles')
-          .update({ credits: supabaseAdmin.rpc('increment', { x: refundAmount }) })
-          .eq('user_id', claimedJob.user_id);
-        
-        // Direct increment since we don't have an increment RPC
         const { data: currentProfile } = await supabaseAdmin
           .from('profiles')
           .select('credits')
