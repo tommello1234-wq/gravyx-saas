@@ -79,7 +79,7 @@ serve(async (req) => {
     }
 
     // Validate aspect ratio
-    const validAspectRatios = ['1:1', '16:9', '9:16', '4:3', '3:4'];
+    const validAspectRatios = ['1:1', '4:5', '16:9', '9:16'];
     if (aspectRatio && !validAspectRatios.includes(aspectRatio)) {
       return new Response(
         JSON.stringify({ error: "Invalid aspect ratio" }),
