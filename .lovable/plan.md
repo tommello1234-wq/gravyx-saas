@@ -1,131 +1,163 @@
 
 
-# Corrigir Bug de Creditos: Deducao Nao-Atomica
+# Dashboard Admin Visual e Estrategico
 
-## Problema Encontrado
+## Resumo
 
-O usuario `gitoxi4169@flemist.com` tem 6 creditos mas deveria ter no maximo 5 (padrao). Ele gerou 4 jobs (8 imagens), o que deveria ter consumido 8 creditos -- impossivel com apenas 5.
+Transformar a aba "Usuarios" do Admin em um dashboard completo com metricas visuais, graficos e tabela avancada, e adicionar uma nova aba "Dashboard" como a primeira aba. As abas "Biblioteca" e "Templates" permanecem inalteradas.
 
-### Causa Raiz
+## Sobre as limitacoes de dados
 
-A funcao `decrement_credits` no banco de dados **sempre rejeita** chamadas do service_role porque verifica `auth.uid()`, que e `NULL` para service_role:
+Voce esta certo: para usuarios existentes que ja usaram a plataforma, os dados de `generations` e `jobs` ja existem com timestamps, entao as metricas serao calculadas a partir deles. O campo `last_sign_in_at` ja existe no `auth.users` do Supabase e pode ser acessado pela edge function `admin-users`. A unica metrica que nao teremos com precisao historica e o consumo exato de creditos por usuario (so temos saldo atual + compras), mas daqui pra frente tudo sera rastreado.
+
+## Estrutura de Arquivos Novos
+
+```text
+src/components/admin/dashboard/
+  DashboardTab.tsx          -- Container principal
+  KpiCards.tsx              -- Cards de metricas no topo
+  ActivityChart.tsx         -- Grafico principal de atividade
+  PlanDistribution.tsx      -- Distribuicao por plano (donut)
+  TopUsersRanking.tsx       -- Ranking top 10
+  PlatformPerformance.tsx   -- Secao colapsavel de performance
+  AlertsBanner.tsx          -- Alertas automaticos
+  useAdminDashboard.ts      -- Hook centralizado para queries
+```
+
+## Arquivos Modificados
+
+- `src/pages/Admin.tsx` -- Adicionar aba "Dashboard", extrair tabela de usuarios para componente melhorado
+- `supabase/functions/admin-users/index.ts` -- Adicionar action `dashboard-stats` para retornar dados agregados que o admin precisa (contagens de generations, jobs, dados de auth.users como last_sign_in)
+
+## Migracao SQL
+
+Adicionar policy de SELECT para admin na tabela `generations` e `jobs` (para que o admin possa ver dados de todos os usuarios no client-side):
 
 ```sql
-IF auth.uid() IS NULL OR auth.uid() != uid THEN
-    RAISE EXCEPTION 'Unauthorized';
-END IF;
+CREATE POLICY "generations_admin_select" ON generations
+FOR SELECT USING (has_role(auth.uid(), 'admin'::app_role));
+
+CREATE POLICY "jobs_admin_select" ON jobs
+FOR SELECT USING (has_role(auth.uid(), 'admin'::app_role));
 ```
-
-Quando falha, o `generate-image` usa um fallback nao-atomico:
-```js
-.update({ credits: profile.credits - creditsNeeded })
-```
-Isso lê o saldo e depois escreve, criando uma janela de race condition. Se 2 requests leem `credits=5` ao mesmo tempo, ambos escrevem `credits=3` -- apenas 2 creditos sao deduzidos em vez de 4.
-
-### Bug Secundario: Refund Duplo no Worker
-
-O `image-worker` tenta fazer refund de creditos em duas etapas (linhas 236-254): uma com um RPC `increment` que nao existe, e outra lendo/escrevendo manualmente. Mesmo que a primeira falhe, a logica e fragil e confusa.
-
-## Plano de Correcao
-
-### 1. Corrigir a funcao `decrement_credits` (migracao SQL)
-
-Permitir chamadas do service_role (quando `auth.uid()` e NULL) ja que o service_role e confiavel. Manter a verificacao de ownership para chamadas de usuarios normais.
-
-```sql
--- Se auth.uid() e NULL = service_role (confiavel, permitir)
--- Se auth.uid() != uid = usuario tentando deduzir de outro (bloquear)
-IF auth.uid() IS NOT NULL AND auth.uid() != uid THEN
-    RAISE EXCEPTION 'Unauthorized: Cannot modify other users credits';
-END IF;
-```
-
-### 2. Remover o fallback nao-atomico no `generate-image`
-
-**Arquivo**: `supabase/functions/generate-image/index.ts`
-
-Remover as linhas 128-135 (o fallback que faz `update` direto). Se o RPC falhar, retornar erro ao usuario em vez de usar um caminho inseguro.
-
-### 3. Corrigir a logica de refund no `image-worker`
-
-**Arquivo**: `supabase/functions/image-worker/index.ts`
-
-Substituir o bloco duplo de refund (linhas 236-254) por uma unica operacao atomica usando um novo RPC `increment_credits`, ou pelo menos remover a tentativa com o RPC inexistente `increment` e manter apenas a leitura/escrita direta.
-
-### 4. Corrigir o saldo do usuario manualmente
-
-Depois da correcao, voce pode ajustar o saldo do usuario via painel admin para o valor correto.
 
 ## Detalhes Tecnicos
 
-### Migracao SQL
+### 1. Hook useAdminDashboard.ts
 
-Alterar `decrement_credits` para aceitar service_role:
+Hook centralizado com React Query que busca:
+- `profiles` (todos, via RLS admin)
+- `generations` (todas, apos nova policy)
+- `jobs` (todos, apos nova policy)
+- `credit_purchases` (todas, via RLS admin)
+- Dados de auth via edge function (last_sign_in_at dos usuarios)
 
-```sql
-CREATE OR REPLACE FUNCTION public.decrement_credits(uid uuid, amount integer)
-RETURNS integer
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-  new_credits integer;
-BEGIN
-  IF auth.uid() IS NOT NULL AND auth.uid() != uid THEN
-    RAISE EXCEPTION 'Unauthorized: Cannot modify other users credits';
-  END IF;
-  
-  IF amount <= 0 THEN
-    RAISE EXCEPTION 'Invalid amount: must be positive';
-  END IF;
-  
-  UPDATE profiles
-  SET credits = credits - amount
-  WHERE user_id = uid
-  RETURNING credits INTO new_credits;
-  
-  IF new_credits < 0 THEN
-    UPDATE profiles
-    SET credits = credits + amount
-    WHERE user_id = uid;
-    RAISE EXCEPTION 'Insufficient credits';
-  END IF;
-  
-  RETURN new_credits;
-END;
-$$;
+Calcula todas as metricas derivadas:
+- Total de usuarios, ativos (30d), imagens geradas, creditos consumidos estimados
+- Agrupamentos por dia/semana/mes para graficos
+- Rankings, distribuicao por plano, alertas
+
+Aceita parametro de periodo (7d, 30d, 90d, 12m) e faz refetch automatico a cada 60s.
+
+### 2. KpiCards.tsx -- Metricas Principais
+
+6 cards no topo em grid responsivo (2 colunas mobile, 3 desktop):
+- Total de usuarios (com icone Users)
+- Usuarios ativos 30d (com % do total)
+- Total de imagens geradas
+- Creditos consumidos (estimativa: creditos_iniciais + comprados - saldo_atual)
+- Receita total (sum de credit_purchases.amount_paid)
+- Taxa de atividade (% usuarios que geraram pelo menos 1 imagem)
+
+Cada card: numero grande, icone, indicador de crescimento vs periodo anterior, mini sparkline com Recharts AreaChart.
+
+Skeleton loading enquanto carrega.
+
+### 3. ActivityChart.tsx -- Grafico Principal
+
+- Recharts AreaChart responsivo com gradiente
+- Filtros de periodo: 7d / 30d / 90d / 12m (botoes toggle)
+- Toggle para alternar metrica: Imagens geradas / Novos usuarios / Creditos consumidos
+- Dados agrupados por dia (7d/30d/90d) ou por mes (12m)
+- Tooltip customizado com estilo dark
+
+### 4. PlanDistribution.tsx
+
+- Recharts PieChart (donut) mostrando usuarios por tier
+- Labels com quantidade e percentual
+- Cores do design system (primary, secondary, accent)
+
+### 5. TopUsersRanking.tsx
+
+- Top 10 usuarios por imagens geradas
+- Colunas: posicao (com badge ouro/prata/bronze), nome/email, plano, total imagens, creditos atuais
+- Filtro por periodo integrado com o filtro global
+- Dados calculados a partir de `generations` agrupados por user_id
+
+### 6. PlatformPerformance.tsx
+
+- Secao colapsavel (Collapsible)
+- Metricas de `jobs`: total processados, com erro (24h), taxa de sucesso
+- Cards menores em grid
+
+### 7. AlertsBanner.tsx
+
+- Alertas baseados em regras calculadas no frontend:
+  - Pico de uso (geracao diaria > 2x media)
+  - Aumento de erros (jobs com error > 10% nas ultimas 24h)
+  - Usuarios com 0 creditos
+- Exibidos como banners coloridos no topo do dashboard
+
+### 8. Tabela de Usuarios Melhorada
+
+Dentro da aba "Usuarios" existente, melhorar a tabela atual com:
+- Campo de busca por nome/email
+- Filtro por plano (Select)
+- Colunas adicionais: imagens geradas, ultimo acesso
+- Paginacao client-side (20 por pagina)
+- Botao exportar CSV
+- Ordenacao por coluna clicavel
+- Manter todas as funcionalidades existentes (editar creditos, reenviar convite, remover)
+
+### 9. Edge Function admin-users
+
+Adicionar nova action `dashboard-stats` que retorna:
+- Lista de user IDs com `last_sign_in_at` do `auth.users` (via supabaseAdmin.auth.admin.listUsers)
+- Isso permite mostrar "ultimo login" na tabela e calcular retencao
+
+Adicionar `dashboard-stats` ao array `validActions`.
+
+### 10. Layout do Dashboard
+
+```text
++------------------------------------------+
+| [Alertas Banner]                         |
++------------------------------------------+
+| [KPI 1] [KPI 2] [KPI 3]                |
+| [KPI 4] [KPI 5] [KPI 6]                |
++------------------------------------------+
+| [Grafico de Atividade]          [Donut] |
+| [Area chart grande]            [Planos] |
++------------------------------------------+
+| [Top 10 Ranking]                        |
++------------------------------------------+
+| > Performance da Plataforma (colapsavel)|
++------------------------------------------+
 ```
 
-### generate-image/index.ts
+### 11. UX
 
-Remover fallback (linhas 128-135), manter apenas o RPC e retornar erro se falhar.
+- Skeleton loading em todos os componentes
+- Animacoes suaves com classes Tailwind (animate-fade-in)
+- Auto-refresh a cada 60s via refetchInterval do React Query
+- Layout responsivo: 1 coluna em mobile, multi-coluna em desktop
+- Estilo dark mode usando as variaveis CSS do Blue Orbital Design System (glass-card, etc.)
 
-### image-worker/index.ts
+### 12. Abas Finais
 
-Substituir refund parcial (linhas 236-254) por:
-```js
-if (failedCount > 0) {
-  const refundAmount = failedCount * CREDITS_PER_IMAGE;
-  const { data: currentProfile } = await supabaseAdmin
-    .from('profiles')
-    .select('credits')
-    .eq('user_id', claimedJob.user_id)
-    .single();
-  if (currentProfile) {
-    await supabaseAdmin
-      .from('profiles')
-      .update({ credits: currentProfile.credits + refundAmount })
-      .eq('user_id', claimedJob.user_id);
-  }
-  console.log(`Refunded ${refundAmount} credits for ${failedCount} failed generation(s)`);
-}
-```
-
-Mesma correcao para o refund total nas linhas 346-358 (que ja esta correto, manter como esta).
-
-### Arquivos Afetados
-- Nova migracao SQL (corrigir `decrement_credits`)
-- `supabase/functions/generate-image/index.ts` (remover fallback)
-- `supabase/functions/image-worker/index.ts` (corrigir refund duplo)
+A ordem das abas no Admin ficara:
+1. Dashboard (nova, default)
+2. Biblioteca (inalterada)
+3. Templates (inalterada)
+4. Usuarios (tabela melhorada)
 
