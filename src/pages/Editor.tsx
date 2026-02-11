@@ -17,6 +17,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { useJobQueue } from '@/hooks/useJobQueue';
 import { Loader2 } from 'lucide-react';
+import { BuyCreditsModal } from '@/components/BuyCreditsModal';
 
 const nodeTypes = {
   prompt: PromptNode,
@@ -210,6 +211,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
   const [projectName, setProjectName] = useState('Sem título');
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [showBuyCredits, setShowBuyCredits] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedDataRef = useRef<string>('');
   const toastRef = useRef(toast);
@@ -630,11 +632,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     const creditsNeeded = quantity;
 
     if (!profile || profile.credits < creditsNeeded) {
-      toast({
-        title: 'Créditos insuficientes',
-        description: `Você precisa de ${creditsNeeded} ${creditsNeeded === 1 ? 'crédito' : 'créditos'}.`,
-        variant: 'destructive'
-      });
+      setShowBuyCredits(true);
       return;
     }
 
@@ -804,11 +802,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     const creditsNeeded = quantity;
 
     if (!profile || profile.credits < creditsNeeded) {
-      toast({
-        title: 'Créditos insuficientes',
-        description: `Você precisa de ${creditsNeeded} ${creditsNeeded === 1 ? 'crédito' : 'créditos'}.`,
-        variant: 'destructive'
-      });
+      setShowBuyCredits(true);
       return;
     }
 
@@ -1139,6 +1133,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="hsl(var(--muted-foreground) / 0.2)" />
         </ReactFlow>
       </div>
+      <BuyCreditsModal open={showBuyCredits} onOpenChange={setShowBuyCredits} />
     </div>
   );
 }
