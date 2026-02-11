@@ -234,19 +234,7 @@ serve(async (req) => {
       // Refund credits for failed generations
       if (failedCount > 0) {
         const refundAmount = failedCount * CREDITS_PER_IMAGE;
-        const { data: currentProfile } = await supabaseAdmin
-          .from('profiles')
-          .select('credits')
-          .eq('user_id', claimedJob.user_id)
-          .single();
-        
-        if (currentProfile) {
-          await supabaseAdmin
-            .from('profiles')
-            .update({ credits: currentProfile.credits + refundAmount })
-            .eq('user_id', claimedJob.user_id);
-        }
-        
+        await supabaseAdmin.rpc('increment_credits', { uid: claimedJob.user_id, amount: refundAmount });
         console.log(`Refunded ${refundAmount} credits for ${failedCount} failed generation(s)`);
       }
 
@@ -338,19 +326,8 @@ serve(async (req) => {
 
         // Refund all credits
         const refundAmount = quantity * CREDITS_PER_IMAGE;
-        const { data: currentProfile } = await supabaseAdmin
-          .from('profiles')
-          .select('credits')
-          .eq('user_id', claimedJob.user_id)
-          .single();
-        
-        if (currentProfile) {
-          await supabaseAdmin
-            .from('profiles')
-            .update({ credits: currentProfile.credits + refundAmount })
-            .eq('user_id', claimedJob.user_id);
-          console.log(`Refunded ${refundAmount} credits for failed job ${claimedJob.id}`);
-        }
+        await supabaseAdmin.rpc('increment_credits', { uid: claimedJob.user_id, amount: refundAmount });
+        console.log(`Refunded ${refundAmount} credits for failed job ${claimedJob.id}`);
 
         console.log(`Job ${claimedJob.id} failed permanently after ${maxRetries} retries`);
 

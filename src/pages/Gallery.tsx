@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Header } from '@/components/layout/Header';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -13,6 +13,8 @@ import {
   Check,
   Calendar,
   X,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -29,6 +31,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface Generation {
   id: string;
@@ -46,6 +49,9 @@ export default function Gallery() {
   const [selectedImage, setSelectedImage] = useState<Generation | null>(null);
   const [imageToDelete, setImageToDelete] = useState<Generation | null>(null);
   const [copied, setCopied] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
   const { data: generations, isLoading } = useQuery({
     queryKey: ['gallery', user?.id],
@@ -71,23 +77,85 @@ export default function Gallery() {
         .delete()
         .eq('id', id)
         .eq('user_id', user?.id);
-      
       if (error) throw error;
     },
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ['gallery', user?.id] });
+      const previous = queryClient.getQueryData(['gallery', user?.id]);
+      queryClient.setQueryData(['gallery', user?.id], (old: Generation[] | undefined) =>
+        old?.filter(g => g.id !== id) || []
+      );
+      return { previous };
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['gallery', user?.id] });
       toast({ title: 'Imagem excluída da galeria' });
       setImageToDelete(null);
       setSelectedImage(null);
     },
-    onError: () => {
+    onError: (_err, _id, context) => {
+      queryClient.setQueryData(['gallery', user?.id], context?.previous);
       toast({ 
         title: 'Erro ao excluir',
         description: 'Não foi possível excluir a imagem.',
         variant: 'destructive' 
       });
     },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['gallery', user?.id] });
+    },
   });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      for (const id of ids) {
+        const { error } = await supabase
+          .from('generations')
+          .delete()
+          .eq('id', id)
+          .eq('user_id', user?.id);
+        if (error) throw error;
+      }
+    },
+    onMutate: async (ids) => {
+      await queryClient.cancelQueries({ queryKey: ['gallery', user?.id] });
+      const previous = queryClient.getQueryData(['gallery', user?.id]);
+      queryClient.setQueryData(['gallery', user?.id], (old: Generation[] | undefined) =>
+        old?.filter(g => !ids.includes(g.id)) || []
+      );
+      return { previous };
+    },
+    onError: (_err, _ids, context) => {
+      queryClient.setQueryData(['gallery', user?.id], context?.previous);
+      toast({
+        title: 'Erro ao excluir',
+        description: 'Algumas imagens não puderam ser excluídas.',
+        variant: 'destructive'
+      });
+    },
+    onSuccess: () => {
+      toast({ title: `${selectedIds.size} ${selectedIds.size === 1 ? 'imagem excluída' : 'imagens excluídas'}` });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['gallery', user?.id] });
+      setSelectedIds(new Set());
+      setSelectionMode(false);
+      setShowBulkDeleteConfirm(false);
+    },
+  });
+
+  const toggleSelection = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  };
 
   const handleCopy = (prompt: string) => {
     navigator.clipboard.writeText(prompt);
@@ -123,11 +191,31 @@ export default function Gallery() {
       <Header />
       
       <main className="container py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2 text-foreground">Minha Galeria</h1>
-          <p className="text-muted-foreground">
-            Imagens que você salvou dos seus projetos
-          </p>
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold mb-2 text-foreground">Minha Galeria</h1>
+            <p className="text-muted-foreground">
+              Imagens que você salvou dos seus projetos
+            </p>
+          </div>
+          {generations && generations.length > 0 && (
+            <Button
+              variant={selectionMode ? "secondary" : "outline"}
+              onClick={selectionMode ? exitSelectionMode : () => setSelectionMode(true)}
+            >
+              {selectionMode ? (
+                <>
+                  <X className="h-4 w-4 mr-2" />
+                  Cancelar
+                </>
+              ) : (
+                <>
+                  <CheckSquare className="h-4 w-4 mr-2" />
+                  Selecionar
+                </>
+              )}
+            </Button>
+          )}
         </div>
 
         {isLoading ? (
@@ -156,8 +244,18 @@ export default function Gallery() {
                 transition={{ delay: index * 0.03 }}
               >
                 <div
-                  className="group relative rounded-xl overflow-hidden border border-border/50 cursor-pointer hover:border-primary/50 transition-all bg-card aspect-square"
-                  onClick={() => setSelectedImage(gen)}
+                  className={`group relative rounded-xl overflow-hidden border cursor-pointer transition-all bg-card aspect-square ${
+                    selectionMode && selectedIds.has(gen.id)
+                      ? 'border-primary ring-2 ring-primary/50'
+                      : 'border-border/50 hover:border-primary/50'
+                  }`}
+                  onClick={() => {
+                    if (selectionMode) {
+                      toggleSelection(gen.id);
+                    } else {
+                      setSelectedImage(gen);
+                    }
+                  }}
                 >
                   <img
                     src={gen.image_url}
@@ -165,16 +263,62 @@ export default function Gallery() {
                     className="w-full h-full object-cover"
                     loading="lazy"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                  <div className="absolute bottom-0 left-0 right-0 p-3 translate-y-full group-hover:translate-y-0 transition-transform">
-                    <p className="text-white text-sm line-clamp-2">{gen.prompt}</p>
-                  </div>
+
+                  {/* Selection checkbox */}
+                  {selectionMode && (
+                    <div className="absolute top-2 left-2 z-10">
+                      <Checkbox
+                        checked={selectedIds.has(gen.id)}
+                        onCheckedChange={() => toggleSelection(gen.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="h-5 w-5 bg-background/80 border-2"
+                      />
+                    </div>
+                  )}
+
+                  {!selectionMode && (
+                    <>
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <div className="absolute bottom-0 left-0 right-0 p-3 translate-y-full group-hover:translate-y-0 transition-transform">
+                        <p className="text-white text-sm line-clamp-2">{gen.prompt}</p>
+                      </div>
+                    </>
+                  )}
                 </div>
               </motion.div>
             ))}
           </div>
         )}
       </main>
+
+      {/* Floating bulk action bar */}
+      <AnimatePresence>
+        {selectionMode && selectedIds.size > 0 && (
+          <motion.div
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-card border border-border rounded-xl shadow-lg px-6 py-3 flex items-center gap-4"
+          >
+            <span className="text-sm text-foreground font-medium">
+              {selectedIds.size} {selectedIds.size === 1 ? 'selecionada' : 'selecionadas'}
+            </span>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setShowBulkDeleteConfirm(true)}
+              disabled={bulkDeleteMutation.isPending}
+            >
+              {bulkDeleteMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-2" />
+              )}
+              Excluir selecionadas
+            </Button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Image Viewer Modal */}
       <Dialog open={!!selectedImage} onOpenChange={() => setSelectedImage(null)}>
@@ -190,7 +334,6 @@ export default function Gallery() {
 
           {selectedImage && (
             <div className="flex flex-col md:flex-row">
-              {/* Image */}
               <div className="flex-1 bg-black/20 flex items-center justify-center p-4">
                 <img
                   src={selectedImage.image_url}
@@ -199,7 +342,6 @@ export default function Gallery() {
                 />
               </div>
 
-              {/* Details */}
               <div className="w-full md:w-80 p-6 space-y-4 border-t md:border-t-0 md:border-l border-border">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-muted-foreground">Prompt</label>
@@ -277,6 +419,33 @@ export default function Gallery() {
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 'Excluir'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <AlertDialog open={showBulkDeleteConfirm} onOpenChange={setShowBulkDeleteConfirm}>
+        <AlertDialogContent className="bg-card border-border">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-foreground">
+              Excluir {selectedIds.size} {selectedIds.size === 1 ? 'imagem' : 'imagens'}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação não pode ser desfeita. As imagens serão removidas permanentemente da sua galeria.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-border">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => bulkDeleteMutation.mutate(Array.from(selectedIds))}
+            >
+              {bulkDeleteMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                'Excluir todas'
               )}
             </AlertDialogAction>
           </AlertDialogFooter>
