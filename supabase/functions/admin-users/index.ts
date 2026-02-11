@@ -98,7 +98,7 @@ serve(async (req) => {
     const { action, userId, email } = await req.json();
 
     // Validate action
-    const validActions = ["resend-invite", "delete-user"];
+    const validActions = ["resend-invite", "delete-user", "dashboard-stats"];
     if (!action || !validActions.includes(action)) {
       return new Response(JSON.stringify({ error: "Invalid action" }), {
         status: 400,
@@ -207,6 +207,36 @@ serve(async (req) => {
       }
 
       return new Response(JSON.stringify({ success: true, message: "Usuário removido" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "dashboard-stats") {
+      // Fetch all users from auth to get last_sign_in_at
+      const allUsers: Record<string, { last_sign_in_at: string | null }> = {};
+      let page = 1;
+      const perPage = 1000;
+      
+      while (true) {
+        const { data: { users: authUsersList }, error: listError } = await supabaseAdmin.auth.admin.listUsers({
+          page,
+          perPage,
+        });
+        
+        if (listError) {
+          console.error("Error listing users:", listError);
+          break;
+        }
+        
+        for (const u of authUsersList) {
+          allUsers[u.id] = { last_sign_in_at: u.last_sign_in_at || null };
+        }
+        
+        if (authUsersList.length < perPage) break;
+        page++;
+      }
+
+      return new Response(JSON.stringify({ success: true, users: allUsers }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

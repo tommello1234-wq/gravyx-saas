@@ -1,6 +1,9 @@
 import { useState, useRef } from 'react';
 import { Header } from '@/components/layout/Header';
 import { TemplatesTab } from '@/components/admin/TemplatesTab';
+import { DashboardTab } from '@/components/admin/dashboard/DashboardTab';
+import { UsersTable } from '@/components/admin/dashboard/UsersTable';
+import { useAdminDashboard } from '@/components/admin/dashboard/useAdminDashboard';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -32,7 +35,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
   DialogFooter,
 } from '@/components/ui/dialog';
 import { 
@@ -42,21 +44,12 @@ import {
   Images,
   LayoutTemplate,
   Users,
-  Coins,
   Upload,
   X,
-  Send,
-  MoreHorizontal,
   Pencil,
-  UserPlus,
   Settings2,
+  BarChart3,
 } from 'lucide-react';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -92,6 +85,9 @@ export default function Admin() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  
+  // Dashboard data for UsersTable
+  const dashboardData = useAdminDashboard('30d');
   
   // References state
   const [refDialogOpen, setRefDialogOpen] = useState(false);
@@ -139,19 +135,6 @@ export default function Admin() {
         .order('created_at', { ascending: false });
       if (error) throw error;
       return data as ReferenceImage[];
-    },
-  });
-
-  // Fetch profiles
-  const { data: profiles, isLoading: profilesLoading } = useQuery({
-    queryKey: ['admin-profiles'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      return data;
     },
   });
 
@@ -379,7 +362,7 @@ export default function Admin() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-profiles'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-dashboard-profiles'] });
       toast({ title: 'Créditos atualizados!' });
     },
   });
@@ -399,7 +382,7 @@ export default function Admin() {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-profiles'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-dashboard-profiles'] });
       setCreateUserDialogOpen(false);
       setNewUserEmail('');
       setNewUserCredits(5);
@@ -447,7 +430,7 @@ export default function Admin() {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-profiles'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-dashboard-profiles'] });
       setDeleteDialogOpen(false);
       setUserToDelete(null);
       toast({ title: 'Usuário removido!', description: 'O acesso foi revogado com sucesso.' });
@@ -469,8 +452,12 @@ export default function Admin() {
           </p>
         </div>
 
-        <Tabs defaultValue="references" className="space-y-6">
+        <Tabs defaultValue="dashboard" className="space-y-6">
           <TabsList className="bg-muted/50">
+            <TabsTrigger value="dashboard" className="gap-2">
+              <BarChart3 className="h-4 w-4" />
+              Dashboard
+            </TabsTrigger>
             <TabsTrigger value="references" className="gap-2">
               <Images className="h-4 w-4" />
               Biblioteca
@@ -484,6 +471,11 @@ export default function Admin() {
               Usuários
             </TabsTrigger>
           </TabsList>
+
+          {/* Dashboard Tab */}
+          <TabsContent value="dashboard">
+            <DashboardTab />
+          </TabsContent>
 
           {/* References Tab */}
           <TabsContent value="references">
@@ -627,94 +619,17 @@ export default function Admin() {
 
           {/* Users Tab */}
           <TabsContent value="users">
-            <Card className="glass-card">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle>Usuários</CardTitle>
-                <Button size="sm" className="rounded-full" onClick={() => setCreateUserDialogOpen(true)}>
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  Adicionar Usuário
-                </Button>
-              </CardHeader>
-              <CardContent>
-                {profilesLoading ? (
-                  <div className="flex justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin" />
-                  </div>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Email</TableHead>
-                        <TableHead>Tier</TableHead>
-                        <TableHead>Créditos</TableHead>
-                        <TableHead className="w-[150px]">Ações</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {profiles?.map((profile) => (
-                        <TableRow key={profile.id}>
-                          <TableCell>{profile.email}</TableCell>
-                          <TableCell className="capitalize">{profile.tier}</TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Coins className="h-4 w-4 text-primary" />
-                              {profile.credits}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Input
-                                type="number"
-                                className="w-20 h-8"
-                                defaultValue={profile.credits}
-                                onBlur={(e) => {
-                                  const newCredits = parseInt(e.target.value);
-                                  if (newCredits !== profile.credits) {
-                                    updateCreditsMutation.mutate({
-                                      userId: profile.user_id,
-                                      credits: newCredits,
-                                    });
-                                  }
-                                }}
-                              />
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8">
-                                    <MoreHorizontal className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem
-                                    onClick={() => resendInviteMutation.mutate({ 
-                                      userId: profile.user_id, 
-                                      email: profile.email 
-                                    })}
-                                    disabled={resendInviteMutation.isPending}
-                                  >
-                                    <Send className="h-4 w-4 mr-2" />
-                                    Reenviar acesso
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    className="text-destructive focus:text-destructive"
-                                    onClick={() => {
-                                      setUserToDelete({ id: profile.user_id, email: profile.email });
-                                      setDeleteDialogOpen(true);
-                                    }}
-                                  >
-                                    <Trash2 className="h-4 w-4 mr-2" />
-                                    Remover acesso
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
+            <UsersTable
+              data={dashboardData}
+              onUpdateCredits={(userId, credits) => updateCreditsMutation.mutate({ userId, credits })}
+              onResendInvite={(userId, email) => resendInviteMutation.mutate({ userId, email })}
+              onDeleteUser={(userId, email) => {
+                setUserToDelete({ id: userId, email });
+                setDeleteDialogOpen(true);
+              }}
+              onCreateUser={() => setCreateUserDialogOpen(true)}
+              isResending={resendInviteMutation.isPending}
+            />
           </TabsContent>
         </Tabs>
       </main>
