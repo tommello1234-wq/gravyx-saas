@@ -415,6 +415,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      increment_credits: {
+        Args: { amount: number; uid: string }
+        Returns: number
+      }
     }
     Enums: {
       app_role: "admin" | "user"

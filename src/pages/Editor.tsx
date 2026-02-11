@@ -216,6 +216,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
   const pollingFallbackRef = useRef<NodeJS.Timeout | null>(null);
   const lastSyncedAtRef = useRef<string>('');
   const activeResultIdsRef = useRef<Set<string>>(new Set());
+  const pendingJobsRef = useRef<{ id: string; quantity: number; resultId?: string }[]>([]);
 
   // Keep refs in sync
   useEffect(() => {
@@ -277,9 +278,21 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
       });
     });
 
-    toastRef.current({ 
-      title: `${result.resultCount} ${result.resultCount === 1 ? 'imagem gerada' : 'imagens geradas'} com sucesso!` 
-    });
+    // Detect partial failure: compare requested quantity vs delivered
+    const pendingJob = pendingJobsRef.current.find(j => j.id === result.jobId);
+    const requestedQty = pendingJob?.quantity || result.resultCount;
+    const failedCount = requestedQty - result.resultCount;
+
+    if (failedCount > 0) {
+      toastRef.current({
+        title: `${result.resultCount} de ${requestedQty} imagens geradas`,
+        description: `${failedCount} ${failedCount === 1 ? 'crédito reembolsado' : 'créditos reembolsados'}.`,
+      });
+    } else {
+      toastRef.current({ 
+        title: `${result.resultCount} ${result.resultCount === 1 ? 'imagem gerada' : 'imagens geradas'} com sucesso!` 
+      });
+    }
     
     refreshProfile();
   }, [refreshProfile]);
@@ -307,6 +320,11 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     onJobCompleted: handleJobCompleted,
     onJobFailed: handleJobFailed
   });
+
+  // Keep pendingJobsRef in sync
+  useEffect(() => {
+    pendingJobsRef.current = pendingJobs;
+  }, [pendingJobs]);
 
   // Dispatch job queue state to SettingsNode (legacy)
   useEffect(() => {
