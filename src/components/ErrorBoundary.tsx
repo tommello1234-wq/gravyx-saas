@@ -1,5 +1,5 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RefreshCw, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface Props {
@@ -22,8 +22,15 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
+    console.error('[ErrorBoundary]', error.message, {
+      stack: error.stack,
+      componentStack: errorInfo.componentStack,
+    });
   }
+
+  handleRetry = () => {
+    this.setState({ hasError: false, error: null });
+  };
 
   handleReload = () => {
     window.location.reload();
@@ -40,18 +47,24 @@ export class ErrorBoundary extends Component<Props, State> {
             <h1 className="text-2xl font-bold text-foreground mb-2">
               Algo deu errado
             </h1>
-            <p className="text-muted-foreground mb-6">
-              Ocorreu um erro inesperado. Tente recarregar a página.
+            <p className="text-muted-foreground mb-4">
+              Ocorreu um erro inesperado. Tente novamente.
             </p>
-            {process.env.NODE_ENV === 'development' && this.state.error && (
+            {this.state.error && (
               <pre className="text-left text-xs bg-muted p-4 rounded-lg mb-6 overflow-auto max-h-32 text-destructive">
                 {this.state.error.message}
               </pre>
             )}
-            <Button onClick={this.handleReload} className="gap-2">
-              <RefreshCw className="h-4 w-4" />
-              Recarregar página
-            </Button>
+            <div className="flex gap-3 justify-center">
+              <Button onClick={this.handleRetry} className="gap-2">
+                <RotateCcw className="h-4 w-4" />
+                Tentar novamente
+              </Button>
+              <Button onClick={this.handleReload} variant="outline" className="gap-2">
+                <RefreshCw className="h-4 w-4" />
+                Recarregar página
+              </Button>
+            </div>
           </div>
         </div>
       );

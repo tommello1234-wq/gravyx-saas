@@ -679,9 +679,9 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
         let errorMsg = error.message;
         if (error instanceof FunctionsHttpError) {
           try {
-            const errBody = await error.context.json();
+            const errBody = await error.context?.json();
             errorMsg = errBody?.error || errorMsg;
-          } catch {}
+          } catch { /* ignore parse errors */ }
         }
         throw new Error(errorMsg);
       }
@@ -840,9 +840,9 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
         let errorMsg = error.message;
         if (error instanceof FunctionsHttpError) {
           try {
-            const errBody = await error.context.json();
+            const errBody = await error.context?.json();
             errorMsg = errBody?.error || errorMsg;
-          } catch {}
+          } catch { /* ignore parse errors */ }
         }
         throw new Error(errorMsg);
       }
