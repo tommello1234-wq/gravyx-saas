@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import { useSearchParams } from 'react-router-dom';
 import { ReactFlow, ReactFlowProvider, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, Connection, Node, Edge, BackgroundVariant } from '@xyflow/react';
 import type { Json } from '@/integrations/supabase/types';
@@ -676,7 +677,16 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
         body: { prompt, aspectRatio, quantity, imageUrls: allMedias, projectId, resultId }
       });
 
-      if (error) throw error;
+      if (error) {
+        let errorMsg = error.message;
+        if (error instanceof FunctionsHttpError) {
+          try {
+            const errBody = await error.context.json();
+            errorMsg = errBody?.error || errorMsg;
+          } catch {}
+        }
+        throw new Error(errorMsg);
+      }
 
       // Add job with resultId so we know where to deliver images
       addPendingJob(data.jobId, data.quantity, resultId);
@@ -832,7 +842,16 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
         body: { prompt, aspectRatio, quantity, imageUrls, projectId }
       });
 
-      if (error) throw error;
+      if (error) {
+        let errorMsg = error.message;
+        if (error instanceof FunctionsHttpError) {
+          try {
+            const errBody = await error.context.json();
+            errorMsg = errBody?.error || errorMsg;
+          } catch {}
+        }
+        throw new Error(errorMsg);
+      }
 
       addPendingJob(data.jobId, data.quantity);
       window.dispatchEvent(new CustomEvent(GENERATING_STATE_EVENT, { detail: { isGenerating: false } }));
