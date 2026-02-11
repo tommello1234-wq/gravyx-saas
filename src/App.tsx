@@ -29,13 +29,13 @@ const App = () => (
           <BrowserRouter>
             <Routes>
               <Route path="/" element={<Navigate to="/auth" replace />} />
-              <Route path="/auth" element={<Auth />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/auth" element={<ErrorBoundary><Auth /></ErrorBoundary>} />
+              <Route path="/reset-password" element={<ErrorBoundary><ResetPassword /></ErrorBoundary>} />
               <Route 
                 path="/projects" 
                 element={
                   <ProtectedRoute>
-                    <Projects />
+                    <ErrorBoundary><Projects /></ErrorBoundary>
                   </ProtectedRoute>
                 } 
               />
@@ -43,7 +43,7 @@ const App = () => (
                 path="/app" 
                 element={
                   <ProtectedRoute>
-                    <Editor />
+                    <ErrorBoundary><Editor /></ErrorBoundary>
                   </ProtectedRoute>
                 } 
               />
@@ -51,7 +51,7 @@ const App = () => (
                 path="/gallery" 
                 element={
                   <ProtectedRoute>
-                    <Gallery />
+                    <ErrorBoundary><Gallery /></ErrorBoundary>
                   </ProtectedRoute>
                 } 
               />
@@ -59,7 +59,7 @@ const App = () => (
                 path="/library" 
                 element={
                   <ProtectedRoute>
-                    <Library />
+                    <ErrorBoundary><Library /></ErrorBoundary>
                   </ProtectedRoute>
                 } 
               />
@@ -67,7 +67,7 @@ const App = () => (
                 path="/admin" 
                 element={
                   <ProtectedRoute requireAdmin>
-                    <Admin />
+                    <ErrorBoundary><Admin /></ErrorBoundary>
                   </ProtectedRoute>
                 } 
               />
@@ -75,7 +75,7 @@ const App = () => (
                 path="/admin/template-editor" 
                 element={
                   <ProtectedRoute requireAdmin>
-                    <TemplateEditor />
+                    <ErrorBoundary><TemplateEditor /></ErrorBoundary>
                   </ProtectedRoute>
                 } 
               />
