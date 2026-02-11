@@ -1,163 +1,169 @@
 
 
-# Dashboard Admin Visual e Estrategico
+# Correcao de 3 Bugs + Exclusao em Massa na Galeria
 
-## Resumo
+## Problemas Identificados
 
-Transformar a aba "Usuarios" do Admin em um dashboard completo com metricas visuais, graficos e tabela avancada, e adicionar uma nova aba "Dashboard" como a primeira aba. As abas "Biblioteca" e "Templates" permanecem inalteradas.
+### 1. Geracao parcial de imagens (pediu 4, veio 1 ou 2)
 
-## Sobre as limitacoes de dados
+**Causa**: A API de IA (Gemini) falha silenciosamente em algumas chamadas individuais. O worker ja trata isso: gera as que conseguiu, reembolsa creditos das que falharam. Porem, o usuario so ve o toast "X imagens geradas com sucesso" sem nenhuma indicacao de que algumas falharam.
 
-Voce esta certo: para usuarios existentes que ja usaram a plataforma, os dados de `generations` e `jobs` ja existem com timestamps, entao as metricas serao calculadas a partir deles. O campo `last_sign_in_at` ja existe no `auth.users` do Supabase e pode ser acessado pela edge function `admin-users`. A unica metrica que nao teremos com precisao historica e o consumo exato de creditos por usuario (so temos saldo atual + compras), mas daqui pra frente tudo sera rastreado.
+**Dados reais encontrados**: Dos ultimos 20 jobs, pelo menos 4 tiveram falhas parciais (4 pedidas, 1-3 entregues). Os creditos foram reembolsados corretamente na maioria.
 
-## Estrutura de Arquivos Novos
+**Correcao**: Adicionar ao toast uma mensagem clara quando houver falha parcial, ex: "2 de 4 imagens geradas. 2 creditos reembolsados." O `image-worker` ja retorna `imagesGenerated` e `imagesFailed` -- basta o frontend exibir isso. O `handleJobCompleted` no Editor.tsx vai comparar `resultCount` com a `quantity` do job pendente e exibir aviso quando forem diferentes.
 
-```text
-src/components/admin/dashboard/
-  DashboardTab.tsx          -- Container principal
-  KpiCards.tsx              -- Cards de metricas no topo
-  ActivityChart.tsx         -- Grafico principal de atividade
-  PlanDistribution.tsx      -- Distribuicao por plano (donut)
-  TopUsersRanking.tsx       -- Ranking top 10
-  PlatformPerformance.tsx   -- Secao colapsavel de performance
-  AlertsBanner.tsx          -- Alertas automaticos
-  useAdminDashboard.ts      -- Hook centralizado para queries
+### 2. Creditos pulando de 64 para ~100
+
+**Causa**: O reembolso de creditos no `image-worker` usa o padrao **read-then-write** (le o saldo, soma, escreve de volta). Isso causa race conditions quando multiplos polls do worker acontecem em paralelo (a cada 3 segundos). Alem disso, jobs com retries podem reembolsar multiplas vezes: cada tentativa de retry que falha parcialmente faz um reembolso separado.
+
+Exemplo concreto: job `da85a596` teve 2 retries, cada um possivelmente reembolsando creditos separadamente.
+
+**Correcao**: Substituir o reembolso por uma operacao atomica. Criar uma funcao SQL `increment_credits` (similar a `decrement_credits` que ja existe) e usa-la no worker em vez do padrao read-then-write.
+
+### 3. Galeria: exclusao nao atualiza UI + falta exclusao em massa
+
+**Causa**: O `deleteMutation` usa `invalidateQueries` que dispara um refetch assincrono. A imagem continua visivel ate o refetch completar. Nao ha atualizacao otimista.
+
+**Correcao**:
+- Adicionar **optimistic update** no `deleteMutation`: remover a imagem da lista local imediatamente, antes do refetch
+- Adicionar modo de **selecao em massa** com checkbox em cada imagem e botao "Excluir selecionadas"
+
+---
+
+## Alteracoes Tecnicas
+
+### Arquivo 1: `supabase/functions/image-worker/index.ts`
+
+Substituir os 3 trechos de reembolso (linhas ~237-248, ~340-352, e o refund no catch) por chamadas atomicas:
+
+```typescript
+// Antes (race condition):
+const { data: currentProfile } = await supabaseAdmin
+  .from('profiles').select('credits').eq('user_id', ...).single();
+await supabaseAdmin.from('profiles')
+  .update({ credits: currentProfile.credits + refundAmount }).eq('user_id', ...);
+
+// Depois (atomico):
+await supabaseAdmin.rpc('increment_credits', { uid: claimedJob.user_id, amount: refundAmount });
 ```
 
-## Arquivos Modificados
+### Arquivo 2: Migracao SQL
 
-- `src/pages/Admin.tsx` -- Adicionar aba "Dashboard", extrair tabela de usuarios para componente melhorado
-- `supabase/functions/admin-users/index.ts` -- Adicionar action `dashboard-stats` para retornar dados agregados que o admin precisa (contagens de generations, jobs, dados de auth.users como last_sign_in)
-
-## Migracao SQL
-
-Adicionar policy de SELECT para admin na tabela `generations` e `jobs` (para que o admin possa ver dados de todos os usuarios no client-side):
+Criar funcao `increment_credits`:
 
 ```sql
-CREATE POLICY "generations_admin_select" ON generations
-FOR SELECT USING (has_role(auth.uid(), 'admin'::app_role));
-
-CREATE POLICY "jobs_admin_select" ON jobs
-FOR SELECT USING (has_role(auth.uid(), 'admin'::app_role));
+CREATE OR REPLACE FUNCTION public.increment_credits(uid uuid, amount integer)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  new_credits integer;
+BEGIN
+  UPDATE public.profiles
+  SET credits = credits + amount, updated_at = now()
+  WHERE user_id = uid
+  RETURNING credits INTO new_credits;
+  RETURN new_credits;
+END;
+$$;
 ```
 
-## Detalhes Tecnicos
+### Arquivo 3: `src/pages/Editor.tsx`
 
-### 1. Hook useAdminDashboard.ts
+No `handleJobCompleted`, adicionar logica para detectar falha parcial:
 
-Hook centralizado com React Query que busca:
-- `profiles` (todos, via RLS admin)
-- `generations` (todas, apos nova policy)
-- `jobs` (todos, apos nova policy)
-- `credit_purchases` (todas, via RLS admin)
-- Dados de auth via edge function (last_sign_in_at dos usuarios)
+```typescript
+// Comparar quantity pedida vs resultCount recebido
+const pendingJob = pendingJobs.find(j => j.id === result.jobId);
+const requestedQty = pendingJob?.quantity || result.resultCount;
+const failedCount = requestedQty - result.resultCount;
 
-Calcula todas as metricas derivadas:
-- Total de usuarios, ativos (30d), imagens geradas, creditos consumidos estimados
-- Agrupamentos por dia/semana/mes para graficos
-- Rankings, distribuicao por plano, alertas
-
-Aceita parametro de periodo (7d, 30d, 90d, 12m) e faz refetch automatico a cada 60s.
-
-### 2. KpiCards.tsx -- Metricas Principais
-
-6 cards no topo em grid responsivo (2 colunas mobile, 3 desktop):
-- Total de usuarios (com icone Users)
-- Usuarios ativos 30d (com % do total)
-- Total de imagens geradas
-- Creditos consumidos (estimativa: creditos_iniciais + comprados - saldo_atual)
-- Receita total (sum de credit_purchases.amount_paid)
-- Taxa de atividade (% usuarios que geraram pelo menos 1 imagem)
-
-Cada card: numero grande, icone, indicador de crescimento vs periodo anterior, mini sparkline com Recharts AreaChart.
-
-Skeleton loading enquanto carrega.
-
-### 3. ActivityChart.tsx -- Grafico Principal
-
-- Recharts AreaChart responsivo com gradiente
-- Filtros de periodo: 7d / 30d / 90d / 12m (botoes toggle)
-- Toggle para alternar metrica: Imagens geradas / Novos usuarios / Creditos consumidos
-- Dados agrupados por dia (7d/30d/90d) ou por mes (12m)
-- Tooltip customizado com estilo dark
-
-### 4. PlanDistribution.tsx
-
-- Recharts PieChart (donut) mostrando usuarios por tier
-- Labels com quantidade e percentual
-- Cores do design system (primary, secondary, accent)
-
-### 5. TopUsersRanking.tsx
-
-- Top 10 usuarios por imagens geradas
-- Colunas: posicao (com badge ouro/prata/bronze), nome/email, plano, total imagens, creditos atuais
-- Filtro por periodo integrado com o filtro global
-- Dados calculados a partir de `generations` agrupados por user_id
-
-### 6. PlatformPerformance.tsx
-
-- Secao colapsavel (Collapsible)
-- Metricas de `jobs`: total processados, com erro (24h), taxa de sucesso
-- Cards menores em grid
-
-### 7. AlertsBanner.tsx
-
-- Alertas baseados em regras calculadas no frontend:
-  - Pico de uso (geracao diaria > 2x media)
-  - Aumento de erros (jobs com error > 10% nas ultimas 24h)
-  - Usuarios com 0 creditos
-- Exibidos como banners coloridos no topo do dashboard
-
-### 8. Tabela de Usuarios Melhorada
-
-Dentro da aba "Usuarios" existente, melhorar a tabela atual com:
-- Campo de busca por nome/email
-- Filtro por plano (Select)
-- Colunas adicionais: imagens geradas, ultimo acesso
-- Paginacao client-side (20 por pagina)
-- Botao exportar CSV
-- Ordenacao por coluna clicavel
-- Manter todas as funcionalidades existentes (editar creditos, reenviar convite, remover)
-
-### 9. Edge Function admin-users
-
-Adicionar nova action `dashboard-stats` que retorna:
-- Lista de user IDs com `last_sign_in_at` do `auth.users` (via supabaseAdmin.auth.admin.listUsers)
-- Isso permite mostrar "ultimo login" na tabela e calcular retencao
-
-Adicionar `dashboard-stats` ao array `validActions`.
-
-### 10. Layout do Dashboard
-
-```text
-+------------------------------------------+
-| [Alertas Banner]                         |
-+------------------------------------------+
-| [KPI 1] [KPI 2] [KPI 3]                |
-| [KPI 4] [KPI 5] [KPI 6]                |
-+------------------------------------------+
-| [Grafico de Atividade]          [Donut] |
-| [Area chart grande]            [Planos] |
-+------------------------------------------+
-| [Top 10 Ranking]                        |
-+------------------------------------------+
-| > Performance da Plataforma (colapsavel)|
-+------------------------------------------+
+if (failedCount > 0) {
+  toast({
+    title: `${result.resultCount} de ${requestedQty} imagens geradas`,
+    description: `${failedCount} ${failedCount === 1 ? 'credito reembolsado' : 'creditos reembolsados'}.`,
+    variant: 'default'
+  });
+} else {
+  toast({ title: `${result.resultCount} ${result.resultCount === 1 ? 'imagem gerada' : 'imagens geradas'} com sucesso!` });
+}
 ```
 
-### 11. UX
+### Arquivo 4: `src/pages/Gallery.tsx`
 
-- Skeleton loading em todos os componentes
-- Animacoes suaves com classes Tailwind (animate-fade-in)
-- Auto-refresh a cada 60s via refetchInterval do React Query
-- Layout responsivo: 1 coluna em mobile, multi-coluna em desktop
-- Estilo dark mode usando as variaveis CSS do Blue Orbital Design System (glass-card, etc.)
+**Optimistic delete**: No `deleteMutation`, usar `onMutate` para remover a imagem da cache imediatamente:
 
-### 12. Abas Finais
+```typescript
+const deleteMutation = useMutation({
+  mutationFn: async (id: string) => { ... },
+  onMutate: async (id) => {
+    await queryClient.cancelQueries({ queryKey: ['gallery', user?.id] });
+    const previous = queryClient.getQueryData(['gallery', user?.id]);
+    queryClient.setQueryData(['gallery', user?.id], (old: Generation[] | undefined) =>
+      old?.filter(g => g.id !== id) || []
+    );
+    return { previous };
+  },
+  onError: (err, id, context) => {
+    queryClient.setQueryData(['gallery', user?.id], context?.previous);
+  },
+  onSettled: () => {
+    queryClient.invalidateQueries({ queryKey: ['gallery', user?.id] });
+  },
+});
+```
 
-A ordem das abas no Admin ficara:
-1. Dashboard (nova, default)
-2. Biblioteca (inalterada)
-3. Templates (inalterada)
-4. Usuarios (tabela melhorada)
+**Exclusao em massa**: Adicionar:
+- Estado `selectionMode` (boolean) e `selectedIds` (Set)
+- Botao "Selecionar" no header que ativa o modo de selecao
+- Checkboxes nas imagens quando em modo de selecao
+- Barra flutuante no rodape com "X selecionadas | Excluir todas"
+- `bulkDeleteMutation` que deleta todas as selecionadas em sequencia com optimistic update
+
+**Bulk delete mutation**:
+
+```typescript
+const bulkDeleteMutation = useMutation({
+  mutationFn: async (ids: string[]) => {
+    for (const id of ids) {
+      const { error } = await supabase
+        .from('generations')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', user?.id);
+      if (error) throw error;
+    }
+  },
+  onMutate: async (ids) => {
+    await queryClient.cancelQueries({ queryKey: ['gallery', user?.id] });
+    const previous = queryClient.getQueryData(['gallery', user?.id]);
+    queryClient.setQueryData(['gallery', user?.id], (old: Generation[] | undefined) =>
+      old?.filter(g => !ids.includes(g.id)) || []
+    );
+    return { previous };
+  },
+  onSettled: () => {
+    queryClient.invalidateQueries({ queryKey: ['gallery', user?.id] });
+    setSelectedIds(new Set());
+    setSelectionMode(false);
+  },
+});
+```
+
+### Arquivo 5: `supabase/functions/image-worker/index.ts` (deploy)
+
+Apos as alteracoes, deploy da edge function atualizada.
+
+---
+
+## Resumo das Alteracoes
+
+| Arquivo | Tipo | Descricao |
+|---------|------|-----------|
+| Migracao SQL | Novo | Funcao `increment_credits` atomica |
+| `image-worker/index.ts` | Editar | Reembolso atomico via RPC |
+| `Editor.tsx` | Editar | Toast informativo para falha parcial |
+| `Gallery.tsx` | Editar | Optimistic delete + selecao em massa |
 
