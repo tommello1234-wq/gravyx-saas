@@ -85,9 +85,21 @@ export function useAdminDashboard(period: Period): DashboardData {
   const { data: generations = [], isLoading: generationsLoading } = useQuery({
     queryKey: ['admin-dashboard-generations'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('generations').select('id, user_id, created_at, status');
-      if (error) throw error;
-      return data;
+      // Fetch all generations (paginate to avoid default 1000 row limit)
+      const allGenerations: any[] = [];
+      let from = 0;
+      const pageSize = 1000;
+      while (true) {
+        const { data, error } = await supabase
+          .from('generations')
+          .select('id, user_id, created_at, status')
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        allGenerations.push(...(data || []));
+        if (!data || data.length < pageSize) break;
+        from += pageSize;
+      }
+      return allGenerations;
     },
     refetchInterval: 60000,
   });
@@ -95,9 +107,20 @@ export function useAdminDashboard(period: Period): DashboardData {
   const { data: jobs = [], isLoading: jobsLoading } = useQuery({
     queryKey: ['admin-dashboard-jobs'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('jobs').select('id, user_id, status, error, created_at, started_at, finished_at');
-      if (error) throw error;
-      return data;
+      const allJobs: any[] = [];
+      let from = 0;
+      const pageSize = 1000;
+      while (true) {
+        const { data, error } = await supabase
+          .from('jobs')
+          .select('id, user_id, status, error, created_at, started_at, finished_at')
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        allJobs.push(...(data || []));
+        if (!data || data.length < pageSize) break;
+        from += pageSize;
+      }
+      return allJobs;
     },
     refetchInterval: 60000,
   });
