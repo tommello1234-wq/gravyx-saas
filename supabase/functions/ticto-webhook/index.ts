@@ -63,6 +63,13 @@ Deno.serve(async (req: Request) => {
 
   let body: TictoPayload;
   
+  // Check Content-Length header before reading body into memory
+  const contentLength = req.headers.get('content-length');
+  if (contentLength && parseInt(contentLength) > 50000) {
+    await logWebhook(supabase, 'payload_too_large', {}, false, 'Payload exceeds 50KB limit (Content-Length)');
+    return new Response('Payload too large', { status: 413, headers: corsHeaders });
+  }
+
   try {
     const rawBody = await req.text();
     if (rawBody.length > 50000) {
