@@ -19,7 +19,7 @@ interface UsersTableProps {
   isResending: boolean;
 }
 
-type SortKey = 'email' | 'tier' | 'credits' | 'images' | 'last_login';
+type SortKey = 'email' | 'tier' | 'credits' | 'images' | 'created_at';
 type SortDir = 'asc' | 'desc';
 
 const PAGE_SIZE = 20;
@@ -42,7 +42,7 @@ export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser
     let users = data.profiles.map(p => ({
       ...p,
       images: imageCounts.get(p.user_id) || 0,
-      last_login: data.authUsers[p.user_id]?.last_sign_in_at || null,
+      
     }));
 
     if (search) {
@@ -61,7 +61,7 @@ export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser
         case 'tier': cmp = a.tier.localeCompare(b.tier); break;
         case 'credits': cmp = a.credits - b.credits; break;
         case 'images': cmp = a.images - b.images; break;
-        case 'last_login': cmp = (a.last_login || '').localeCompare(b.last_login || ''); break;
+        case 'created_at': cmp = (a.created_at || '').localeCompare(b.created_at || ''); break;
       }
       return sortDir === 'asc' ? cmp : -cmp;
     });
@@ -87,9 +87,9 @@ export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser
   };
 
   const exportCSV = () => {
-    const header = 'Email,Nome,Plano,Créditos,Imagens,Último Login\n';
+    const header = 'Email,Nome,Plano,Créditos,Imagens,Data de Cadastro\n';
     const rows = filteredUsers.map(u =>
-      `"${u.email}","${u.display_name || ''}","${u.tier}",${u.credits},${u.images},"${u.last_login ? format(new Date(u.last_login), 'dd/MM/yyyy HH:mm') : 'N/A'}"`
+      `"${u.email}","${u.display_name || ''}","${u.tier}",${u.credits},${u.images},"${u.created_at ? format(new Date(u.created_at), 'dd/MM/yyyy HH:mm') : 'N/A'}"`
     ).join('\n');
     const blob = new Blob([header + rows], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -164,8 +164,8 @@ export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser
                   <TableHead className="cursor-pointer select-none text-right" onClick={() => toggleSort('images')}>
                     Imagens <SortIcon col="images" />
                   </TableHead>
-                  <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('last_login')}>
-                    Último Login <SortIcon col="last_login" />
+                  <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('created_at')}>
+                    Cadastro <SortIcon col="created_at" />
                   </TableHead>
                   <TableHead className="w-[130px]">Ações</TableHead>
                 </TableRow>
@@ -190,7 +190,7 @@ export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser
                     </TableCell>
                     <TableCell className="text-right">{profile.images}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {profile.last_login ? format(new Date(profile.last_login), 'dd/MM/yy HH:mm') : '—'}
+                      {profile.created_at ? format(new Date(profile.created_at), 'dd/MM/yy') : '—'}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
