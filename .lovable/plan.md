@@ -1,61 +1,19 @@
 
 
-## Salvar Projeto como Template (Admin)
+## Trocar "Ultimo Login" por "Data de Cadastro" na tabela de usuarios
 
 ### Resumo
-Adicionar a funcionalidade para que o admin possa, de dentro do Editor de um projeto existente, salvar o canvas atual como um template -- criando um novo template ou atualizando um template existente.
+Substituir a coluna "Ultimo Login" pela "Data de Cadastro" (`created_at` da tabela `profiles`) na tabela de usuarios do admin. A ordenacao por clique no cabecalho ja funciona -- so precisa apontar para o campo correto.
 
 ### Mudancas
 
-**1. Criar componente `SaveAsTemplateModal`**
+**Arquivo: `src/components/admin/dashboard/UsersTable.tsx`**
 
-Novo arquivo: `src/components/SaveAsTemplateModal.tsx`
+1. **Renomear o SortKey** `'last_login'` para `'created_at'`
+2. **No mapeamento de usuarios** (`filteredUsers`), trocar `last_login: data.authUsers[...]` por usar `p.created_at` que ja vem do profile
+3. **Na ordenacao**, trocar o case `'last_login'` por `'created_at'` comparando as datas de cadastro
+4. **No cabecalho da tabela**, trocar o texto "Ultimo Login" por "Cadastro" e apontar para `toggleSort('created_at')`
+5. **Na celula de cada linha**, exibir `profile.created_at` formatado com `dd/MM/yy`
+6. **No export CSV**, trocar o header "Ultimo Login" por "Data de Cadastro" e usar `created_at`
 
-- Modal com duas opcoes: "Salvar como novo template" e "Atualizar template existente"
-- Campos: nome do template, descricao (opcionais, pre-preenchidos com nome do projeto)
-- Dropdown/select para escolher template existente (caso queira sobrescrever)
-- Ao salvar:
-  - Usa a funcao `sanitizeCanvasState` existente para limpar o canvas
-  - Insere ou atualiza na tabela `project_templates` com o `canvas_state` limpo
-- Exibe toast de sucesso/erro
-
-**2. Adicionar botao "Salvar como Template" no Editor**
-
-Arquivo: `src/pages/Editor.tsx`
-
-- Renderizar o botao apenas quando `isAdmin === true` (do `useAuth()`)
-- Botao na barra superior do editor, ao lado do indicador de salvamento
-- Ao clicar, abre o `SaveAsTemplateModal` passando os nodes e edges atuais
-- O modal recebe `projectName` como valor padrao do nome do template
-
-**3. Fluxo do Modal**
-
-```text
-Admin clica "Salvar como Template"
-  --> Modal abre com duas abas/opcoes:
-      [Novo Template]
-        - Nome (pre-preenchido com nome do projeto)
-        - Descricao (opcional)
-        - Botao "Criar Template"
-      [Atualizar Existente]
-        - Select com lista de templates existentes
-        - Botao "Atualizar"
-  --> Salva canvas_state sanitizado na tabela project_templates
-  --> Toast de confirmacao
-```
-
-### Detalhes Tecnicos
-
-- O componente `SaveAsTemplateModal` vai:
-  - Fazer query na tabela `project_templates` para listar templates existentes (apenas id e nome)
-  - Reutilizar a funcao `sanitizeCanvasState` ja existente no Editor.tsx (sera exportada)
-  - Usar `supabase.from('project_templates').insert(...)` para novo ou `.update(...).eq('id', selectedId)` para atualizar
-  - Receber `nodes`, `edges`, `projectName` e `userId` como props
-
-- No `Editor.tsx`:
-  - Exportar `sanitizeCanvasState` para uso no modal
-  - Importar `SaveAsTemplateModal` e adicionar state `showSaveTemplate`
-  - Condicionar renderizacao do botao a `isAdmin` do `useAuth()`
-
-- Nenhuma mudanca de schema necessaria -- a tabela `project_templates` ja tem todos os campos necessarios (`canvas_state`, `name`, `description`, `created_by`)
-
+Nenhuma mudanca de banco de dados necessaria -- `created_at` ja existe na tabela `profiles`.
