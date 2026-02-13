@@ -1,45 +1,61 @@
 
 
-## Fix: ErrorBoundary Appearing on Login and Generate
+## Salvar Projeto como Template (Admin)
 
-### Problem
-Users are seeing the "Algo deu errado" (ErrorBoundary) screen when logging in and when clicking generate. The app works after reloading, which indicates a transient/race condition error during rendering.
+### Resumo
+Adicionar a funcionalidade para que o admin possa, de dentro do Editor de um projeto existente, salvar o canvas atual como um template -- criando um novo template ou atualizando um template existente.
 
-### Root Cause Analysis
-The current ErrorBoundary hides error details in production (`process.env.NODE_ENV === 'development'`), making it impossible to diagnose the actual crash. Additionally, the only recovery option is a full page reload, which is a poor user experience.
+### Mudancas
 
-### Changes
+**1. Criar componente `SaveAsTemplateModal`**
 
-**1. Improve ErrorBoundary with auto-recovery and visible error details**
+Novo arquivo: `src/components/SaveAsTemplateModal.tsx`
 
-Update `src/components/ErrorBoundary.tsx`:
-- Always show the error message (not just in development) -- this is critical for remote diagnosis
-- Add a "Try Again" button that resets the ErrorBoundary state (clears the error and re-renders children) instead of requiring a full page reload
-- Keep the "Reload page" button as a fallback
-- Log errors with more context for remote debugging
+- Modal com duas opcoes: "Salvar como novo template" e "Atualizar template existente"
+- Campos: nome do template, descricao (opcionais, pre-preenchidos com nome do projeto)
+- Dropdown/select para escolher template existente (caso queira sobrescrever)
+- Ao salvar:
+  - Usa a funcao `sanitizeCanvasState` existente para limpar o canvas
+  - Insere ou atualiza na tabela `project_templates` com o `canvas_state` limpo
+- Exibe toast de sucesso/erro
 
-**2. Add route-level error boundaries**
+**2. Adicionar botao "Salvar como Template" no Editor**
 
-Update `src/App.tsx`:
-- Wrap each `<Route>` element's content in its own `<ErrorBoundary>` so that a crash on one page (e.g., Editor) doesn't kill the entire app including navigation
-- The global ErrorBoundary stays as a last resort
+Arquivo: `src/pages/Editor.tsx`
 
-**3. Add defensive guards in Editor.tsx**
+- Renderizar o botao apenas quando `isAdmin === true` (do `useAuth()`)
+- Botao na barra superior do editor, ao lado do indicador de salvamento
+- Ao clicar, abre o `SaveAsTemplateModal` passando os nodes e edges atuais
+- O modal recebe `projectName` como valor padrao do nome do template
 
-Update `src/pages/Editor.tsx`:
-- Wrap the `generateForResult` and `generateAllFromGravity` callbacks in more defensive try-catch to prevent any unhandled exception from propagating
-- Add null-safety checks before accessing `error.context` in `FunctionsHttpError` handling
-
-### Technical Details
+**3. Fluxo do Modal**
 
 ```text
-Current flow:
-  Error in any component --> Global ErrorBoundary --> Full page reload required
-
-New flow:
-  Error in route component --> Route ErrorBoundary --> "Try Again" resets state
-  Error in route boundary  --> Global ErrorBoundary --> "Try Again" or reload
+Admin clica "Salvar como Template"
+  --> Modal abre com duas abas/opcoes:
+      [Novo Template]
+        - Nome (pre-preenchido com nome do projeto)
+        - Descricao (opcional)
+        - Botao "Criar Template"
+      [Atualizar Existente]
+        - Select com lista de templates existentes
+        - Botao "Atualizar"
+  --> Salva canvas_state sanitizado na tabela project_templates
+  --> Toast de confirmacao
 ```
 
-The "Try Again" button will call `setState({ hasError: false, error: null })`, which re-renders children from scratch, effectively recovering from transient errors without losing the user's session or requiring a page reload.
+### Detalhes Tecnicos
+
+- O componente `SaveAsTemplateModal` vai:
+  - Fazer query na tabela `project_templates` para listar templates existentes (apenas id e nome)
+  - Reutilizar a funcao `sanitizeCanvasState` ja existente no Editor.tsx (sera exportada)
+  - Usar `supabase.from('project_templates').insert(...)` para novo ou `.update(...).eq('id', selectedId)` para atualizar
+  - Receber `nodes`, `edges`, `projectName` e `userId` como props
+
+- No `Editor.tsx`:
+  - Exportar `sanitizeCanvasState` para uso no modal
+  - Importar `SaveAsTemplateModal` e adicionar state `showSaveTemplate`
+  - Condicionar renderizacao do botao a `isAdmin` do `useAuth()`
+
+- Nenhuma mudanca de schema necessaria -- a tabela `project_templates` ja tem todos os campos necessarios (`canvas_state`, `name`, `description`, `created_by`)
 
