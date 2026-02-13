@@ -16,8 +16,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { useJobQueue } from '@/hooks/useJobQueue';
-import { Loader2 } from 'lucide-react';
+import { Loader2, LayoutTemplate } from 'lucide-react';
 import { BuyCreditsModal } from '@/components/BuyCreditsModal';
+import { SaveAsTemplateModal } from '@/components/SaveAsTemplateModal';
+import { Button } from '@/components/ui/button';
 
 const nodeTypes = {
   prompt: PromptNode,
@@ -203,8 +205,11 @@ function collectLocalContext(
   return { prompts: localPrompts, medias: localMedias };
 }
 
+// Export sanitizeCanvasState for use in SaveAsTemplateModal
+export { sanitizeCanvasState };
+
 function EditorCanvas({ projectId }: EditorCanvasProps) {
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile, isAdmin } = useAuth();
   const { toast } = useToast();
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -212,6 +217,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showBuyCredits, setShowBuyCredits] = useState(false);
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedDataRef = useRef<string>('');
   const toastRef = useRef(toast);
@@ -1109,6 +1115,17 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
             </span>
           )}
         </div>
+        {isAdmin && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowSaveTemplate(true)}
+            className="gap-2"
+          >
+            <LayoutTemplate className="h-4 w-4" />
+            Salvar como Template
+          </Button>
+        )}
       </div>
 
       {/* Canvas */}
@@ -1134,6 +1151,17 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
         </ReactFlow>
       </div>
       <BuyCreditsModal open={showBuyCredits} onOpenChange={setShowBuyCredits} />
+      {isAdmin && user && (
+        <SaveAsTemplateModal
+          open={showSaveTemplate}
+          onOpenChange={setShowSaveTemplate}
+          nodes={nodes}
+          edges={edges}
+          projectName={projectName}
+          userId={user.id}
+          sanitizeCanvasState={sanitizeCanvasState}
+        />
+      )}
     </div>
   );
 }
