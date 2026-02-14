@@ -70,6 +70,24 @@ serve(async (req) => {
 
     const { prompt, aspectRatio, quantity = 1, imageUrls = [], projectId, resultId } = await req.json();
 
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+    // Validate projectId if provided
+    if (projectId != null && (typeof projectId !== 'string' || !uuidRegex.test(projectId))) {
+      return new Response(
+        JSON.stringify({ error: "Invalid projectId format" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validate resultId if provided
+    if (resultId != null && (typeof resultId !== 'string' || resultId.length > 255)) {
+      return new Response(
+        JSON.stringify({ error: "Invalid resultId" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Validate prompt
     if (!prompt || typeof prompt !== 'string' || prompt.length > 5000) {
       return new Response(
@@ -93,6 +111,16 @@ serve(async (req) => {
         JSON.stringify({ error: "imageUrls must be an array with max 10 items" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // Validate each imageUrl item
+    for (const url of imageUrls) {
+      if (typeof url !== 'string' || url.length > 2048 || !url.startsWith('https://')) {
+        return new Response(
+          JSON.stringify({ error: "Each imageUrl must be a valid HTTPS URL (max 2048 chars)" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
     // Validate quantity (1, 2, or 4)

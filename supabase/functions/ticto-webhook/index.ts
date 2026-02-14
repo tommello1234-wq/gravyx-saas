@@ -123,9 +123,9 @@ Deno.serve(async (req: Request) => {
   }
 
   // Verificar campos obrigatórios
-  if (!transactionId) {
-    console.error('Transaction ID não encontrado');
-    await logWebhook(supabase, status, body, false, 'Missing transaction_id (order.hash)');
+  if (!transactionId || typeof transactionId !== 'string' || transactionId.length > 255) {
+    console.error('Transaction ID inválido ou não encontrado');
+    await logWebhook(supabase, status, body, false, 'Missing or invalid transaction_id (order.hash)');
     return new Response('Missing transaction_id', { status: 200, headers: corsHeaders });
   }
 
@@ -133,6 +133,20 @@ Deno.serve(async (req: Request) => {
     console.error('Email do cliente não encontrado');
     await logWebhook(supabase, status, body, false, 'Missing customer email');
     return new Response('Missing customer email', { status: 200, headers: corsHeaders });
+  }
+
+  // Validate offer_code against known offers before processing
+  if (offerCode && !Object.keys(OFFER_CREDITS).includes(offerCode)) {
+    console.error(`Oferta desconhecida: ${offerCode}`);
+    await logWebhook(supabase, status, body, false, `Unknown offer code: ${offerCode}`);
+    return new Response('Unknown offer', { status: 200, headers: corsHeaders });
+  }
+
+  // Validate amount_paid is reasonable
+  if (amountPaid !== 0 && (typeof amountPaid !== 'number' || amountPaid < 0 || amountPaid > 100000)) {
+    console.error('Valor pago inválido');
+    await logWebhook(supabase, status, body, false, `Invalid amount_paid: ${amountPaid}`);
+    return new Response('Invalid amount', { status: 200, headers: corsHeaders });
   }
 
   // Verificar duplicata
@@ -161,12 +175,12 @@ Deno.serve(async (req: Request) => {
     return new Response('User not found', { status: 200, headers: corsHeaders });
   }
 
-  // Calcular créditos baseado no código da oferta
+  // Credits already validated via early offer_code check above
   const credits = OFFER_CREDITS[offerCode] || 0;
   
   if (credits === 0) {
-    console.error(`Oferta desconhecida: ${offerCode}`);
-    await logWebhook(supabase, status, body, false, `Unknown offer code: ${offerCode}`);
+    console.error(`Oferta sem créditos mapeados: ${offerCode}`);
+    await logWebhook(supabase, status, body, false, `No credits mapped for offer: ${offerCode}`);
     return new Response('Unknown offer', { status: 200, headers: corsHeaders });
   }
 
