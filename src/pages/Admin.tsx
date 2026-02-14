@@ -226,16 +226,6 @@ function AdminContent() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin-dashboard-profiles'] }); toast({ title: 'Créditos atualizados!' }); },
   });
 
-  const changeTierMutation = useMutation({
-    mutationFn: async ({ userId, tier, billingCycle }: { userId: string; tier: string; billingCycle: string }) => {
-      const { PLAN_LIMITS } = await import('@/lib/plan-limits');
-      const config = PLAN_LIMITS[tier as keyof typeof PLAN_LIMITS];
-      const { error } = await supabase.from('profiles').update({ tier, max_projects: config?.maxProjects ?? 1, billing_cycle: billingCycle } as any).eq('user_id', userId);
-      if (error) throw error;
-    },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin-dashboard-profiles'] }); toast({ title: 'Plano atualizado!' }); },
-    onError: () => { toast({ title: 'Erro ao atualizar plano', variant: 'destructive' }); },
-  });
 
   const createUserMutation = useMutation({
     mutationFn: async ({ email, credits }: { email: string; credits: number }) => {
@@ -291,7 +281,6 @@ function AdminContent() {
                 onResendInvite={(userId, email) => resendInviteMutation.mutate({ userId, email })}
                 onDeleteUser={(userId, email) => { setUserToDelete({ id: userId, email }); setDeleteDialogOpen(true); }}
                 onCreateUser={() => setCreateUserDialogOpen(true)}
-                onChangeTier={(userId, email, newTier, billingCycle) => changeTierMutation.mutate({ userId, tier: newTier, billingCycle })}
                 isResending={resendInviteMutation.isPending}
               />
             </div>
