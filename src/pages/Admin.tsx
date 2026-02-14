@@ -369,7 +369,7 @@ export default function Admin() {
 
   // Change tier mutation
   const changeTierMutation = useMutation({
-    mutationFn: async ({ userId, tier }: { userId: string; tier: string }) => {
+    mutationFn: async ({ userId, tier, billingCycle }: { userId: string; tier: string; billingCycle: string }) => {
       const { PLAN_LIMITS } = await import('@/lib/plan-limits');
       const config = PLAN_LIMITS[tier as keyof typeof PLAN_LIMITS];
       const { error } = await supabase
@@ -377,7 +377,8 @@ export default function Admin() {
         .update({
           tier,
           max_projects: config?.maxProjects ?? 1,
-        })
+          billing_cycle: billingCycle,
+        } as any)
         .eq('user_id', userId);
       if (error) throw error;
     },
@@ -651,7 +652,7 @@ export default function Admin() {
                 setDeleteDialogOpen(true);
               }}
               onCreateUser={() => setCreateUserDialogOpen(true)}
-              onChangeTier={(userId, email, newTier) => changeTierMutation.mutate({ userId, tier: newTier })}
+              onChangeTier={(userId, email, newTier, billingCycle) => changeTierMutation.mutate({ userId, tier: newTier, billingCycle })}
               isResending={resendInviteMutation.isPending}
             />
           </TabsContent>

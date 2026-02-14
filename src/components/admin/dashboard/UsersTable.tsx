@@ -6,7 +6,10 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Coins, MoreHorizontal, Send, Trash2, UserPlus, Search, Download, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Loader2, Crown } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
+import { Coins, MoreHorizontal, Send, Trash2, UserPlus, Search, Download, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import type { DashboardData } from './useAdminDashboard';
 import { format } from 'date-fns';
 import { ALL_TIERS, PLAN_LIMITS, type TierKey } from '@/lib/plan-limits';
@@ -17,7 +20,7 @@ interface UsersTableProps {
   onResendInvite: (userId: string, email: string) => void;
   onDeleteUser: (userId: string, email: string) => void;
   onCreateUser: () => void;
-  onChangeTier: (userId: string, email: string, newTier: string) => void;
+  onChangeTier: (userId: string, email: string, newTier: string, billingCycle: string) => void;
   isResending: boolean;
 }
 
@@ -25,6 +28,74 @@ type SortKey = 'email' | 'tier' | 'credits' | 'images' | 'created_at';
 type SortDir = 'asc' | 'desc';
 
 const PAGE_SIZE = 20;
+
+function PlanPopover({ 
+  currentTier, 
+  currentCycle, 
+  onConfirm 
+}: { 
+  currentTier: string; 
+  currentCycle: string; 
+  onConfirm: (tier: string, cycle: string) => void;
+}) {
+  const [selectedTier, setSelectedTier] = useState(currentTier);
+  const [selectedCycle, setSelectedCycle] = useState(currentCycle || 'monthly');
+  const [open, setOpen] = useState(false);
+
+  const handleConfirm = () => {
+    onConfirm(selectedTier, selectedCycle);
+    setOpen(false);
+  };
+
+  const hasChanged = selectedTier !== currentTier || selectedCycle !== (currentCycle || 'monthly');
+
+  return (
+    <Popover open={open} onOpenChange={(o) => {
+      setOpen(o);
+      if (o) { setSelectedTier(currentTier); setSelectedCycle(currentCycle || 'monthly'); }
+    }}>
+      <PopoverTrigger asChild>
+        <Badge variant="secondary" className="capitalize text-xs cursor-pointer hover:bg-secondary/80 transition-colors">
+          {currentTier}
+        </Badge>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-3" align="start">
+        <p className="text-xs font-medium mb-2">Alterar plano</p>
+        <div className="space-y-3">
+          <RadioGroup value={selectedTier} onValueChange={setSelectedTier}>
+            {ALL_TIERS.map(tier => (
+              <div key={tier} className="flex items-center space-x-2">
+                <RadioGroupItem value={tier} id={`tier-${tier}`} />
+                <Label htmlFor={`tier-${tier}`} className="text-xs cursor-pointer">
+                  {PLAN_LIMITS[tier].label}
+                  <span className="text-muted-foreground ml-1">({PLAN_LIMITS[tier].creditsMonth} créd/mês)</span>
+                </Label>
+              </div>
+            ))}
+          </RadioGroup>
+
+          <div className="border-t pt-2">
+            <p className="text-xs font-medium mb-1.5">Ciclo</p>
+            <RadioGroup value={selectedCycle} onValueChange={setSelectedCycle}>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="monthly" id="cycle-monthly" />
+                <Label htmlFor="cycle-monthly" className="text-xs cursor-pointer">Mensal</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="annual" id="cycle-annual" />
+                <Label htmlFor="cycle-annual" className="text-xs cursor-pointer">Anual</Label>
+              </div>
+            </RadioGroup>
+          </div>
+
+          <Button size="sm" className="w-full h-7 text-xs" disabled={!hasChanged} onClick={handleConfirm}>
+            Salvar
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser, onCreateUser, onChangeTier, isResending }: UsersTableProps) {
   const [search, setSearch] = useState('');
@@ -44,7 +115,6 @@ export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser
     let users = data.profiles.map(p => ({
       ...p,
       images: imageCounts.get(p.user_id) || 0,
-      
     }));
 
     if (search) {
@@ -182,7 +252,11 @@ export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary" className="capitalize text-xs">{profile.tier}</Badge>
+                      <PlanPopover
+                        currentTier={profile.tier}
+                        currentCycle={profile.billing_cycle || 'monthly'}
+                        onConfirm={(tier, cycle) => onChangeTier(profile.user_id, profile.email, tier, cycle)}
+                      />
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -226,22 +300,6 @@ export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser
                               <Trash2 className="h-4 w-4 mr-2" />
                               Remover acesso
                             </DropdownMenuItem>
-                            <div className="px-2 py-1.5">
-                              <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                                <Crown className="h-3 w-3" /> Alterar plano
-                              </p>
-                              {ALL_TIERS.map(tier => (
-                                <DropdownMenuItem
-                                  key={tier}
-                                  disabled={profile.tier === tier}
-                                  onClick={() => onChangeTier(profile.user_id, profile.email, tier)}
-                                  className="capitalize text-xs"
-                                >
-                                  {PLAN_LIMITS[tier].label}
-                                  {profile.tier === tier && ' (atual)'}
-                                </DropdownMenuItem>
-                              ))}
-                            </div>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
