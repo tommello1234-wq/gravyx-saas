@@ -2,51 +2,54 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useMemo } from 'react';
 import { subDays, subMonths, startOfDay, format, differenceInDays } from 'date-fns';
-import { ESTIMATED_COST_PER_IMAGE_USD, USD_TO_BRL_RATE } from '@/lib/plan-limits';
+import { ESTIMATED_COST_PER_IMAGE_USD, USD_TO_BRL_RATE, PLAN_LIMITS, type TierKey } from '@/lib/plan-limits';
+import type { AdminPeriod, AdminTierFilter } from '../AdminContext';
 
-export type Period = '7d' | '30d' | '90d' | '12m';
+export type Period = AdminPeriod;
 
-function getPeriodDate(period: Period): Date {
+function getPeriodRange(period: AdminPeriod, customRange?: { start: Date; end: Date }): { start: Date; prevStart: Date } {
   const now = new Date();
   switch (period) {
-    case '7d': return subDays(now, 7);
-    case '30d': return subDays(now, 30);
-    case '90d': return subDays(now, 90);
-    case '12m': return subMonths(now, 12);
-  }
-}
-
-function getPreviousPeriodDate(period: Period): Date {
-  const now = new Date();
-  switch (period) {
-    case '7d': return subDays(now, 14);
-    case '30d': return subDays(now, 60);
-    case '90d': return subDays(now, 180);
-    case '12m': return subMonths(now, 24);
+    case 'today': return { start: startOfDay(now), prevStart: subDays(startOfDay(now), 1) };
+    case '7d': return { start: subDays(now, 7), prevStart: subDays(now, 14) };
+    case '30d': return { start: subDays(now, 30), prevStart: subDays(now, 60) };
+    case '90d': return { start: subDays(now, 90), prevStart: subDays(now, 180) };
+    case 'custom': {
+      if (!customRange) return { start: subDays(now, 30), prevStart: subDays(now, 60) };
+      const days = differenceInDays(customRange.end, customRange.start);
+      return { start: customRange.start, prevStart: subDays(customRange.start, days) };
+    }
   }
 }
 
 export interface DashboardData {
-  // Raw data
   profiles: any[];
   generations: any[];
   jobs: any[];
   purchases: any[];
   authUsers: Record<string, { last_sign_in_at: string | null }>;
 
-  // KPIs
+  // Operations KPIs
   totalUsers: number;
   activeUsers: number;
+  newUsers: number;
+  paidSubscriptions: number;
+  newPaidSubscriptions: number;
+  estimatedChurn: number;
   totalImages: number;
-  estimatedCreditsConsumed: number;
-  totalRevenue: number;
+  periodImages: number;
+  creditsConsumed: number;
+  creditsRemaining: number;
+  avgImagesPerActiveUser: number;
+  topUser: { name: string; count: number } | null;
   activityRate: number;
 
-  // Growth (vs previous period)
+  // Growth
   userGrowth: number;
   activeUserGrowth: number;
   imageGrowth: number;
   revenueGrowth: number;
+  newUserGrowth: number;
 
   // Chart data
   activityByDay: { date: string; images: number; users: number; credits: number }[];
@@ -57,10 +60,27 @@ export interface DashboardData {
   // Top users
   topUsers: { user_id: string; email: string; display_name: string | null; tier: string; credits: number; total_images: number }[];
 
-  // Operational cost
+  // Financial
+  grossRevenue: number;
+  periodRevenue: number;
+  operationalCost: number;
+  periodCost: number;
+  grossProfit: number;
+  margin: number;
+  estimatedMRR: number;
+  estimatedARR: number;
   estimatedOperationalCostUSD: number;
   estimatedOperationalCostBRL: number;
   profitMarginBRL: number;
+
+  // Financial by day
+  revenueByDay: { date: string; revenue: number; cost: number; profit: number }[];
+
+  // Financial by plan
+  financialByPlan: { plan: string; activeSubscriptions: number; newSubscriptions: number; cancellations: number; revenue: number; images: number; cost: number; profit: number; margin: number }[];
+
+  // Revenue by plan (for charts)
+  revenueByPlan: { name: string; value: number }[];
 
   // Platform performance
   totalJobs: number;
@@ -70,13 +90,19 @@ export interface DashboardData {
   // Alerts
   alerts: { type: 'error' | 'warning' | 'info'; message: string }[];
 
-  // Loading
+  totalRevenue: number;
+  estimatedCreditsConsumed: number;
+
   isLoading: boolean;
 }
 
-export function useAdminDashboard(period: Period): DashboardData {
-  const periodDate = getPeriodDate(period);
-  const previousPeriodDate = getPreviousPeriodDate(period);
+export function useAdminDashboard(
+  period: AdminPeriod,
+  tierFilter: AdminTierFilter = 'all',
+  customRange?: { start: Date; end: Date },
+  costPerImage: number = 0.30
+): DashboardData {
+  const { start: periodStart, prevStart } = getPeriodRange(period, customRange);
 
   const { data: profiles = [], isLoading: profilesLoading } = useQuery({
     queryKey: ['admin-dashboard-profiles'],
@@ -91,8 +117,7 @@ export function useAdminDashboard(period: Period): DashboardData {
   const { data: generations = [], isLoading: generationsLoading } = useQuery({
     queryKey: ['admin-dashboard-generations'],
     queryFn: async () => {
-      // Fetch all generations (paginate to avoid default 1000 row limit)
-      const allGenerations: any[] = [];
+      const all: any[] = [];
       let from = 0;
       const pageSize = 1000;
       while (true) {
@@ -101,11 +126,11 @@ export function useAdminDashboard(period: Period): DashboardData {
           .select('id, user_id, created_at, status')
           .range(from, from + pageSize - 1);
         if (error) throw error;
-        allGenerations.push(...(data || []));
+        all.push(...(data || []));
         if (!data || data.length < pageSize) break;
         from += pageSize;
       }
-      return allGenerations;
+      return all;
     },
     refetchInterval: 60000,
   });
@@ -113,7 +138,7 @@ export function useAdminDashboard(period: Period): DashboardData {
   const { data: jobs = [], isLoading: jobsLoading } = useQuery({
     queryKey: ['admin-dashboard-jobs'],
     queryFn: async () => {
-      const allJobs: any[] = [];
+      const all: any[] = [];
       let from = 0;
       const pageSize = 1000;
       while (true) {
@@ -122,11 +147,11 @@ export function useAdminDashboard(period: Period): DashboardData {
           .select('id, user_id, status, error, created_at, started_at, finished_at')
           .range(from, from + pageSize - 1);
         if (error) throw error;
-        allJobs.push(...(data || []));
+        all.push(...(data || []));
         if (!data || data.length < pageSize) break;
         from += pageSize;
       }
-      return allJobs;
+      return all;
     },
     refetchInterval: 60000,
   });
@@ -159,122 +184,156 @@ export function useAdminDashboard(period: Period): DashboardData {
 
   return useMemo(() => {
     const now = new Date();
-    const periodStart = periodDate;
-    const prevStart = previousPeriodDate;
 
-    // Filter by period
-    const periodGenerations = generations.filter(g => new Date(g.created_at) >= periodStart);
-    const prevGenerations = generations.filter(g => {
-      const d = new Date(g.created_at);
-      return d >= prevStart && d < periodStart;
-    });
+    // Filter profiles by tier
+    const filteredProfiles = tierFilter === 'all' ? profiles : profiles.filter(p => p.tier === tierFilter);
+    const filteredUserIds = new Set(filteredProfiles.map(p => p.user_id));
 
-    const periodProfiles = profiles.filter(p => new Date(p.created_at) >= periodStart);
-    const prevProfiles = profiles.filter(p => {
-      const d = new Date(p.created_at);
-      return d >= prevStart && d < periodStart;
-    });
+    // Filter generations by tier-filtered users
+    const filteredGenerations = tierFilter === 'all' ? generations : generations.filter(g => filteredUserIds.has(g.user_id));
+    const filteredPurchases = tierFilter === 'all' ? purchases : purchases.filter(p => filteredUserIds.has(p.user_id));
 
-    const periodPurchases = purchases.filter(p => new Date(p.created_at) >= periodStart);
-    const prevPurchases = purchases.filter(p => {
-      const d = new Date(p.created_at);
-      return d >= prevStart && d < periodStart;
-    });
+    // Period filtering
+    const periodGens = filteredGenerations.filter(g => new Date(g.created_at) >= periodStart);
+    const prevGens = filteredGenerations.filter(g => { const d = new Date(g.created_at); return d >= prevStart && d < periodStart; });
 
-    // KPIs
-    const totalUsers = profiles.length;
-    const activeUserIds = new Set(periodGenerations.map(g => g.user_id));
+    const periodProfiles = filteredProfiles.filter(p => new Date(p.created_at) >= periodStart);
+    const prevProfilesArr = filteredProfiles.filter(p => { const d = new Date(p.created_at); return d >= prevStart && d < periodStart; });
+
+    const periodPurchases = filteredPurchases.filter(p => new Date(p.created_at) >= periodStart);
+    const prevPurchasesArr = filteredPurchases.filter(p => { const d = new Date(p.created_at); return d >= prevStart && d < periodStart; });
+
+    // Operations KPIs
+    const totalUsers = filteredProfiles.length;
+    const activeUserIds = new Set(periodGens.map(g => g.user_id));
     const activeUsers = activeUserIds.size;
-    const totalImages = generations.length;
-    const periodImages = periodGenerations.length;
+    const newUsers = periodProfiles.length;
+    const paidSubscriptions = filteredProfiles.filter(p => p.tier !== 'free').length;
+    const newPaidSubscriptions = periodProfiles.filter(p => p.tier !== 'free').length;
+    const estimatedChurn = 0; // No subscription events table
+    const totalImages = filteredGenerations.length;
+    const periodImages = periodGens.length;
+    const creditsConsumed = periodImages; // 1 credit per image
+    const creditsRemaining = filteredProfiles.reduce((s, p) => s + (p.credits || 0), 0);
+    const avgImagesPerActiveUser = activeUsers > 0 ? periodImages / activeUsers : 0;
 
-    // Estimated credits consumed: (initial_credits * users + purchased) - current_balance
-    const totalCurrentCredits = profiles.reduce((sum, p) => sum + (p.credits || 0), 0);
-    const totalPurchasedCredits = purchases.reduce((sum, p) => sum + (p.credits_added || 0), 0);
-    const estimatedCreditsConsumed = Math.max(0, (5 * totalUsers + totalPurchasedCredits) - totalCurrentCredits);
+    // Top user
+    const userImgCounts = new Map<string, number>();
+    periodGens.forEach(g => userImgCounts.set(g.user_id, (userImgCounts.get(g.user_id) || 0) + 1));
+    const topEntry = Array.from(userImgCounts.entries()).sort((a, b) => b[1] - a[1])[0];
+    const topUserProfile = topEntry ? filteredProfiles.find(p => p.user_id === topEntry[0]) : null;
+    const topUser = topEntry ? { name: topUserProfile?.display_name || topUserProfile?.email || 'N/A', count: topEntry[1] } : null;
 
-    const totalRevenue = purchases.reduce((sum, p) => sum + (p.amount_paid || 0), 0);
-    const periodRevenue = periodPurchases.reduce((sum, p) => sum + (p.amount_paid || 0), 0);
-    const prevRevenue = prevPurchases.reduce((sum, p) => sum + (p.amount_paid || 0), 0);
-
-    const usersWithImages = new Set(generations.map(g => g.user_id)).size;
+    const usersWithImages = new Set(filteredGenerations.map(g => g.user_id)).size;
     const activityRate = totalUsers > 0 ? (usersWithImages / totalUsers) * 100 : 0;
 
-    // Growth calculations
-    const calcGrowth = (current: number, previous: number) => {
-      if (previous === 0) return current > 0 ? 100 : 0;
-      return ((current - previous) / previous) * 100;
-    };
-
-    const userGrowth = calcGrowth(periodProfiles.length, prevProfiles.length);
-    const prevActiveUsers = new Set(prevGenerations.map(g => g.user_id)).size;
+    // Growth
+    const calcGrowth = (c: number, p: number) => p === 0 ? (c > 0 ? 100 : 0) : ((c - p) / p) * 100;
+    const userGrowth = calcGrowth(periodProfiles.length, prevProfilesArr.length);
+    const prevActiveUsers = new Set(prevGens.map(g => g.user_id)).size;
     const activeUserGrowth = calcGrowth(activeUsers, prevActiveUsers);
-    const imageGrowth = calcGrowth(periodImages, prevGenerations.length);
+    const imageGrowth = calcGrowth(periodImages, prevGens.length);
+    const newUserGrowth = calcGrowth(newUsers, prevProfilesArr.length);
+
+    // Financial
+    const grossRevenue = filteredPurchases.reduce((s, p) => s + (p.amount_paid || 0), 0);
+    const periodRevenue = periodPurchases.reduce((s, p) => s + (p.amount_paid || 0), 0);
+    const prevRevenue = prevPurchasesArr.reduce((s, p) => s + (p.amount_paid || 0), 0);
     const revenueGrowth = calcGrowth(periodRevenue, prevRevenue);
 
-    // Activity by day chart data
-    const days = period === '12m' ? 365 : parseInt(period);
-    const numDays = period === '12m' ? 365 : parseInt(period);
-    const activityByDay: { date: string; images: number; users: number; credits: number }[] = [];
+    const periodCost = periodImages * costPerImage * 100; // in centavos
+    const operationalCost = totalImages * costPerImage * 100;
+    const grossProfit = periodRevenue - periodCost;
+    const margin = periodRevenue > 0 ? (grossProfit / periodRevenue) * 100 : 0;
 
-    if (period === '12m') {
-      // Group by month
-      const monthMap = new Map<string, { images: number; users: Set<string>; credits: number }>();
-      for (let i = 11; i >= 0; i--) {
-        const d = subMonths(now, i);
-        const key = format(d, 'yyyy-MM');
-        monthMap.set(key, { images: 0, users: new Set(), credits: 0 });
-      }
-      generations.filter(g => new Date(g.created_at) >= periodStart).forEach(g => {
-        const key = format(new Date(g.created_at), 'yyyy-MM');
-        const entry = monthMap.get(key);
-        if (entry) { entry.images++; entry.users.add(g.user_id); entry.credits++; }
-      });
-      monthMap.forEach((v, k) => {
-        activityByDay.push({ date: k, images: v.images, users: v.users.size, credits: v.credits });
-      });
-    } else {
-      const dayMap = new Map<string, { images: number; users: Set<string>; credits: number }>();
-      for (let i = numDays - 1; i >= 0; i--) {
-        const d = subDays(now, i);
-        const key = format(startOfDay(d), 'yyyy-MM-dd');
-        dayMap.set(key, { images: 0, users: new Set(), credits: 0 });
-      }
-      periodGenerations.forEach(g => {
-        const key = format(startOfDay(new Date(g.created_at)), 'yyyy-MM-dd');
-        const entry = dayMap.get(key);
-        if (entry) { entry.images++; entry.users.add(g.user_id); entry.credits++; }
-      });
-      // New users per day
-      periodProfiles.forEach(p => {
-        const key = format(startOfDay(new Date(p.created_at)), 'yyyy-MM-dd');
-        const entry = dayMap.get(key);
-        if (entry) entry.users.add('new_' + p.user_id);
-      });
-      dayMap.forEach((v, k) => {
-        activityByDay.push({ date: k, images: v.images, users: v.users.size, credits: v.credits });
-      });
+    // MRR/ARR estimation
+    const planPrices: Record<string, number> = { free: 0, starter: 4900, creator: 9900, enterprise: 19900 };
+    const estimatedMRR = filteredProfiles.reduce((s, p) => {
+      const price = planPrices[p.tier] || 0;
+      return s + (p.billing_cycle === 'annual' ? price * 0.8 : price); // 20% discount annual
+    }, 0);
+    const estimatedARR = estimatedMRR * 12;
+
+    const estimatedOperationalCostUSD = totalImages * ESTIMATED_COST_PER_IMAGE_USD;
+    const estimatedOperationalCostBRL = estimatedOperationalCostUSD * USD_TO_BRL_RATE;
+    const totalRevenueBRL = grossRevenue / 100;
+    const profitMarginBRL = totalRevenueBRL - estimatedOperationalCostBRL;
+    const estimatedCreditsConsumed = Math.max(0, (5 * totalUsers + filteredPurchases.reduce((s, p) => s + (p.credits_added || 0), 0)) - creditsRemaining);
+
+    // Activity by day
+    const numDays = period === 'today' ? 1 : period === '90d' ? 90 : period === 'custom' ? Math.max(1, differenceInDays(customRange?.end || now, customRange?.start || now)) : parseInt(period);
+    const activityByDay: { date: string; images: number; users: number; credits: number }[] = [];
+    const dayMap = new Map<string, { images: number; users: Set<string>; credits: number }>();
+    for (let i = Math.min(numDays, 365) - 1; i >= 0; i--) {
+      const d = subDays(now, i);
+      const key = format(startOfDay(d), 'yyyy-MM-dd');
+      dayMap.set(key, { images: 0, users: new Set(), credits: 0 });
     }
+    periodGens.forEach(g => {
+      const key = format(startOfDay(new Date(g.created_at)), 'yyyy-MM-dd');
+      const entry = dayMap.get(key);
+      if (entry) { entry.images++; entry.users.add(g.user_id); entry.credits++; }
+    });
+    dayMap.forEach((v, k) => activityByDay.push({ date: k, images: v.images, users: v.users.size, credits: v.credits }));
+
+    // Revenue by day
+    const revenueByDay: { date: string; revenue: number; cost: number; profit: number }[] = [];
+    const revDayMap = new Map<string, { revenue: number; cost: number }>();
+    dayMap.forEach((_, k) => revDayMap.set(k, { revenue: 0, cost: 0 }));
+    periodPurchases.forEach(p => {
+      const key = format(startOfDay(new Date(p.created_at)), 'yyyy-MM-dd');
+      const entry = revDayMap.get(key);
+      if (entry) entry.revenue += (p.amount_paid || 0);
+    });
+    activityByDay.forEach(d => {
+      const entry = revDayMap.get(d.date);
+      if (entry) entry.cost = d.images * costPerImage * 100;
+    });
+    revDayMap.forEach((v, k) => revenueByDay.push({ date: k, revenue: v.revenue / 100, cost: v.cost / 100, profit: (v.revenue - v.cost) / 100 }));
 
     // Plan distribution
     const tierCounts = new Map<string, number>();
-    profiles.forEach(p => {
-      const tier = p.tier || 'free';
-      tierCounts.set(tier, (tierCounts.get(tier) || 0) + 1);
-    });
+    filteredProfiles.forEach(p => tierCounts.set(p.tier || 'free', (tierCounts.get(p.tier || 'free') || 0) + 1));
     const planDistribution = Array.from(tierCounts.entries()).map(([name, value]) => ({ name, value }));
 
-    // Top users by images generated in period
-    const userImageCounts = new Map<string, number>();
-    periodGenerations.forEach(g => {
-      userImageCounts.set(g.user_id, (userImageCounts.get(g.user_id) || 0) + 1);
+    // Revenue by plan
+    const revByPlan = new Map<string, number>();
+    filteredPurchases.forEach(p => {
+      const profile = filteredProfiles.find(pr => pr.user_id === p.user_id);
+      const tier = profile?.tier || 'free';
+      revByPlan.set(tier, (revByPlan.get(tier) || 0) + (p.amount_paid || 0));
     });
-    const sortedUsers = Array.from(userImageCounts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10);
+    const revenueByPlan = Array.from(revByPlan.entries()).map(([name, value]) => ({ name, value: value / 100 }));
 
+    // Financial by plan table
+    const allTiers = ['free', 'starter', 'creator', 'enterprise'];
+    const financialByPlan = allTiers.map(plan => {
+      const planProfiles = filteredProfiles.filter(p => p.tier === plan);
+      const planUserIds = new Set(planProfiles.map(p => p.user_id));
+      const planPeriodGens = periodGens.filter(g => planUserIds.has(g.user_id));
+      const planPeriodPurchases = periodPurchases.filter(p => planUserIds.has(p.user_id));
+      const planNewProfiles = periodProfiles.filter(p => p.tier === plan);
+      const rev = planPeriodPurchases.reduce((s, p) => s + (p.amount_paid || 0), 0);
+      const imgs = planPeriodGens.length;
+      const cost = imgs * costPerImage * 100;
+      const profit = rev - cost;
+      return {
+        plan,
+        activeSubscriptions: planProfiles.length,
+        newSubscriptions: planNewProfiles.length,
+        cancellations: 0,
+        revenue: rev,
+        images: imgs,
+        cost,
+        profit,
+        margin: rev > 0 ? (profit / rev) * 100 : 0,
+      };
+    });
+
+    // Top users
+    const sortedUsers = Array.from(userImgCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10);
     const topUsers = sortedUsers.map(([userId, total]) => {
-      const profile = profiles.find(p => p.user_id === userId);
+      const profile = filteredProfiles.find(p => p.user_id === userId);
       return {
         user_id: userId,
         email: profile?.email || 'N/A',
@@ -295,42 +354,30 @@ export function useAdminDashboard(period: Period): DashboardData {
 
     // Alerts
     const alerts: { type: 'error' | 'warning' | 'info'; message: string }[] = [];
-
-    // Error spike alert
     if (jobs24h.length > 0) {
       const errorRate = jobErrors24h / jobs24h.length;
-      if (errorRate > 0.1) {
-        alerts.push({ type: 'error', message: `⚠️ Taxa de erros alta: ${(errorRate * 100).toFixed(0)}% dos jobs nas últimas 24h falharam` });
-      }
+      if (errorRate > 0.1) alerts.push({ type: 'error', message: `⚠️ Taxa de erros alta: ${(errorRate * 100).toFixed(0)}% dos jobs nas últimas 24h falharam` });
     }
-
-    // Usage spike
     const avgDaily = periodImages / Math.max(1, differenceInDays(now, periodStart));
-    const todayImages = generations.filter(g => new Date(g.created_at) >= startOfDay(now)).length;
+    const todayImages = filteredGenerations.filter(g => new Date(g.created_at) >= startOfDay(now)).length;
     if (todayImages > avgDaily * 2 && todayImages > 5) {
-      alerts.push({ type: 'info', message: `🔥 Pico de uso: ${todayImages} imagens geradas hoje (média: ${avgDaily.toFixed(0)}/dia)` });
+      alerts.push({ type: 'info', message: `🔥 Pico de uso: ${todayImages} imagens hoje (média: ${avgDaily.toFixed(0)}/dia)` });
     }
-
-    // Users with 0 credits
-    const zeroCreditsCount = profiles.filter(p => (p.credits || 0) === 0).length;
-    if (zeroCreditsCount > 0) {
-      alerts.push({ type: 'warning', message: `💳 ${zeroCreditsCount} usuário(s) com 0 créditos — possível oportunidade de upgrade` });
-    }
-
-    // Operational cost
-    const estimatedOperationalCostUSD = totalImages * ESTIMATED_COST_PER_IMAGE_USD;
-    const estimatedOperationalCostBRL = estimatedOperationalCostUSD * USD_TO_BRL_RATE;
-    const totalRevenueBRL = totalRevenue / 100; // amount_paid is in centavos
-    const profitMarginBRL = totalRevenueBRL - estimatedOperationalCostBRL;
+    const zeroCredits = filteredProfiles.filter(p => (p.credits || 0) === 0).length;
+    if (zeroCredits > 0) alerts.push({ type: 'warning', message: `💳 ${zeroCredits} usuário(s) com 0 créditos` });
 
     return {
-      profiles, generations, jobs, purchases, authUsers,
-      totalUsers, activeUsers, totalImages, estimatedCreditsConsumed, totalRevenue, activityRate,
-      userGrowth, activeUserGrowth, imageGrowth, revenueGrowth,
+      profiles: filteredProfiles, generations: filteredGenerations, jobs, purchases: filteredPurchases, authUsers,
+      totalUsers, activeUsers, newUsers, paidSubscriptions, newPaidSubscriptions, estimatedChurn,
+      totalImages, periodImages, creditsConsumed, creditsRemaining, avgImagesPerActiveUser, topUser, activityRate,
+      userGrowth, activeUserGrowth, imageGrowth, revenueGrowth, newUserGrowth,
       activityByDay, planDistribution, topUsers,
+      grossRevenue, periodRevenue, operationalCost, periodCost, grossProfit, margin, estimatedMRR, estimatedARR,
       estimatedOperationalCostUSD, estimatedOperationalCostBRL, profitMarginBRL,
+      revenueByDay, financialByPlan, revenueByPlan,
       totalJobs, jobErrors24h, jobSuccessRate,
-      alerts, isLoading,
+      alerts, totalRevenue: grossRevenue, estimatedCreditsConsumed,
+      isLoading,
     };
-  }, [profiles, generations, jobs, purchases, authUsers, period, isLoading]);
+  }, [profiles, generations, jobs, purchases, authUsers, period, tierFilter, customRange, costPerImage, isLoading]);
 }

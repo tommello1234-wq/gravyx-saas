@@ -3,7 +3,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import type { DashboardData, Period } from './useAdminDashboard';
+import type { DashboardData } from './useAdminDashboard';
+
+type Period = '7d' | '30d' | '90d' | '12m';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
