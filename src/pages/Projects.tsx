@@ -56,7 +56,7 @@ interface CanvasState {
 }
 
 export default function Projects() {
-  const { user, profile } = useAuth();
+  const { user, profile, isAdmin } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -69,7 +69,7 @@ export default function Projects() {
 
   const handleNewProject = () => {
     const currentCount = projects?.length ?? 0;
-    if (tierConfig.maxProjects !== -1 && currentCount >= tierConfig.maxProjects) {
+    if (!isAdmin && tierConfig.maxProjects !== -1 && currentCount >= tierConfig.maxProjects) {
       toast({
         title: 'Limite de projetos atingido',
         description: `Seu plano ${tierConfig.label} permite até ${tierConfig.maxProjects} projeto(s). Faça upgrade para criar mais.`,
