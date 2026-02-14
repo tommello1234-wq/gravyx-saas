@@ -31,7 +31,7 @@ const plans: PlanInfo[] = [
     icon: Zap,
     description: 'Para quem está começando a criar com IA',
     monthly: { price: 'R$ 79', credits: 80, checkout: 'https://checkout.ticto.app/O7A4C2615' },
-    annual: { price: 'R$ 420/ano', installment: 'R$ 35', credits: 1000, checkout: 'https://checkout.ticto.app/OA871890B' },
+    annual: { price: 'R$ 420/ano', installment: 'R$ 43,44', credits: 1000, checkout: 'https://checkout.ticto.app/OA871890B' },
     features: ['80 créditos/mês', '3 projetos', 'Acesso à biblioteca', 'Suporte por email'],
   },
   {
