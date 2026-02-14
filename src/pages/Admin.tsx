@@ -367,6 +367,29 @@ export default function Admin() {
     },
   });
 
+  // Change tier mutation
+  const changeTierMutation = useMutation({
+    mutationFn: async ({ userId, tier }: { userId: string; tier: string }) => {
+      const { PLAN_LIMITS } = await import('@/lib/plan-limits');
+      const config = PLAN_LIMITS[tier as keyof typeof PLAN_LIMITS];
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          tier,
+          max_projects: config?.maxProjects ?? 1,
+        })
+        .eq('user_id', userId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-dashboard-profiles'] });
+      toast({ title: 'Plano atualizado com sucesso!' });
+    },
+    onError: () => {
+      toast({ title: 'Erro ao atualizar plano', variant: 'destructive' });
+    },
+  });
+
   // Create user mutation
   const createUserMutation = useMutation({
     mutationFn: async ({ email, credits }: { email: string; credits: number }) => {
@@ -628,6 +651,7 @@ export default function Admin() {
                 setDeleteDialogOpen(true);
               }}
               onCreateUser={() => setCreateUserDialogOpen(true)}
+              onChangeTier={(userId, email, newTier) => changeTierMutation.mutate({ userId, tier: newTier })}
               isResending={resendInviteMutation.isPending}
             />
           </TabsContent>

@@ -6,9 +6,10 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Coins, MoreHorizontal, Send, Trash2, UserPlus, Search, Download, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Coins, MoreHorizontal, Send, Trash2, UserPlus, Search, Download, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Loader2, Crown } from 'lucide-react';
 import type { DashboardData } from './useAdminDashboard';
 import { format } from 'date-fns';
+import { ALL_TIERS, PLAN_LIMITS, type TierKey } from '@/lib/plan-limits';
 
 interface UsersTableProps {
   data: DashboardData;
@@ -16,6 +17,7 @@ interface UsersTableProps {
   onResendInvite: (userId: string, email: string) => void;
   onDeleteUser: (userId: string, email: string) => void;
   onCreateUser: () => void;
+  onChangeTier: (userId: string, email: string, newTier: string) => void;
   isResending: boolean;
 }
 
@@ -24,7 +26,7 @@ type SortDir = 'asc' | 'desc';
 
 const PAGE_SIZE = 20;
 
-export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser, onCreateUser, isResending }: UsersTableProps) {
+export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser, onCreateUser, onChangeTier, isResending }: UsersTableProps) {
   const [search, setSearch] = useState('');
   const [tierFilter, setTierFilter] = useState<string>('all');
   const [sortKey, setSortKey] = useState<SortKey>('email');
@@ -224,6 +226,22 @@ export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser
                               <Trash2 className="h-4 w-4 mr-2" />
                               Remover acesso
                             </DropdownMenuItem>
+                            <div className="px-2 py-1.5">
+                              <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                                <Crown className="h-3 w-3" /> Alterar plano
+                              </p>
+                              {ALL_TIERS.map(tier => (
+                                <DropdownMenuItem
+                                  key={tier}
+                                  disabled={profile.tier === tier}
+                                  onClick={() => onChangeTier(profile.user_id, profile.email, tier)}
+                                  className="capitalize text-xs"
+                                >
+                                  {PLAN_LIMITS[tier].label}
+                                  {profile.tier === tier && ' (atual)'}
+                                </DropdownMenuItem>
+                              ))}
+                            </div>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
