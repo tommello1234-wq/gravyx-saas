@@ -120,74 +120,126 @@ Deno.serve(async (req: Request) => {
   const offerCode = body.query_params?.code || body.offer?.code || body.item?.offer_code || body.url_params?.query_params?.code || '';
   const amountPaid = body.order?.paid_amount || body.item?.amount || 0;
 
-  // Verificar se é reembolso ou chargeback -> reverter para Free
+  // === HELPER: buscar perfil por email ===
+  async function findProfile(email: string) {
+    if (!email) return null;
+    const { data } = await supabase
+      .from('profiles')
+      .select('user_id, credits, tier')
+      .eq('email', email.toLowerCase().trim())
+      .maybeSingle();
+    return data;
+  }
+
+  // === HELPER: downgrade para Free ===
+  async function downgradeToFree(userId: string, currentCredits: number, creditsToRemove: number) {
+    return supabase.from('profiles').update({
+      credits: Math.max(0, currentCredits - creditsToRemove),
+      tier: 'free',
+      billing_cycle: 'monthly',
+      max_projects: 1,
+    }).eq('user_id', userId);
+  }
+
+  const statusLower = status.toLowerCase();
+
+  // 1. REEMBOLSO / CHARGEBACK → reverte tudo, volta pro Free
   const refundStatuses = ['refunded', 'reembolso', 'chargeback', 'chargedback', 'disputed'];
-  const isRefund = refundStatuses.some(s => status.toLowerCase().includes(s));
+  const isRefund = refundStatuses.some(s => statusLower.includes(s));
 
   if (isRefund) {
-    if (!customerEmail) {
-      await logWebhook(supabase, status, body, false, 'Refund: missing customer email');
-      return new Response('Missing email', { status: 200, headers: corsHeaders });
-    }
-
-    const { data: refundProfile } = await supabase
-      .from('profiles')
-      .select('user_id, credits')
-      .eq('email', customerEmail.toLowerCase().trim())
-      .maybeSingle();
-
-    if (!refundProfile) {
+    const profile = await findProfile(customerEmail);
+    if (!profile) {
       await logWebhook(supabase, status, body, false, `Refund: user not found: ${customerEmail}`);
       return new Response('User not found', { status: 200, headers: corsHeaders });
     }
 
     // Buscar créditos da compra original para reverter
-    const originalTxId = transactionId;
     let creditsToRemove = 0;
-    if (originalTxId) {
+    if (transactionId) {
       const { data: purchase } = await supabase
         .from('credit_purchases')
         .select('credits_added')
-        .eq('transaction_id', originalTxId)
+        .eq('transaction_id', transactionId)
         .maybeSingle();
       creditsToRemove = purchase?.credits_added || 0;
     }
 
-    // Reverter para Free: remover créditos da compra e voltar ao tier free
-    const newCredits = Math.max(0, refundProfile.credits - creditsToRemove);
-    const { error: refundError } = await supabase
-      .from('profiles')
-      .update({
-        credits: newCredits,
-        tier: 'free',
-        billing_cycle: 'monthly',
-        max_projects: 1,
-      })
-      .eq('user_id', refundProfile.user_id);
-
-    if (refundError) {
-      console.error('Erro ao processar reembolso:', refundError);
-      await logWebhook(supabase, status, body, false, `Refund failed: ${refundError.message}`);
+    const { error } = await downgradeToFree(profile.user_id, profile.credits, creditsToRemove);
+    if (error) {
+      await logWebhook(supabase, status, body, false, `Refund failed: ${error.message}`);
       return new Response('Refund failed', { status: 500, headers: corsHeaders });
     }
 
-    console.log(`🔄 Reembolso/Chargeback: ${customerEmail} revertido para Free (removidos ${creditsToRemove} créditos)`);
+    console.log(`🔄 Reembolso/Chargeback: ${customerEmail} → Free (−${creditsToRemove} créditos)`);
     await logWebhook(supabase, status, body, true);
-    return new Response(
-      JSON.stringify({ success: true, action: 'refund', user_email: customerEmail }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ success: true, action: 'refund' }), {
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 
-  // Verificar se é um evento de aprovação
-  const approvalStatuses = ['approved', 'paid', 'confirmed', 'completed', 'authorized'];
-  const isApproved = approvalStatuses.some(s => 
-    status.toLowerCase().includes(s)
-  );
+  // 2. ASSINATURA ENCERRADA (todas cobranças finalizadas) → downgrade para Free
+  if (statusLower.includes('encerrada') || statusLower.includes('subscription_ended')) {
+    const profile = await findProfile(customerEmail);
+    if (!profile) {
+      await logWebhook(supabase, status, body, false, `Encerrada: user not found: ${customerEmail}`);
+      return new Response('User not found', { status: 200, headers: corsHeaders });
+    }
+
+    const { error } = await downgradeToFree(profile.user_id, profile.credits, 0);
+    if (error) {
+      await logWebhook(supabase, status, body, false, `Encerrada failed: ${error.message}`);
+      return new Response('Failed', { status: 500, headers: corsHeaders });
+    }
+
+    console.log(`⏹️ Assinatura encerrada: ${customerEmail} → Free`);
+    await logWebhook(supabase, status, body, true);
+    return new Response(JSON.stringify({ success: true, action: 'subscription_ended' }), {
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  // 3. CANCELADA → apenas loga. Usuário mantém benefícios até fim do ciclo.
+  //    Quando o ciclo acabar sem renovação, a Ticto envia "Encerrada" e aí sim faz downgrade.
+  if (statusLower.includes('cancelada') || statusLower.includes('cancelled') || statusLower.includes('canceled')) {
+    console.log(`⚠️ Assinatura cancelada (mantém benefícios): ${customerEmail}`);
+    await logWebhook(supabase, status, body, true, 'Subscription cancelled - benefits kept until cycle end');
+    return new Response(JSON.stringify({ success: true, action: 'cancelled_logged' }), {
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  // 4. ATRASADA → loga como alerta, mas não altera nada ainda
+  if (statusLower.includes('atrasada') || statusLower.includes('overdue') || statusLower.includes('past_due')) {
+    console.log(`⚠️ Assinatura atrasada: ${customerEmail}`);
+    await logWebhook(supabase, status, body, true, 'Payment overdue - logged');
+    return new Response(JSON.stringify({ success: true, action: 'overdue_logged' }), {
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  // 5. RETOMADA → reativa o plano (trata como nova aprovação, cai no fluxo de aprovação abaixo)
+  // 6. PLANO ALTERADO → atualiza tier (trata como nova aprovação com novo offer code)
+  // 7. EXTENDIDA → cai no fluxo de aprovação abaixo
+  // 8. CARTÃO ATUALIZADO / PERÍODO DE TESTES → apenas loga
+  const infoOnlyStatuses = ['cartao', 'card_updated', 'periodo de testes', 'trial'];
+  const isInfoOnly = infoOnlyStatuses.some(s => statusLower.includes(s));
+  if (isInfoOnly) {
+    console.log(`ℹ️ Evento informativo: ${status}`);
+    await logWebhook(supabase, status, body, true, 'Info event logged');
+    return new Response(JSON.stringify({ success: true, action: 'info_logged' }), {
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  // 9. APROVAÇÃO / VENDA / RENOVAÇÃO / RETOMADA / PLANO ALTERADO → adiciona créditos + atualiza tier
+  const approvalStatuses = ['approved', 'paid', 'confirmed', 'completed', 'authorized',
+    'venda realizada', 'retomada', 'resumed', 'plano alterado', 'plan_changed', 'extendida', 'extended'];
+  const isApproved = approvalStatuses.some(s => statusLower.includes(s));
 
   if (!isApproved) {
     console.log(`Evento ignorado: ${status}`);
-    await logWebhook(supabase, status, body, false, `Status not approved: ${status}`);
+    await logWebhook(supabase, status, body, false, `Status not handled: ${status}`);
     return new Response('Event ignored', { status: 200, headers: corsHeaders });
   }
 
