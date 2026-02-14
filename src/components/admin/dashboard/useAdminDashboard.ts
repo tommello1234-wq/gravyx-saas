@@ -247,7 +247,7 @@ export function useAdminDashboard(
     const margin = periodRevenue > 0 ? (grossProfit / periodRevenue) * 100 : 0;
 
     // MRR/ARR estimation
-    const planPrices: Record<string, number> = { free: 0, starter: 4900, premium: 9900, enterprise: 19900 };
+    const planPrices: Record<string, number> = { free: 0, starter: 7900, premium: 16700, enterprise: 34700 };
     const estimatedMRR = filteredProfiles.reduce((s, p) => {
       const price = planPrices[p.tier] || 0;
       return s + (p.billing_cycle === 'annual' ? price * 0.8 : price); // 20% discount annual
