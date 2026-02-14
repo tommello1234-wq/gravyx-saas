@@ -195,7 +195,8 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
     setIsModalOpen(true);
   };
 
-  const handleDeleteImage = useCallback((imageToDelete: NodeImage) => {
+  const handleDeleteImage = useCallback(async (imageToDelete: NodeImage) => {
+    // Optimistically remove from UI
     setNodes(nds => nds.map(n => n.id === id ? {
       ...n,
       data: {
@@ -203,6 +204,17 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
         images: normalizeImages((n.data as unknown as ResultNodeData).images).filter(img => img.url !== imageToDelete.url)
       }
     } : n));
+
+    // Persist deletion to database
+    try {
+      const { supabase } = await import('@/integrations/supabase/client');
+      await supabase
+        .from('generations')
+        .delete()
+        .eq('image_url', imageToDelete.url);
+    } catch (err) {
+      console.error('[ResultNode] Failed to delete image from DB:', err);
+    }
   }, [id, setNodes]);
 
   const downloadImage = async (url: string, index: number) => {
