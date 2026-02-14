@@ -274,12 +274,15 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     setNodesRef.current((nds) => {
       return nds.map((n) => {
         if (n.id === targetId) {
-          const existingImages = (n.data as { images?: unknown[] }).images || [];
+          const existingImages = (n.data as { images?: Array<{ url?: string } | string> }).images || [];
+          const safeExisting = Array.isArray(existingImages) ? existingImages : [];
+          const existingUrls = new Set(safeExisting.map(img => typeof img === 'string' ? img : img.url));
+          const uniqueNewImages = newImages.filter(img => !existingUrls.has(img.url));
           return {
             ...n,
             data: {
               ...n.data,
-              images: [...(Array.isArray(existingImages) ? existingImages : []), ...newImages],
+              images: [...safeExisting, ...uniqueNewImages],
             },
           };
         }
