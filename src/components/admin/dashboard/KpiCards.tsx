@@ -1,4 +1,4 @@
-import { Users, UserCheck, ImageIcon, Coins, DollarSign, Activity } from 'lucide-react';
+import { Users, UserCheck, ImageIcon, Coins, DollarSign, Activity, TrendingDown, TrendingUp } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
@@ -90,6 +90,11 @@ export function KpiCards({ data }: KpiCardsProps) {
     return `R$ ${(val / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
   };
 
+  const formatBRL = (val: number) => `R$ ${val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const formatUSD = (val: number) => `$ ${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const isMarginPositive = data.profitMarginBRL >= 0;
+
   const cards = [
     {
       title: 'Total Usuários',
@@ -128,6 +133,22 @@ export function KpiCards({ data }: KpiCardsProps) {
       sparkData: [],
     },
     {
+      title: 'Custo Operacional',
+      value: formatBRL(data.estimatedOperationalCostBRL),
+      icon: <TrendingDown className="h-4 w-4 text-red-400" />,
+      growth: 0,
+      sparkData: [],
+      subtitle: formatUSD(data.estimatedOperationalCostUSD),
+    },
+    {
+      title: 'Margem Estimada',
+      value: formatBRL(data.profitMarginBRL),
+      icon: <TrendingUp className={`h-4 w-4 ${isMarginPositive ? 'text-emerald-400' : 'text-red-400'}`} />,
+      growth: 0,
+      sparkData: [],
+      subtitle: isMarginPositive ? 'lucro' : 'prejuízo',
+    },
+    {
       title: 'Taxa de Atividade',
       value: `${data.activityRate.toFixed(1)}%`,
       icon: <Activity className="h-4 w-4 text-primary" />,
@@ -138,7 +159,7 @@ export function KpiCards({ data }: KpiCardsProps) {
   ];
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
       {cards.map((card) => (
         <KpiCard
           key={card.title}

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useMemo } from 'react';
 import { subDays, subMonths, startOfDay, format, differenceInDays } from 'date-fns';
+import { ESTIMATED_COST_PER_IMAGE_USD, USD_TO_BRL_RATE } from '@/lib/plan-limits';
 
 export type Period = '7d' | '30d' | '90d' | '12m';
 
@@ -55,6 +56,11 @@ export interface DashboardData {
 
   // Top users
   topUsers: { user_id: string; email: string; display_name: string | null; tier: string; credits: number; total_images: number }[];
+
+  // Operational cost
+  estimatedOperationalCostUSD: number;
+  estimatedOperationalCostBRL: number;
+  profitMarginBRL: number;
 
   // Platform performance
   totalJobs: number;
@@ -311,11 +317,18 @@ export function useAdminDashboard(period: Period): DashboardData {
       alerts.push({ type: 'warning', message: `💳 ${zeroCreditsCount} usuário(s) com 0 créditos — possível oportunidade de upgrade` });
     }
 
+    // Operational cost
+    const estimatedOperationalCostUSD = totalImages * ESTIMATED_COST_PER_IMAGE_USD;
+    const estimatedOperationalCostBRL = estimatedOperationalCostUSD * USD_TO_BRL_RATE;
+    const totalRevenueBRL = totalRevenue / 100; // amount_paid is in centavos
+    const profitMarginBRL = totalRevenueBRL - estimatedOperationalCostBRL;
+
     return {
       profiles, generations, jobs, purchases, authUsers,
       totalUsers, activeUsers, totalImages, estimatedCreditsConsumed, totalRevenue, activityRate,
       userGrowth, activeUserGrowth, imageGrowth, revenueGrowth,
       activityByDay, planDistribution, topUsers,
+      estimatedOperationalCostUSD, estimatedOperationalCostBRL, profitMarginBRL,
       totalJobs, jobErrors24h, jobSuccessRate,
       alerts, isLoading,
     };
