@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { NodeToolbar } from '@/components/editor/NodeToolbar';
 import { PromptNode } from '@/components/nodes/PromptNode';
 import { MediaNode } from '@/components/nodes/MediaNode';
@@ -30,6 +31,7 @@ import { SettingsNode } from '@/components/nodes/SettingsNode';
 import { OutputNode } from '@/components/nodes/OutputNode';
 import { ResultNode } from '@/components/nodes/ResultNode';
 import { GravityNode } from '@/components/nodes/GravityNode';
+import { ALL_TIERS, PLAN_LIMITS, type TierKey } from '@/lib/plan-limits';
 import {
   ArrowLeft,
   Loader2,
@@ -62,6 +64,7 @@ function TemplateEditorCanvas({ templateIdParam }: TemplateEditorCanvasProps) {
   const [templateName, setTemplateName] = useState('Novo Template');
   const [templateDescription, setTemplateDescription] = useState('');
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
+  const [allowedTiers, setAllowedTiers] = useState<TierKey[]>([...ALL_TIERS]);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [isSaving, setIsSaving] = useState(false);
@@ -121,6 +124,10 @@ function TemplateEditorCanvas({ templateIdParam }: TemplateEditorCanvasProps) {
           setTemplateName(data.name);
           setTemplateDescription(data.description || '');
           setThumbnailUrl(data.thumbnail_url);
+          const loadedTiers = (data as { allowed_tiers?: string[] }).allowed_tiers;
+          if (loadedTiers && Array.isArray(loadedTiers)) {
+            setAllowedTiers(loadedTiers as TierKey[]);
+          }
           const canvas = data.canvas_state as { nodes?: Node[]; edges?: Edge[] };
           if (canvas?.nodes) setNodes(canvas.nodes);
           if (canvas?.edges) setEdges(canvas.edges);
@@ -170,7 +177,8 @@ function TemplateEditorCanvas({ templateIdParam }: TemplateEditorCanvasProps) {
             name: templateName,
             description: templateDescription || null,
             thumbnail_url: thumbnailUrl,
-            canvas_state: canvasData
+            canvas_state: canvasData,
+            allowed_tiers: allowedTiers,
           })
           .eq('id', templateId);
 
@@ -183,7 +191,8 @@ function TemplateEditorCanvas({ templateIdParam }: TemplateEditorCanvasProps) {
             description: templateDescription || null,
             thumbnail_url: thumbnailUrl,
             canvas_state: canvasData,
-            created_by: user.id
+            created_by: user.id,
+            allowed_tiers: allowedTiers,
           })
           .select()
           .single();
@@ -206,7 +215,7 @@ function TemplateEditorCanvas({ templateIdParam }: TemplateEditorCanvasProps) {
       });
     }
     setIsSaving(false);
-  }, [user, isLoading, templateId, templateName, templateDescription, thumbnailUrl, toast, navigate]);
+  }, [user, isLoading, templateId, templateName, templateDescription, thumbnailUrl, allowedTiers, toast, navigate]);
 
   // Auto-save with debounce
   useEffect(() => {
@@ -225,7 +234,7 @@ function TemplateEditorCanvas({ templateIdParam }: TemplateEditorCanvasProps) {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [nodes, edges, templateName, templateDescription, thumbnailUrl, user, isLoading, checkingAdmin, saveTemplate]);
+  }, [nodes, edges, templateName, templateDescription, thumbnailUrl, allowedTiers, user, isLoading, checkingAdmin, saveTemplate]);
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge(params, eds)),
@@ -379,7 +388,7 @@ function TemplateEditorCanvas({ templateIdParam }: TemplateEditorCanvasProps) {
 
       {/* Metadata Section */}
       <div className="border-b border-border bg-muted/30 px-4 py-4">
-        <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-4">
           {/* Name */}
           <div>
             <Label htmlFor="template-name" className="text-xs">Nome do Template</Label>
@@ -403,6 +412,26 @@ function TemplateEditorCanvas({ templateIdParam }: TemplateEditorCanvasProps) {
               className="mt-1 resize-none h-10"
               rows={1}
             />
+          </div>
+
+          {/* Allowed Tiers */}
+          <div>
+            <Label className="text-xs">Planos com acesso</Label>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {ALL_TIERS.map((tier) => (
+                <label key={tier} className="flex items-center gap-1.5 text-xs">
+                  <Checkbox
+                    checked={allowedTiers.includes(tier)}
+                    onCheckedChange={(checked) => {
+                      setAllowedTiers(prev =>
+                        checked ? [...prev, tier] : prev.filter(t => t !== tier)
+                      );
+                    }}
+                  />
+                  {PLAN_LIMITS[tier].label}
+                </label>
+              ))}
+            </div>
           </div>
 
           {/* Thumbnail */}

@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,6 +26,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { PLAN_LIMITS, type TierKey } from '@/lib/plan-limits';
 
 interface Template {
   id: string;
@@ -33,6 +35,7 @@ interface Template {
   thumbnail_url: string | null;
   created_at: string;
   created_by: string | null;
+  allowed_tiers: string[];
 }
 
 export function TemplatesTab() {
@@ -49,7 +52,7 @@ export function TemplatesTab() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('project_templates')
-        .select('id, name, description, thumbnail_url, created_at, created_by')
+        .select('id, name, description, thumbnail_url, created_at, created_by, allowed_tiers')
         .order('created_at', { ascending: false });
       if (error) throw error;
       return data as Template[];
@@ -127,6 +130,15 @@ export function TemplatesTab() {
                             {format(new Date(template.created_at), "d 'de' MMM, yyyy", { locale: ptBR })}
                           </span>
                         </div>
+                        {template.allowed_tiers && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {template.allowed_tiers.map((tier) => (
+                              <Badge key={tier} variant="secondary" className="text-[10px] px-1.5 py-0">
+                                {PLAN_LIMITS[tier as TierKey]?.label ?? tier}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div className="flex gap-1 shrink-0">
                         <Button

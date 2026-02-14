@@ -27,6 +27,7 @@ interface CreateProjectModalProps {
   onCreateFromScratch: (name: string) => void;
   onCreateFromTemplate: (name: string, templateId: string) => void;
   isCreating?: boolean;
+  userTier?: string;
 }
 
 export function CreateProjectModal({
@@ -35,6 +36,7 @@ export function CreateProjectModal({
   onCreateFromScratch,
   onCreateFromTemplate,
   isCreating = false,
+  userTier = 'free',
 }: CreateProjectModalProps) {
   const [step, setStep] = useState<'choose' | 'name'>('choose');
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
@@ -47,6 +49,7 @@ export function CreateProjectModal({
       const { data, error } = await supabase
         .from('project_templates')
         .select('id, name, description, thumbnail_url')
+        .contains('allowed_tiers', [userTier])
         .order('created_at', { ascending: false });
       if (error) throw error;
       return data as Template[];
