@@ -15,6 +15,12 @@ export const PLAN_LIMITS: Record<TierKey, PlanConfig> = {
 
 export const ALL_TIERS: TierKey[] = ['free', 'starter', 'creator', 'enterprise'];
 
+/** Custo médio estimado por imagem gerada (Gemini 3 Pro via AI Gateway) */
+export const ESTIMATED_COST_PER_IMAGE_USD = 0.06;
+
+/** Taxa de conversão USD → BRL aproximada */
+export const USD_TO_BRL_RATE = 5.80;
+
 export function getTierConfig(tier: string): PlanConfig {
   return PLAN_LIMITS[tier as TierKey] ?? PLAN_LIMITS.free;
 }
