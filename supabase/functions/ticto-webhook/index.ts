@@ -120,6 +120,65 @@ Deno.serve(async (req: Request) => {
   const offerCode = body.query_params?.code || body.offer?.code || body.item?.offer_code || body.url_params?.query_params?.code || '';
   const amountPaid = body.order?.paid_amount || body.item?.amount || 0;
 
+  // Verificar se é reembolso ou chargeback -> reverter para Free
+  const refundStatuses = ['refunded', 'reembolso', 'chargeback', 'chargedback', 'disputed'];
+  const isRefund = refundStatuses.some(s => status.toLowerCase().includes(s));
+
+  if (isRefund) {
+    if (!customerEmail) {
+      await logWebhook(supabase, status, body, false, 'Refund: missing customer email');
+      return new Response('Missing email', { status: 200, headers: corsHeaders });
+    }
+
+    const { data: refundProfile } = await supabase
+      .from('profiles')
+      .select('user_id, credits')
+      .eq('email', customerEmail.toLowerCase().trim())
+      .maybeSingle();
+
+    if (!refundProfile) {
+      await logWebhook(supabase, status, body, false, `Refund: user not found: ${customerEmail}`);
+      return new Response('User not found', { status: 200, headers: corsHeaders });
+    }
+
+    // Buscar créditos da compra original para reverter
+    const originalTxId = transactionId;
+    let creditsToRemove = 0;
+    if (originalTxId) {
+      const { data: purchase } = await supabase
+        .from('credit_purchases')
+        .select('credits_added')
+        .eq('transaction_id', originalTxId)
+        .maybeSingle();
+      creditsToRemove = purchase?.credits_added || 0;
+    }
+
+    // Reverter para Free: remover créditos da compra e voltar ao tier free
+    const newCredits = Math.max(0, refundProfile.credits - creditsToRemove);
+    const { error: refundError } = await supabase
+      .from('profiles')
+      .update({
+        credits: newCredits,
+        tier: 'free',
+        billing_cycle: 'monthly',
+        max_projects: 1,
+      })
+      .eq('user_id', refundProfile.user_id);
+
+    if (refundError) {
+      console.error('Erro ao processar reembolso:', refundError);
+      await logWebhook(supabase, status, body, false, `Refund failed: ${refundError.message}`);
+      return new Response('Refund failed', { status: 500, headers: corsHeaders });
+    }
+
+    console.log(`🔄 Reembolso/Chargeback: ${customerEmail} revertido para Free (removidos ${creditsToRemove} créditos)`);
+    await logWebhook(supabase, status, body, true);
+    return new Response(
+      JSON.stringify({ success: true, action: 'refund', user_email: customerEmail }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
   // Verificar se é um evento de aprovação
   const approvalStatuses = ['approved', 'paid', 'confirmed', 'completed', 'authorized'];
   const isApproved = approvalStatuses.some(s => 
