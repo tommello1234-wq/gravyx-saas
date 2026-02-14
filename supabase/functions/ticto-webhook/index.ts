@@ -5,11 +5,21 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Mapeamento de ofertas da Ticto para créditos (código da oferta -> créditos)
-const OFFER_CREDITS: Record<string, number> = {
-  'O7EB601F4': 50,   // Starter
-  'O37CE7121': 120,  // Pro
-  'OD5F04218': 400,  // Business
+// Mapeamento completo de ofertas Ticto -> config do plano
+interface OfferConfig {
+  credits: number;
+  tier: string;
+  billing_cycle: string;
+  max_projects: number;
+}
+
+const OFFER_CONFIG: Record<string, OfferConfig> = {
+  'O7A4C2615': { credits: 80,   tier: 'starter',    billing_cycle: 'monthly', max_projects: 3  },
+  'OA871890B': { credits: 1000, tier: 'starter',    billing_cycle: 'annual',  max_projects: 3  },
+  'O465B8044': { credits: 250,  tier: 'premium',    billing_cycle: 'monthly', max_projects: -1 },
+  'O06B270AF': { credits: 3000, tier: 'premium',    billing_cycle: 'annual',  max_projects: -1 },
+  'O8AA396EB': { credits: 600,  tier: 'enterprise', billing_cycle: 'monthly', max_projects: -1 },
+  'OA8BDDA9B': { credits: 7200, tier: 'enterprise', billing_cycle: 'annual',  max_projects: -1 },
 };
 
 interface TictoPayload {
@@ -136,7 +146,7 @@ Deno.serve(async (req: Request) => {
   }
 
   // Validate offer_code against known offers before processing
-  if (offerCode && !Object.keys(OFFER_CREDITS).includes(offerCode)) {
+  if (offerCode && !Object.keys(OFFER_CONFIG).includes(offerCode)) {
     console.error(`Oferta desconhecida: ${offerCode}`);
     await logWebhook(supabase, status, body, false, `Unknown offer code: ${offerCode}`);
     return new Response('Unknown offer', { status: 200, headers: corsHeaders });
@@ -175,19 +185,26 @@ Deno.serve(async (req: Request) => {
     return new Response('User not found', { status: 200, headers: corsHeaders });
   }
 
-  // Credits already validated via early offer_code check above
-  const credits = OFFER_CREDITS[offerCode] || 0;
+  // Config da oferta (já validada acima)
+  const config = OFFER_CONFIG[offerCode];
   
-  if (credits === 0) {
-    console.error(`Oferta sem créditos mapeados: ${offerCode}`);
-    await logWebhook(supabase, status, body, false, `No credits mapped for offer: ${offerCode}`);
+  if (!config) {
+    console.error(`Oferta sem config mapeada: ${offerCode}`);
+    await logWebhook(supabase, status, body, false, `No config mapped for offer: ${offerCode}`);
     return new Response('Unknown offer', { status: 200, headers: corsHeaders });
   }
 
-  // Adicionar créditos ao perfil
+  const { credits, tier, billing_cycle, max_projects } = config;
+
+  // Atualizar perfil: créditos + tier + billing_cycle + max_projects
   const { error: updateError } = await supabase
     .from('profiles')
-    .update({ credits: profile.credits + credits })
+    .update({
+      credits: profile.credits + credits,
+      tier,
+      billing_cycle,
+      max_projects,
+    })
     .eq('user_id', profile.user_id);
 
   if (updateError) {
