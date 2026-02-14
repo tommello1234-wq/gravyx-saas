@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
 
 export type AdminPeriod = 'today' | '7d' | '30d' | '90d' | 'custom';
-export type AdminTierFilter = 'all' | 'free' | 'starter' | 'creator' | 'enterprise';
+export type AdminTierFilter = 'all' | 'free' | 'starter' | 'premium' | 'enterprise';
 export type AdminSection = 'operations' | 'financial' | 'users' | 'library' | 'templates' | 'settings';
 
 interface AdminContextValue {
