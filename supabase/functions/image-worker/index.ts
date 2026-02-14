@@ -212,7 +212,16 @@ serve(async (req) => {
       { type: "text", text: fullPrompt }
     ];
     
-    for (const url of imageUrls) {
+    // Filter out SVG URLs - AI APIs don't support SVG format
+    const validImageUrls = imageUrls.filter(url => {
+      const isSvg = url.toLowerCase().endsWith('.svg') || url.includes('.svg?');
+      if (isSvg) {
+        console.warn(`Skipping SVG image URL: ${url}`);
+      }
+      return !isSvg;
+    });
+
+    for (const url of validImageUrls) {
       messageContent.push({
         type: "image_url",
         image_url: { url }
