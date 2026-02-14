@@ -20,7 +20,7 @@ const tierOptions: { value: AdminTierFilter; label: string }[] = [
   { value: 'all', label: 'Todos os planos' },
   { value: 'free', label: 'Free' },
   { value: 'starter', label: 'Starter' },
-  { value: 'creator', label: 'Creator' },
+  { value: 'premium', label: 'Premium' },
   { value: 'enterprise', label: 'Enterprise' },
 ];
 

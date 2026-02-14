@@ -247,7 +247,7 @@ export function useAdminDashboard(
     const margin = periodRevenue > 0 ? (grossProfit / periodRevenue) * 100 : 0;
 
     // MRR/ARR estimation
-    const planPrices: Record<string, number> = { free: 0, starter: 4900, creator: 9900, enterprise: 19900 };
+    const planPrices: Record<string, number> = { free: 0, starter: 4900, premium: 9900, enterprise: 19900 };
     const estimatedMRR = filteredProfiles.reduce((s, p) => {
       const price = planPrices[p.tier] || 0;
       return s + (p.billing_cycle === 'annual' ? price * 0.8 : price); // 20% discount annual
@@ -306,7 +306,7 @@ export function useAdminDashboard(
     const revenueByPlan = Array.from(revByPlan.entries()).map(([name, value]) => ({ name, value: value / 100 }));
 
     // Financial by plan table
-    const allTiers = ['free', 'starter', 'creator', 'enterprise'];
+    const allTiers = ['free', 'starter', 'premium', 'enterprise'];
     const financialByPlan = allTiers.map(plan => {
       const planProfiles = filteredProfiles.filter(p => p.tier === plan);
       const planUserIds = new Set(planProfiles.map(p => p.user_id));
