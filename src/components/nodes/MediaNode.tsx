@@ -128,9 +128,20 @@ export const MediaNode = memo(({
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
+
+    // Block SVG files - AI image generation APIs don't support them
+    const fileExt = file.name.split('.').pop()?.toLowerCase();
+    if (fileExt === 'svg') {
+      toast({
+        title: 'Formato não suportado',
+        description: 'Arquivos SVG não são suportados. Use PNG, JPG ou WebP.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
     setIsUploading(true);
     try {
-      const fileExt = file.name.split('.').pop();
       const fileName = `${user.id}/${Date.now()}.${fileExt}`;
       const { error: uploadError } = await supabase.storage.from('reference-images').upload(fileName, file);
       if (uploadError) throw uploadError;
@@ -152,7 +163,7 @@ export const MediaNode = memo(({
   };
 
   return <div className="bg-card border border-blue-500/30 rounded-2xl min-w-[280px] shadow-2xl shadow-blue-500/10">
-      <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept="image/*" className="hidden" />
+      <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" />
 
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-border/30 bg-gradient-to-r from-blue-500/10 to-transparent rounded-t-2xl">
