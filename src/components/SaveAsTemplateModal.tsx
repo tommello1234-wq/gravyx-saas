@@ -4,10 +4,12 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
+import { ALL_TIERS, PLAN_LIMITS, type TierKey } from '@/lib/plan-limits';
 import type { Node, Edge } from '@xyflow/react';
 import type { Json } from '@/integrations/supabase/types';
 
@@ -39,6 +41,7 @@ export function SaveAsTemplateModal({
   const [tab, setTab] = useState<string>('new');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [allowedTiers, setAllowedTiers] = useState<TierKey[]>([...ALL_TIERS]);
   const [templates, setTemplates] = useState<TemplateOption[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
@@ -49,6 +52,7 @@ export function SaveAsTemplateModal({
     if (open) {
       setName(projectName);
       setDescription('');
+      setAllowedTiers([...ALL_TIERS]);
       setSelectedTemplateId('');
       loadTemplates();
     }
@@ -81,6 +85,7 @@ export function SaveAsTemplateModal({
       description: description.trim() || null,
       canvas_state: canvasState,
       created_by: userId,
+      allowed_tiers: allowedTiers,
     });
 
     setIsSaving(false);
@@ -151,6 +156,24 @@ export function SaveAsTemplateModal({
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Breve descrição do template"
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Planos com acesso</Label>
+              <div className="flex flex-wrap gap-3">
+                {ALL_TIERS.map((tier) => (
+                  <label key={tier} className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={allowedTiers.includes(tier)}
+                      onCheckedChange={(checked) => {
+                        setAllowedTiers(prev =>
+                          checked ? [...prev, tier] : prev.filter(t => t !== tier)
+                        );
+                      }}
+                    />
+                    {PLAN_LIMITS[tier].label}
+                  </label>
+                ))}
+              </div>
             </div>
             <Button onClick={handleSaveNew} disabled={isSaving} className="w-full">
               {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}

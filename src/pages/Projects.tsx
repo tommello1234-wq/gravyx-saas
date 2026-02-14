@@ -34,6 +34,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { CreateProjectModal } from '@/components/CreateProjectModal';
+import { getTierConfig } from '@/lib/plan-limits';
+import { Badge } from '@/components/ui/badge';
 
 interface Project {
   id: string;
@@ -54,7 +56,7 @@ interface CanvasState {
 }
 
 export default function Projects() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -62,6 +64,21 @@ export default function Projects() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [editName, setEditName] = useState('');
+
+  const tierConfig = getTierConfig(profile?.tier ?? 'free');
+
+  const handleNewProject = () => {
+    const currentCount = projects?.length ?? 0;
+    if (tierConfig.maxProjects !== -1 && currentCount >= tierConfig.maxProjects) {
+      toast({
+        title: 'Limite de projetos atingido',
+        description: `Seu plano ${tierConfig.label} permite até ${tierConfig.maxProjects} projeto(s). Faça upgrade para criar mais.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+    setCreateOpen(true);
+  };
 
   // Fetch projects - only select needed columns to avoid loading huge canvas_state
   const { data: projects, isLoading } = useQuery({
@@ -223,13 +240,20 @@ export default function Projects() {
             </p>
           </div>
 
-          <Button 
-            className="rounded-full glow-primary"
-            onClick={() => setCreateOpen(true)}
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Novo Projeto
-          </Button>
+          <div className="flex items-center gap-3">
+            {user && profile && (
+              <Badge variant="outline" className="text-xs">
+                {projects?.length ?? 0}/{tierConfig.maxProjects === -1 ? '∞' : tierConfig.maxProjects} projetos
+              </Badge>
+            )}
+            <Button 
+              className="rounded-full glow-primary"
+              onClick={handleNewProject}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Novo Projeto
+            </Button>
+          </div>
 
           <CreateProjectModal
             open={createOpen}
@@ -237,6 +261,7 @@ export default function Projects() {
             onCreateFromScratch={handleCreateFromScratch}
             onCreateFromTemplate={handleCreateFromTemplate}
             isCreating={createMutation.isPending}
+            userTier={profile?.tier ?? 'free'}
           />
         </div>
 

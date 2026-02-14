@@ -189,6 +189,7 @@ export type Database = {
           display_name: string | null
           email: string
           id: string
+          max_projects: number
           tier: string
           updated_at: string
           user_id: string
@@ -200,6 +201,7 @@ export type Database = {
           display_name?: string | null
           email: string
           id?: string
+          max_projects?: number
           tier?: string
           updated_at?: string
           user_id: string
@@ -211,6 +213,7 @@ export type Database = {
           display_name?: string | null
           email?: string
           id?: string
+          max_projects?: number
           tier?: string
           updated_at?: string
           user_id?: string
@@ -219,6 +222,7 @@ export type Database = {
       }
       project_templates: {
         Row: {
+          allowed_tiers: string[]
           canvas_state: Json
           created_at: string
           created_by: string | null
@@ -228,6 +232,7 @@ export type Database = {
           thumbnail_url: string | null
         }
         Insert: {
+          allowed_tiers?: string[]
           canvas_state?: Json
           created_at?: string
           created_by?: string | null
@@ -237,6 +242,7 @@ export type Database = {
           thumbnail_url?: string | null
         }
         Update: {
+          allowed_tiers?: string[]
           canvas_state?: Json
           created_at?: string
           created_by?: string | null

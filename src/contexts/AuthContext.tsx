@@ -7,7 +7,8 @@ interface Profile {
   user_id: string;
   email: string;
   credits: number;
-  tier: 'free' | 'pro';
+  tier: string;
+  max_projects: number;
   display_name: string | null;
   avatar_url: string | null;
   created_at: string;
