@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAdminDashboard, type Period } from './useAdminDashboard';
+import { useAdminDashboard } from './useAdminDashboard';
 import { KpiCards } from './KpiCards';
 import { ActivityChart } from './ActivityChart';
 import { PlanDistribution } from './PlanDistribution';
@@ -7,9 +7,11 @@ import { TopUsersRanking } from './TopUsersRanking';
 import { PlatformPerformance } from './PlatformPerformance';
 import { AlertsBanner } from './AlertsBanner';
 
+type ChartPeriod = '7d' | '30d' | '90d' | '12m';
+
 export function DashboardTab() {
-  const [period, setPeriod] = useState<Period>('30d');
-  const data = useAdminDashboard(period);
+  const [period, setPeriod] = useState<ChartPeriod>('30d');
+  const data = useAdminDashboard(period === '12m' ? '90d' : period);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
