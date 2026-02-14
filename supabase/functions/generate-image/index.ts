@@ -149,21 +149,7 @@ serve(async (req) => {
       );
     }
 
-    // Deduct credits atomically
-    const { data: newCredits, error: updateError } = await supabaseAdmin
-      .rpc('decrement_credits', { uid: user.id, amount: creditsNeeded });
-
-    if (updateError) {
-      console.error("Error decrementing credits:", updateError);
-      return new Response(
-        JSON.stringify({ error: "Failed to deduct credits. Please try again." }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const creditsAfterDeduction = typeof newCredits === 'number' ? newCredits : profile.credits - creditsNeeded;
-
-    console.log(`Enqueuing job for ${safeQuantity} image(s) for user ${user.id}, deducted ${creditsNeeded} credits`);
+    console.log(`Enqueuing job for ${safeQuantity} image(s) for user ${user.id}, credits available: ${profile.credits}`);
 
     // Insert job into queue
     const { data: job, error: insertError } = await supabaseAdmin
@@ -186,13 +172,6 @@ serve(async (req) => {
 
     if (insertError || !job) {
       console.error("Error inserting job:", insertError);
-      
-      // Refund credits on failure
-      await supabaseAdmin
-        .from('profiles')
-        .update({ credits: profile.credits })
-        .eq('user_id', user.id);
-      
       return new Response(
         JSON.stringify({ error: "Failed to enqueue job" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -206,9 +185,7 @@ serve(async (req) => {
       JSON.stringify({ 
         jobId: job.id,
         status: 'queued',
-        quantity: safeQuantity,
-        creditsDeducted: creditsNeeded,
-        creditsRemaining: creditsAfterDeduction
+        quantity: safeQuantity
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

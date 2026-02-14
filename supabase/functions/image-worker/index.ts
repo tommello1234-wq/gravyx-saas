@@ -227,55 +227,60 @@ serve(async (req) => {
 
       const results = await Promise.all(generationPromises);
       const successfulImages = results.filter((url): url is string => url !== null);
-      const failedCount = quantity - successfulImages.length;
 
       console.log(`Generated ${successfulImages.length}/${quantity} images for job ${claimedJob.id}`);
 
-      // Refund credits for failed generations
-      if (failedCount > 0) {
-        const refundAmount = failedCount * CREDITS_PER_IMAGE;
-        await supabaseAdmin.rpc('increment_credits', { uid: claimedJob.user_id, amount: refundAmount });
-        console.log(`Refunded ${refundAmount} credits for ${failedCount} failed generation(s)`);
-      }
-
-      // If all failed, handle as error
+      // If all failed, handle as error (will retry without touching credits)
       if (successfulImages.length === 0) {
         throw new Error("All image generations failed");
       }
 
-      // Save successful generations to database with result_node_id
-      const generationInserts = successfulImages.map(imageUrl => ({
-        user_id: claimedJob.user_id,
-        project_id: claimedJob.project_id,
-        prompt: prompt,
-        aspect_ratio: aspectRatio || '1:1',
-        image_url: imageUrl,
-        status: 'completed',
-        saved_to_gallery: true,
-        result_node_id: resultId || null
-      }));
+      // Debit 1 credit per successful image and save only if debit succeeds
+      const savedImages: string[] = [];
+      for (const imageUrl of successfulImages) {
+        try {
+          await supabaseAdmin.rpc('decrement_credits', { uid: claimedJob.user_id, amount: CREDITS_PER_IMAGE });
+          savedImages.push(imageUrl);
+        } catch (debitError) {
+          console.error(`Failed to debit credit for image, skipping save:`, debitError);
+        }
+      }
 
-      await supabaseAdmin.from('generations').insert(generationInserts);
+      if (savedImages.length > 0) {
+        // Save successful generations to database
+        const generationInserts = savedImages.map(imageUrl => ({
+          user_id: claimedJob.user_id,
+          project_id: claimedJob.project_id,
+          prompt: prompt,
+          aspect_ratio: aspectRatio || '1:1',
+          image_url: imageUrl,
+          status: 'completed',
+          saved_to_gallery: true,
+          result_node_id: resultId || null
+        }));
+
+        await supabaseAdmin.from('generations').insert(generationInserts);
+      }
 
       // Mark job as completed with results
       const { error: completeError } = await supabaseAdmin.rpc('complete_job_with_result', {
         p_job_id: claimedJob.id,
-        p_result_urls: successfulImages,
-        p_result_count: successfulImages.length
+        p_result_urls: savedImages,
+        p_result_count: savedImages.length
       });
 
       if (completeError) {
         console.error("Error completing job:", completeError);
       }
 
-      console.log(`Job ${claimedJob.id} completed successfully with ${successfulImages.length} images`);
+      console.log(`Job ${claimedJob.id} completed: ${savedImages.length} images saved, ${successfulImages.length - savedImages.length} skipped (no credits)`);
 
       return new Response(
         JSON.stringify({ 
           success: true,
           jobId: claimedJob.id,
-          imagesGenerated: successfulImages.length,
-          imagesFailed: failedCount
+          imagesGenerated: savedImages.length,
+          imagesFailed: quantity - savedImages.length
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -314,7 +319,7 @@ serve(async (req) => {
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       } else {
-        // Max retries exceeded - mark as failed and refund all credits
+        // Max retries exceeded - mark as failed (no credits to refund - they were never deducted)
         await supabaseAdmin
           .from('jobs')
           .update({
@@ -324,19 +329,13 @@ serve(async (req) => {
           })
           .eq('id', claimedJob.id);
 
-        // Refund all credits
-        const refundAmount = quantity * CREDITS_PER_IMAGE;
-        await supabaseAdmin.rpc('increment_credits', { uid: claimedJob.user_id, amount: refundAmount });
-        console.log(`Refunded ${refundAmount} credits for failed job ${claimedJob.id}`);
-
         console.log(`Job ${claimedJob.id} failed permanently after ${maxRetries} retries`);
 
         return new Response(
           JSON.stringify({ 
             success: false,
             jobId: claimedJob.id,
-            failed: true,
-            creditsRefunded: refundAmount
+            failed: true
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
