@@ -30,10 +30,12 @@ type SortDir = 'asc' | 'desc';
 const PAGE_SIZE = 20;
 
 function PlanPopover({ 
+  userId,
   currentTier, 
   currentCycle, 
   onConfirm 
 }: { 
+  userId: string;
   currentTier: string; 
   currentCycle: string; 
   onConfirm: (tier: string, cycle: string) => void;
@@ -48,6 +50,7 @@ function PlanPopover({
   };
 
   const hasChanged = selectedTier !== currentTier || selectedCycle !== (currentCycle || 'monthly');
+  const prefix = userId.slice(0, 8);
 
   return (
     <Popover open={open} onOpenChange={(o) => {
@@ -55,9 +58,11 @@ function PlanPopover({
       if (o) { setSelectedTier(currentTier); setSelectedCycle(currentCycle || 'monthly'); }
     }}>
       <PopoverTrigger asChild>
-        <Badge variant="secondary" className="capitalize text-xs cursor-pointer hover:bg-secondary/80 transition-colors">
-          {currentTier}
-        </Badge>
+        <button type="button" className="inline-flex">
+          <Badge variant="secondary" className="capitalize text-xs cursor-pointer hover:bg-secondary/80 transition-colors">
+            {currentTier}
+          </Badge>
+        </button>
       </PopoverTrigger>
       <PopoverContent className="w-56 p-3" align="start">
         <p className="text-xs font-medium mb-2">Alterar plano</p>
@@ -65,8 +70,8 @@ function PlanPopover({
           <RadioGroup value={selectedTier} onValueChange={setSelectedTier}>
             {ALL_TIERS.map(tier => (
               <div key={tier} className="flex items-center space-x-2">
-                <RadioGroupItem value={tier} id={`tier-${tier}`} />
-                <Label htmlFor={`tier-${tier}`} className="text-xs cursor-pointer">
+                <RadioGroupItem value={tier} id={`${prefix}-tier-${tier}`} />
+                <Label htmlFor={`${prefix}-tier-${tier}`} className="text-xs cursor-pointer">
                   {PLAN_LIMITS[tier].label}
                   <span className="text-muted-foreground ml-1">({PLAN_LIMITS[tier].creditsMonth} créd/mês)</span>
                 </Label>
@@ -78,12 +83,12 @@ function PlanPopover({
             <p className="text-xs font-medium mb-1.5">Ciclo</p>
             <RadioGroup value={selectedCycle} onValueChange={setSelectedCycle}>
               <div className="flex items-center space-x-2">
-                <RadioGroupItem value="monthly" id="cycle-monthly" />
-                <Label htmlFor="cycle-monthly" className="text-xs cursor-pointer">Mensal</Label>
+                <RadioGroupItem value="monthly" id={`${prefix}-cycle-monthly`} />
+                <Label htmlFor={`${prefix}-cycle-monthly`} className="text-xs cursor-pointer">Mensal</Label>
               </div>
               <div className="flex items-center space-x-2">
-                <RadioGroupItem value="annual" id="cycle-annual" />
-                <Label htmlFor="cycle-annual" className="text-xs cursor-pointer">Anual</Label>
+                <RadioGroupItem value="annual" id={`${prefix}-cycle-annual`} />
+                <Label htmlFor={`${prefix}-cycle-annual`} className="text-xs cursor-pointer">Anual</Label>
               </div>
             </RadioGroup>
           </div>
@@ -253,6 +258,7 @@ export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser
                     </TableCell>
                     <TableCell>
                       <PlanPopover
+                        userId={profile.user_id}
                         currentTier={profile.tier}
                         currentCycle={profile.billing_cycle || 'monthly'}
                         onConfirm={(tier, cycle) => onChangeTier(profile.user_id, profile.email, tier, cycle)}
