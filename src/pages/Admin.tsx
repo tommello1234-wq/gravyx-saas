@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { TemplatesTab } from '@/components/admin/TemplatesTab';
+import { SubmissionsTab } from '@/components/admin/SubmissionsTab';
 import { UsersTable } from '@/components/admin/dashboard/UsersTable';
 import { useAdminDashboard } from '@/components/admin/dashboard/useAdminDashboard';
 import { AdminProvider, useAdminContext } from '@/components/admin/AdminContext';
@@ -373,6 +374,9 @@ function AdminContent() {
                   </CollapsibleContent>
                 </Collapsible>
               </Card>
+
+              {/* Community Submissions */}
+              <SubmissionsTab />
 
               {/* Reference Images */}
               <Card className="glass-card">

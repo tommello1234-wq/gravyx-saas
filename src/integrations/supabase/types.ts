@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      community_submissions: {
+        Row: {
+          admin_note: string | null
+          category_slug: string
+          created_at: string
+          id: string
+          image_url: string
+          prompt: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          admin_note?: string | null
+          category_slug: string
+          created_at?: string
+          id?: string
+          image_url: string
+          prompt: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          title: string
+          user_id: string
+        }
+        Update: {
+          admin_note?: string | null
+          category_slug?: string
+          created_at?: string
+          id?: string
+          image_url?: string
+          prompt?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       credit_packages: {
         Row: {
           created_at: string
@@ -345,6 +387,7 @@ export type Database = {
           id: string
           image_url: string
           prompt: string
+          submitted_by: string | null
           title: string
         }
         Insert: {
@@ -354,6 +397,7 @@ export type Database = {
           id?: string
           image_url: string
           prompt: string
+          submitted_by?: string | null
           title: string
         }
         Update: {
@@ -363,6 +407,7 @@ export type Database = {
           id?: string
           image_url?: string
           prompt?: string
+          submitted_by?: string | null
           title?: string
         }
         Relationships: []
