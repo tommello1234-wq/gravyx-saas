@@ -77,6 +77,7 @@ interface ReferenceImage {
   category: string;
   image_url: string;
   created_at: string;
+  tags: string[]; // category IDs
 }
 
 function AdminContent() {
@@ -90,7 +91,7 @@ function AdminContent() {
   // References state
   const [refDialogOpen, setRefDialogOpen] = useState(false);
   const [editingRef, setEditingRef] = useState<ReferenceImage | null>(null);
-  const [newRef, setNewRef] = useState({ title: '', prompt: '', category: '', image_url: '' });
+  const [newRef, setNewRef] = useState({ title: '', prompt: '', category: '', image_url: '', selectedTags: [] as string[] });
   const [uploadingImage, setUploadingImage] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -123,37 +124,70 @@ function AdminContent() {
     },
   });
 
-  // Fetch references
+  // Fetch references with tags
   const { data: references, isLoading: refsLoading } = useQuery({
     queryKey: ['admin-references'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data: imgs, error } = await supabase
         .from('reference_images')
         .select('*')
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return data as ReferenceImage[];
+
+      // Fetch tags for all images
+      const { data: tagRows } = await supabase
+        .from('reference_image_tags')
+        .select('image_id, category_id');
+
+      const tagsByImage = new Map<string, string[]>();
+      for (const t of (tagRows || [])) {
+        const arr = tagsByImage.get(t.image_id) || [];
+        arr.push(t.category_id);
+        tagsByImage.set(t.image_id, arr);
+      }
+
+      return imgs.map(img => ({
+        ...img,
+        tags: tagsByImage.get(img.id) || [],
+      })) as ReferenceImage[];
     },
   });
 
   // CRUD mutations (same as before)
   const createRefMutation = useMutation({
     mutationFn: async (ref: typeof newRef) => {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('reference_images')
-        .insert({ title: ref.title, prompt: ref.prompt, category: ref.category, image_url: ref.image_url, created_by: user?.id });
+        .insert({ title: ref.title, prompt: ref.prompt, category: ref.category || ref.selectedTags[0] || '', image_url: ref.image_url, created_by: user?.id })
+        .select('id')
+        .single();
       if (error) throw error;
+      // Insert tags
+      if (ref.selectedTags.length > 0) {
+        const { error: tagError } = await supabase
+          .from('reference_image_tags')
+          .insert(ref.selectedTags.map(catId => ({ image_id: data.id, category_id: catId })));
+        if (tagError) throw tagError;
+      }
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin-references'] }); closeRefDialog(); toast({ title: 'Referência criada!' }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin-references'] }); queryClient.invalidateQueries({ queryKey: ['library-images-with-tags'] }); closeRefDialog(); toast({ title: 'Referência criada!' }); },
     onError: (error) => { toast({ title: 'Erro', description: error.message, variant: 'destructive' }); },
   });
 
   const updateRefMutation = useMutation({
-    mutationFn: async ({ id, ...ref }: { id: string; title: string; prompt: string; category: string; image_url: string }) => {
-      const { error } = await supabase.from('reference_images').update({ title: ref.title, prompt: ref.prompt, category: ref.category, image_url: ref.image_url }).eq('id', id);
+    mutationFn: async ({ id, ...ref }: { id: string; title: string; prompt: string; category: string; image_url: string; selectedTags: string[] }) => {
+      const { error } = await supabase.from('reference_images').update({ title: ref.title, prompt: ref.prompt, category: ref.category || ref.selectedTags[0] || '', image_url: ref.image_url }).eq('id', id);
       if (error) throw error;
+      // Replace tags: delete old, insert new
+      await supabase.from('reference_image_tags').delete().eq('image_id', id);
+      if (ref.selectedTags.length > 0) {
+        const { error: tagError } = await supabase
+          .from('reference_image_tags')
+          .insert(ref.selectedTags.map(catId => ({ image_id: id, category_id: catId })));
+        if (tagError) throw tagError;
+      }
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin-references'] }); closeRefDialog(); toast({ title: 'Referência atualizada!' }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin-references'] }); queryClient.invalidateQueries({ queryKey: ['library-images-with-tags'] }); closeRefDialog(); toast({ title: 'Referência atualizada!' }); },
     onError: (error) => { toast({ title: 'Erro', description: error.message, variant: 'destructive' }); },
   });
 
@@ -188,9 +222,9 @@ function AdminContent() {
 
   const openEditCategory = (cat: ReferenceCategory) => { setEditingCategory(cat); setNewCategory({ slug: cat.slug, label: cat.label }); setCatDialogOpen(true); };
   const openNewCategory = () => { setEditingCategory(null); setNewCategory({ slug: '', label: '' }); setCatDialogOpen(true); };
-  const openNewRef = () => { setEditingRef(null); setNewRef({ title: '', prompt: '', category: '', image_url: '' }); setPreviewUrl(null); setRefDialogOpen(true); };
-  const openEditRef = (ref: ReferenceImage) => { setEditingRef(ref); setNewRef({ title: ref.title, prompt: ref.prompt, category: ref.category, image_url: ref.image_url }); setPreviewUrl(ref.image_url); setRefDialogOpen(true); };
-  const closeRefDialog = () => { setRefDialogOpen(false); setEditingRef(null); setNewRef({ title: '', prompt: '', category: '', image_url: '' }); setPreviewUrl(null); };
+  const openNewRef = () => { setEditingRef(null); setNewRef({ title: '', prompt: '', category: '', image_url: '', selectedTags: [] }); setPreviewUrl(null); setRefDialogOpen(true); };
+  const openEditRef = (ref: ReferenceImage) => { setEditingRef(ref); setNewRef({ title: ref.title, prompt: ref.prompt, category: ref.category, image_url: ref.image_url, selectedTags: ref.tags }); setPreviewUrl(ref.image_url); setRefDialogOpen(true); };
+  const closeRefDialog = () => { setRefDialogOpen(false); setEditingRef(null); setNewRef({ title: '', prompt: '', category: '', image_url: '', selectedTags: [] }); setPreviewUrl(null); };
   const handleSaveRef = () => { if (editingRef) updateRefMutation.mutate({ id: editingRef.id, ...newRef }); else createRefMutation.mutate(newRef); };
 
   const deleteRefMutation = useMutation({
@@ -217,6 +251,15 @@ function AdminContent() {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (file) handleImageUpload(file); };
   const clearImage = () => { setNewRef({ ...newRef, image_url: '' }); setPreviewUrl(null); if (fileInputRef.current) fileInputRef.current.value = ''; };
+
+  const toggleTag = (catId: string) => {
+    setNewRef(prev => ({
+      ...prev,
+      selectedTags: prev.selectedTags.includes(catId)
+        ? prev.selectedTags.filter(id => id !== catId)
+        : [...prev.selectedTags, catId],
+    }));
+  };
 
   const updateCreditsMutation = useMutation({
     mutationFn: async ({ userId, credits }: { userId: string; credits: number }) => {
@@ -349,7 +392,7 @@ function AdminContent() {
                         <TableRow>
                           <TableHead className="w-[80px]">Imagem</TableHead>
                           <TableHead>Título</TableHead>
-                          <TableHead>Categoria</TableHead>
+                          <TableHead>Tags</TableHead>
                           <TableHead className="max-w-[200px]">Prompt</TableHead>
                           <TableHead className="w-[100px]">Ações</TableHead>
                         </TableRow>
@@ -362,7 +405,13 @@ function AdminContent() {
                             </TableCell>
                             <TableCell className="font-medium">{ref.title}</TableCell>
                             <TableCell>
-                              <Badge variant="secondary">{categories.find((c) => c.slug === ref.category)?.label || ref.category}</Badge>
+                              <div className="flex flex-wrap gap-1">
+                                {ref.tags.map(catId => {
+                                  const cat = categories.find(c => c.id === catId);
+                                  return cat ? <Badge key={catId} variant="secondary">{cat.label}</Badge> : null;
+                                })}
+                                {ref.tags.length === 0 && <span className="text-muted-foreground text-xs">—</span>}
+                              </div>
                             </TableCell>
                             <TableCell className="max-w-[200px] truncate text-muted-foreground text-sm">{ref.prompt}</TableCell>
                             <TableCell>
@@ -421,11 +470,19 @@ function AdminContent() {
             <div><Label>Título</Label><Input value={newRef.title} onChange={(e) => setNewRef({ ...newRef, title: e.target.value })} /></div>
             <div><Label>Prompt</Label><Textarea value={newRef.prompt} onChange={(e) => setNewRef({ ...newRef, prompt: e.target.value })} /></div>
             <div>
-              <Label>Categoria</Label>
-              <Select value={newRef.category} onValueChange={(v) => setNewRef({ ...newRef, category: v })}>
-                <SelectTrigger><SelectValue placeholder="Selecione uma categoria" /></SelectTrigger>
-                <SelectContent>{categories.map((cat) => (<SelectItem key={cat.id} value={cat.slug}>{cat.label}</SelectItem>))}</SelectContent>
-              </Select>
+              <Label>Tags / Categorias</Label>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {categories.map((cat) => (
+                  <Badge
+                    key={cat.id}
+                    variant={newRef.selectedTags.includes(cat.id) ? "default" : "outline"}
+                    className="cursor-pointer transition-colors"
+                    onClick={() => toggleTag(cat.id)}
+                  >
+                    {cat.label}
+                  </Badge>
+                ))}
+              </div>
             </div>
             <div>
               <Label>Imagem</Label>

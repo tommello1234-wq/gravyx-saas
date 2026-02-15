@@ -4,14 +4,13 @@ export interface PlanConfig {
   label: string;
   creditsMonth: number;
   maxProjects: number; // -1 = unlimited
-  libraryLimit: number; // -1 = unlimited, max visible images in library
 }
 
 export const PLAN_LIMITS: Record<TierKey, PlanConfig> = {
-  free: { label: 'Free', creditsMonth: 5, maxProjects: 1, libraryLimit: 3 },
-  starter: { label: 'Starter', creditsMonth: 80, maxProjects: 3, libraryLimit: -1 },
-  premium: { label: 'Premium', creditsMonth: 250, maxProjects: -1, libraryLimit: -1 },
-  enterprise: { label: 'Enterprise', creditsMonth: 600, maxProjects: -1, libraryLimit: -1 },
+  free: { label: 'Free', creditsMonth: 5, maxProjects: 1 },
+  starter: { label: 'Starter', creditsMonth: 80, maxProjects: 3 },
+  premium: { label: 'Premium', creditsMonth: 250, maxProjects: -1 },
+  enterprise: { label: 'Enterprise', creditsMonth: 600, maxProjects: -1 },
 };
 
 export const ALL_TIERS: TierKey[] = ['free', 'starter', 'premium', 'enterprise'];
