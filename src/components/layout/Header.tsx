@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuth } from '@/contexts/AuthContext';
-import { User, LogOut, LayoutGrid, Images, Library, Shield, Coins, CreditCard, UserPen } from 'lucide-react';
+import { User, LogOut, LayoutGrid, Images, Library, Shield, Coins, CreditCard, UserPen, GraduationCap } from 'lucide-react';
 import { BuyCreditsModal } from '@/components/BuyCreditsModal';
 import { EditProfileModal } from '@/components/EditProfileModal';
 import gravyxLogo from '@/assets/gravyx-logo.webp';
@@ -19,6 +19,7 @@ const navItems = [
   { path: '/projects', label: 'Projetos', icon: LayoutGrid },
   { path: '/gallery', label: 'Galeria', icon: Images },
   { path: '/library', label: 'Biblioteca', icon: Library },
+  { path: 'https://app.upwardacademy.com.br/', label: 'Treinamentos', icon: GraduationCap, external: true },
 ];
 
 export function Header() {
@@ -50,6 +51,16 @@ export function Header() {
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = location.pathname === item.path;
+              if ('external' in item && item.external) {
+                return (
+                  <a key={item.path} href={item.path} target="_blank" rel="noopener noreferrer">
+                    <Button variant="ghost" size="sm" className="rounded-full gap-2">
+                      <Icon className="h-4 w-4" />
+                      {item.label}
+                    </Button>
+                  </a>
+                );
+              }
               return (
                 <Link key={item.path} to={item.path}>
                   <Button
