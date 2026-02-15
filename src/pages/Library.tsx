@@ -98,10 +98,13 @@ export default function Library() {
     return img.tags.includes(selectedCategory);
   }) || [];
 
-  // Build filter options with "Todas" first
+  // Build filter options: "Todas" first, then "Grátis", then the rest
+  const freeCategory = categories.find(c => c.slug === 'free');
+  const otherCategories = categories.filter(c => c.slug !== 'free');
   const filterOptions = [
     { value: 'all', label: 'Todas' },
-    ...categories.map(cat => ({ value: cat.slug, label: cat.label }))
+    ...(freeCategory ? [{ value: freeCategory.slug, label: freeCategory.label }] : []),
+    ...otherCategories.map(cat => ({ value: cat.slug, label: cat.label }))
   ];
 
   const getCategoryLabel = (slug: string) => {
@@ -127,7 +130,13 @@ export default function Library() {
               key={cat.value}
               variant={selectedCategory === cat.value ? 'default' : 'outline'}
               size="sm"
-              className="rounded-full"
+              className={`rounded-full ${
+                cat.value === 'all' && selectedCategory === cat.value
+                  ? 'bg-gradient-to-r from-[hsl(var(--gradient-start))] via-[hsl(var(--gradient-mid))] to-[hsl(var(--gradient-end))] border-0 text-foreground'
+                  : cat.value === 'all'
+                  ? 'border-primary/50'
+                  : ''
+              }`}
               onClick={() => setSelectedCategory(cat.value)}
             >
               {cat.label}
