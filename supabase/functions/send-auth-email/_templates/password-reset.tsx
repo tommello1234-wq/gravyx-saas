@@ -8,10 +8,9 @@ import { BaseLayout, styles, colors } from './base-layout.tsx'
 
 interface PasswordResetEmailProps {
   resetUrl: string
-  token?: string
 }
 
-export const PasswordResetEmail = ({ resetUrl, token }: PasswordResetEmailProps) => (
+export const PasswordResetEmail = ({ resetUrl }: PasswordResetEmailProps) => (
   <BaseLayout preview="Redefina sua senha do Gravyx de forma segura.">
     <Text style={styles.title}>
       Redefinir Senha 🔐
@@ -24,18 +23,6 @@ export const PasswordResetEmail = ({ resetUrl, token }: PasswordResetEmailProps)
     <Link href={resetUrl} style={styles.button}>
       Redefinir Senha
     </Link>
-
-    {token && (
-      <>
-        <Hr style={styles.hr} />
-        <Text style={{ ...styles.text, marginBottom: '8px' }}>
-          Ou use este código de verificação:
-        </Text>
-        <div style={styles.codeContainer}>
-          <Text style={styles.code}>{token}</Text>
-        </div>
-      </>
-    )}
 
     <Hr style={styles.hr} />
 

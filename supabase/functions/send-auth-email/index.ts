@@ -137,7 +137,6 @@ Deno.serve(async (req) => {
         html = await renderAsync(
           React.createElement(WelcomeEmail, {
             confirmationUrl,
-            token,
           })
         )
         subject = 'Bem-vindo ao Gravyx! Confirme seu email 🎉'
@@ -149,7 +148,6 @@ Deno.serve(async (req) => {
         html = await renderAsync(
           React.createElement(MagicLinkEmail, {
             magicLinkUrl,
-            token,
           })
         )
         subject = 'Seu link de acesso ao Gravyx ✨'
@@ -174,7 +172,6 @@ Deno.serve(async (req) => {
         html = await renderAsync(
           React.createElement(PasswordResetEmail, {
             resetUrl,
-            token,
           })
         )
         subject = 'Redefinir sua senha do Gravyx 🔐'
@@ -186,7 +183,6 @@ Deno.serve(async (req) => {
         html = await renderAsync(
           React.createElement(EmailChangeEmail, {
             confirmationUrl,
-            token,
           })
         )
         subject = 'Confirme seu novo email no Gravyx 📧'
