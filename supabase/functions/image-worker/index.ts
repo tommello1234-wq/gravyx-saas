@@ -156,7 +156,7 @@ serve(async (req) => {
   if (!LOVABLE_API_KEY) {
     console.error("LOVABLE_API_KEY is not configured");
     return new Response(
-      JSON.stringify({ error: "LOVABLE_API_KEY is not configured" }),
+      JSON.stringify({ error: "Server configuration error" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
@@ -173,7 +173,7 @@ serve(async (req) => {
     if (claimError) {
       console.error("Error claiming job:", claimError);
       return new Response(
-        JSON.stringify({ error: "Failed to claim job", details: claimError.message }),
+        JSON.stringify({ error: "Failed to claim job" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

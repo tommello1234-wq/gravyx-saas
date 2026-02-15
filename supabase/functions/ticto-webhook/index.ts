@@ -321,7 +321,7 @@ Deno.serve(async (req: Request) => {
   if (updateError) {
     console.error('Erro ao atualizar créditos:', updateError);
     await logWebhook(supabase, status, body, false, `Failed to update credits: ${updateError.message}`);
-    return new Response('Failed to update credits', { status: 500, headers: corsHeaders });
+    return new Response('Processing failed', { status: 500, headers: corsHeaders });
   }
 
   // Registrar compra

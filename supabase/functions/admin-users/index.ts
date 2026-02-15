@@ -148,7 +148,7 @@ serve(async (req) => {
 
       if (error) {
         console.error("Error generating link:", error);
-        return new Response(JSON.stringify({ error: error.message }), {
+        return new Response(JSON.stringify({ error: "Failed to generate invite link" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -200,7 +200,7 @@ serve(async (req) => {
 
       if (error) {
         console.error("Error deleting user:", error);
-        return new Response(JSON.stringify({ error: error.message }), {
+        return new Response(JSON.stringify({ error: "Failed to delete user" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
