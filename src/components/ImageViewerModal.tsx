@@ -19,6 +19,7 @@ interface ImageViewerModalProps {
     category?: string;
     aspectRatio?: string;
     createdAt?: string;
+    submittedBy?: { name: string | null; avatar_url: string | null } | null;
   } | null;
   showDownload?: boolean;
 }
@@ -86,6 +87,21 @@ export function ImageViewerModal({
                     {image.category}
                   </span>
                 )}
+              </div>
+            )}
+
+            {image.submittedBy && (
+              <div className="flex items-center gap-2 text-sm">
+                {image.submittedBy.avatar_url ? (
+                  <img src={image.submittedBy.avatar_url} alt="" className="w-5 h-5 rounded-full object-cover" />
+                ) : (
+                  <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary">
+                    {(image.submittedBy.name || '?')[0].toUpperCase()}
+                  </div>
+                )}
+                <span className="text-muted-foreground">
+                  Contribuição de <strong className="text-foreground">{image.submittedBy.name || 'Usuário'}</strong>
+                </span>
               </div>
             )}
 

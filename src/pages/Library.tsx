@@ -7,11 +7,13 @@ import {
   Loader2, 
   Library as LibraryIcon,
   Lock,
+  Gift,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ImageViewerModal } from '@/components/ImageViewerModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { BuyCreditsModal } from '@/components/BuyCreditsModal';
+import { SubmitToLibraryModal } from '@/components/SubmitToLibraryModal';
 
 interface ReferenceImageWithTags {
   id: string;
@@ -20,6 +22,8 @@ interface ReferenceImageWithTags {
   category: string;
   image_url: string;
   tags: string[];
+  submitted_by: string | null;
+  contributor?: { name: string | null; avatar_url: string | null } | null;
 }
 
 interface ReferenceCategory {
@@ -32,6 +36,7 @@ export default function Library() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedImage, setSelectedImage] = useState<ReferenceImageWithTags | null>(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
   const { profile } = useAuth();
   
   const tier = (profile?.tier || 'free') as string;
@@ -85,9 +90,23 @@ export default function Library() {
         tagsByImage.set(t.image_id, arr);
       }
 
+      // Fetch contributor profiles
+      const submitterIds = [...new Set(images.filter(img => img.submitted_by).map(img => img.submitted_by))];
+      let profileMap = new Map<string, { name: string | null; avatar_url: string | null }>();
+      if (submitterIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('user_id, display_name, avatar_url')
+          .in('user_id', submitterIds);
+        profileMap = new Map(
+          (profiles || []).map(p => [p.user_id, { name: p.display_name, avatar_url: p.avatar_url }])
+        );
+      }
+
       return images.map(img => ({
         ...img,
         tags: tagsByImage.get(img.id) || [],
+        contributor: img.submitted_by ? profileMap.get(img.submitted_by) || null : null,
       })) as ReferenceImageWithTags[];
     },
   });
@@ -116,11 +135,21 @@ export default function Library() {
       <Header />
       
       <main className="container py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Biblioteca</h1>
-          <p className="text-muted-foreground">
-            Explore imagens de referência e copie os prompts
-          </p>
+        <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold mb-2">Biblioteca</h1>
+            <p className="text-muted-foreground">
+              Explore imagens de referência e copie os prompts
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            className="shrink-0 gap-2 border-primary/30 hover:border-primary/60"
+            onClick={() => isFree ? setShowUpgrade(true) : setShowSubmitModal(true)}
+          >
+            <Gift className="h-4 w-4 text-primary" />
+            Contribuir e ganhar créditos
+          </Button>
         </div>
 
         {/* Category Filter */}
@@ -244,10 +273,12 @@ export default function Library() {
           title: selectedImage.title,
           prompt: selectedImage.prompt,
           category: selectedImage.tags.filter(t => t !== 'free').map(getCategoryLabel).join(', '),
+          submittedBy: selectedImage.contributor,
         } : null}
       />
 
       <BuyCreditsModal open={showUpgrade} onOpenChange={setShowUpgrade} />
+      <SubmitToLibraryModal open={showSubmitModal} onOpenChange={setShowSubmitModal} />
     </div>
   );
 }
