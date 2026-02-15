@@ -37,10 +37,10 @@ export default function Library() {
   const [selectedImage, setSelectedImage] = useState<ReferenceImageWithTags | null>(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
-  const { profile } = useAuth();
+  const { profile, isAdmin } = useAuth();
   
   const tier = (profile?.tier || 'free') as string;
-  const isFree = tier === 'free';
+  const isFree = tier === 'free' && !isAdmin;
 
   // Fetch categories from database
   const { data: categories = [] } = useQuery({
