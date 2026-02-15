@@ -8,10 +8,9 @@ import { BaseLayout, styles, colors } from './base-layout.tsx'
 
 interface WelcomeEmailProps {
   confirmationUrl: string
-  token?: string
 }
 
-export const WelcomeEmail = ({ confirmationUrl, token }: WelcomeEmailProps) => (
+export const WelcomeEmail = ({ confirmationUrl }: WelcomeEmailProps) => (
   <BaseLayout preview="Bem-vindo ao Gravyx! Confirme seu email para começar a criar imagens incríveis com IA.">
     <Text style={styles.title}>
       Bem-vindo ao Gravyx! 🎉
@@ -24,18 +23,6 @@ export const WelcomeEmail = ({ confirmationUrl, token }: WelcomeEmailProps) => (
     <Link href={confirmationUrl} style={styles.button}>
       Confirmar Email
     </Link>
-
-    {token && (
-      <>
-        <Hr style={styles.hr} />
-        <Text style={{ ...styles.text, marginBottom: '8px' }}>
-          Ou use este código de confirmação:
-        </Text>
-        <div style={styles.codeContainer}>
-          <Text style={styles.code}>{token}</Text>
-        </div>
-      </>
-    )}
 
     <Hr style={styles.hr} />
 

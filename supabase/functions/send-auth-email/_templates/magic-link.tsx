@@ -8,10 +8,9 @@ import { BaseLayout, styles, colors } from './base-layout.tsx'
 
 interface MagicLinkEmailProps {
   magicLinkUrl: string
-  token?: string
 }
 
-export const MagicLinkEmail = ({ magicLinkUrl, token }: MagicLinkEmailProps) => (
+export const MagicLinkEmail = ({ magicLinkUrl }: MagicLinkEmailProps) => (
   <BaseLayout preview="Seu link de acesso ao Gravyx está aqui! Clique para entrar.">
     <Text style={styles.title}>
       Acesse sua conta ✨
@@ -24,18 +23,6 @@ export const MagicLinkEmail = ({ magicLinkUrl, token }: MagicLinkEmailProps) => 
     <Link href={magicLinkUrl} style={styles.button}>
       Entrar no Gravyx
     </Link>
-
-    {token && (
-      <>
-        <Hr style={styles.hr} />
-        <Text style={{ ...styles.text, marginBottom: '8px' }}>
-          Ou use este código de acesso:
-        </Text>
-        <div style={styles.codeContainer}>
-          <Text style={styles.code}>{token}</Text>
-        </div>
-      </>
-    )}
 
     <Hr style={styles.hr} />
 

@@ -8,11 +8,10 @@ import { BaseLayout, styles, colors } from './base-layout.tsx'
 
 interface EmailChangeEmailProps {
   confirmationUrl: string
-  token?: string
   newEmail?: string
 }
 
-export const EmailChangeEmail = ({ confirmationUrl, token, newEmail }: EmailChangeEmailProps) => (
+export const EmailChangeEmail = ({ confirmationUrl, newEmail }: EmailChangeEmailProps) => (
   <BaseLayout preview="Confirme a alteração do seu email no Gravyx.">
     <Text style={styles.title}>
       Confirmar Novo Email 📧
@@ -29,18 +28,6 @@ export const EmailChangeEmail = ({ confirmationUrl, token, newEmail }: EmailChan
     <Link href={confirmationUrl} style={styles.button}>
       Confirmar Alteração
     </Link>
-
-    {token && (
-      <>
-        <Hr style={styles.hr} />
-        <Text style={{ ...styles.text, marginBottom: '8px' }}>
-          Ou use este código de confirmação:
-        </Text>
-        <div style={styles.codeContainer}>
-          <Text style={styles.code}>{token}</Text>
-        </div>
-      </>
-    )}
 
     <Hr style={styles.hr} />
 
