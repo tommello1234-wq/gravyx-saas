@@ -32,7 +32,7 @@ const plans: PlanInfo[] = [
     description: 'Para quem está começando a criar com IA',
     monthly: { price: 'R$ 79', credits: 80, checkout: 'https://checkout.ticto.app/O7A4C2615' },
     annual: { price: 'R$ 420/ano', installment: 'R$ 43,44', credits: 1000, checkout: 'https://checkout.ticto.app/OA871890B' },
-    features: ['80 créditos/mês', '3 projetos', 'Acesso à biblioteca', 'Suporte por email'],
+    features: ['80 créditos/mês', 'Até 3 projetos ativos', 'Templates essenciais', 'Acesso completo à biblioteca de referências'],
   },
   {
     tier: 'premium',
@@ -42,7 +42,7 @@ const plans: PlanInfo[] = [
     description: 'Para criativos que buscam uso ilimitado e flexível',
     monthly: { price: 'R$ 167', credits: 250, checkout: 'https://checkout.ticto.app/O465B8044' },
     annual: { price: 'R$ 1.097/ano', installment: 'R$ 91,42', credits: 3000, checkout: 'https://checkout.ticto.app/O06B270AF' },
-    features: ['250 créditos/mês', 'Projetos ilimitados', 'Templates exclusivos', 'Suporte prioritário'],
+    features: ['250 créditos/mês', 'Projetos ilimitados', 'Acesso a todos os Templates de Fluxos', 'Acesso completo à biblioteca de referências'],
   },
   {
     tier: 'enterprise',
@@ -51,7 +51,7 @@ const plans: PlanInfo[] = [
     description: 'Para profissionais escalando sua produção de conteúdo',
     monthly: { price: 'R$ 347', credits: 600, checkout: 'https://checkout.ticto.app/O8AA396EB' },
     annual: { price: 'R$ 2.597/ano', installment: 'R$ 216,42', credits: 7200, checkout: 'https://checkout.ticto.app/OA8BDDA9B' },
-    features: ['600 créditos/mês', 'Projetos ilimitados', 'API access', 'Suporte dedicado'],
+    features: ['600 créditos/mês', 'Projetos ilimitados', 'Acesso a todos os Templates de Fluxos', 'Acesso completo à biblioteca de referências', 'Acesso antecipado a novas ferramentas'],
   },
 ];
 
