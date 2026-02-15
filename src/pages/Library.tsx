@@ -142,14 +142,16 @@ export default function Library() {
               Explore imagens de referência e copie os prompts
             </p>
           </div>
-          <Button
-            variant="outline"
-            className="shrink-0 gap-2 border-primary/30 hover:border-primary/60"
-            onClick={() => isFree ? setShowUpgrade(true) : setShowSubmitModal(true)}
-          >
-            <Gift className="h-4 w-4 text-primary" />
-            Contribuir e ganhar créditos
-          </Button>
+          {!isFree && (
+            <Button
+              variant="outline"
+              className="shrink-0 gap-2 border-primary/30 hover:border-primary/60"
+              onClick={() => setShowSubmitModal(true)}
+            >
+              <Gift className="h-4 w-4 text-primary" />
+              Contribuir e ganhar créditos
+            </Button>
+          )}
         </div>
 
         {/* Category Filter */}
