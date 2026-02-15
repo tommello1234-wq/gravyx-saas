@@ -457,6 +457,7 @@ export default function Home() {
         onCreateFromTemplate={(name, templateId) => createMutation.mutate({ name, templateId })}
         isCreating={createMutation.isPending}
         userTier={tier}
+        isAdmin={isAdmin}
       />
       <BuyCreditsModal open={showBuyCredits} onOpenChange={setShowBuyCredits} />
     </div>

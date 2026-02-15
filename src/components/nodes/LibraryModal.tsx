@@ -44,10 +44,10 @@ export function LibraryModal({ open, onOpenChange, onSelect }: LibraryModalProps
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const { toast } = useToast();
-  const { profile } = useAuth();
+  const { profile, isAdmin } = useAuth();
 
   const tier = (profile?.tier || 'free') as string;
-  const isFree = tier === 'free';
+  const isFree = tier === 'free' && !isAdmin;
 
   // Fetch categories
   const { data: categories = [] } = useQuery({
