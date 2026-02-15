@@ -257,7 +257,7 @@ export default function Home() {
         </motion.section>
 
         {/* ===== RECENT GENERATIONS ===== */}
-        <motion.section variants={stagger} initial="hidden" animate="show">
+        <motion.section key={`recent-${recentImages?.length ?? 'loading'}`} variants={stagger} initial="hidden" animate="show">
           <div className="flex items-center justify-between mb-5">
             <h2 className="text-xl font-semibold flex items-center gap-2">
               <Image className="h-5 w-5 text-primary" />
