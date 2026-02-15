@@ -1,90 +1,34 @@
 
 
-## Sistema de Contribuicoes da Comunidade para a Biblioteca
+## Corrigir erro "insertBefore" no DOM (Windows/Extensoes de navegador)
 
-### Resumo
+### Diagnostico
 
-Permitir que usuarios com plano ativo enviem imagens para a biblioteca. As submissoes passam por aprovacao do admin. Ao aprovar, o usuario ganha 2 creditos. A imagem aparece na biblioteca com atribuicao ao autor.
+O erro **"Falha ao executar 'insertBefore' em 'Node'"** e um problema classico do React causado por **extensoes de navegador** (Google Translate, Grammarly, ad blockers, etc.) que modificam o DOM diretamente. Quando o React tenta reconciliar seu Virtual DOM com o DOM real que foi alterado externamente, ele nao encontra os nos esperados e lanca esse erro.
 
-### Mudancas
+Isso explica por que acontece apenas no Windows do usuario (provavelmente tem extensoes ativas naquele navegador).
 
-#### 1. Banco de dados (migracao SQL)
+### Solucao
 
-**Nova tabela `community_submissions`**
+Duas frentes de correcao:
 
-| Coluna | Tipo | Descricao |
-|---|---|---|
-| id | uuid PK | ID da submissao |
-| user_id | uuid NOT NULL | Quem enviou |
-| title | text NOT NULL | Titulo da imagem |
-| prompt | text NOT NULL | Prompt usado |
-| image_url | text NOT NULL | URL no storage |
-| status | text default 'pending' | pending, approved, rejected |
-| admin_note | text nullable | Motivo de rejeicao |
-| created_at | timestamptz | Data de envio |
-| reviewed_at | timestamptz nullable | Data da revisao |
-| reviewed_by | uuid nullable | Admin que revisou |
+**1. Prevenir a interferencia externa no DOM**
+- Adicionar `translate="no"` e `class="notranslate"` no elemento `<html>` do `index.html` para impedir que o Google Translate modifique o DOM
+- Adicionar meta tag `<meta name="google" content="notranslate" />`
 
-**Nova coluna em `reference_images`**
-
-- `submitted_by` (uuid, nullable) -- para creditar o autor
-
-**RLS em `community_submissions`**
-
-- Usuarios autenticados: INSERT e SELECT apenas nos proprios registros
-- Admins: SELECT e UPDATE em todos
-
-**Storage policy**
-
-- Adicionar policy para usuarios autenticados fazerem upload no bucket `reference-images` na pasta `submissions/{user_id}/`
-
-#### 2. Novo componente `src/components/SubmitToLibraryModal.tsx`
-
-Modal com:
-
-- Informativo no topo: "Envie imagens geradas por voce aqui no GravyX, ou materiais que o GravyX te ajudou a criar: criativos, flyers, banners..."
-- Campo: Titulo
-- Campo: Prompt utilizado
-- Selecao de categoria (mesma lista de categorias existentes, excluindo "free")
-- Upload de imagem (para `reference-images/submissions/{user_id}/{timestamp}.ext`)
-- Botao "Enviar para revisao"
-- Mensagem de sucesso: "Sua imagem foi enviada! Voce ganhara 2 creditos quando for aprovada."
-
-Validacao: titulo, prompt e imagem sao obrigatorios. Apenas usuarios com plano diferente de `free` podem enviar.
-
-#### 3. Atualizar `src/pages/Library.tsx`
-
-- Adicionar botao "Contribuir com a biblioteca" ao lado do titulo/descricao
-- Icone de presente ou estrela
-- Subtexto: "Envie e ganhe creditos gratis!"
-- Visivel para todos, mas ao clicar:
-  - Se free: abre o modal de upgrade
-  - Se plano pago: abre o `SubmitToLibraryModal`
-
-#### 4. Atualizar `src/pages/Admin.tsx` - Aba Biblioteca
-
-Adicionar secao "Submissoes da Comunidade" na aba biblioteca do admin:
-
-- Lista de submissoes pendentes com: preview da imagem, titulo, prompt, nome/email do usuario
-- Botao "Aprovar": abre mini-dialog para selecionar tags, depois:
-  1. Cria registro em `reference_images` com `submitted_by = submission.user_id`
-  2. Insere tags em `reference_image_tags`
-  3. Incrementa +2 creditos no perfil do usuario (via update direto na tabela profiles, somando ao saldo atual)
-  4. Atualiza status da submission para `approved`
-- Botao "Rejeitar": atualiza status para `rejected`, opcionalmente com nota
-
-#### 5. Atualizar `src/components/ImageViewerModal.tsx`
-
-- Aceitar campo opcional `submittedBy` com nome e avatar
-- Exibir "Contribuicao de [Nome]" + avatar quando a imagem tiver autor
-- A query na Library precisa buscar o `submitted_by` e fazer join com `profiles` para pegar `display_name` e `avatar_url`
+**2. Tornar o ErrorBoundary resiliente a esse erro especifico**
+- Detectar quando o erro e do tipo "insertBefore"/"removeChild" (erros de manipulacao DOM externa)
+- Ao inves de mostrar a tela de erro, fazer auto-recovery automatico (re-render silencioso)
+- Limitar tentativas automaticas (max 3) para evitar loop infinito
+- Se exceder o limite, ai sim mostrar a tela de erro normalmente
 
 ### Detalhes tecnicos
 
-- Upload usa o bucket `reference-images` existente (publico), pasta `submissions/`
-- Creditos sao somados via `UPDATE profiles SET credits = credits + 2 WHERE user_id = X` (admin ja tem policy de update)
-- Todas as queries usam `@tanstack/react-query`
-- O modal de submissao segue o mesmo padrao visual do `CreateProjectModal`
-- Animacoes com `framer-motion`
-- Icones com `lucide-react`
+**`index.html`**: Adicionar atributos anti-traducao no `<html>` e meta tag google notranslate.
+
+**`src/components/ErrorBoundary.tsx`**:
+- Adicionar contador de retries no state
+- No `getDerivedStateFromError`, verificar se a mensagem contem "insertBefore", "removeChild", ou "not a child"
+- Se for erro de DOM externo e retries < 3: retornar `{ hasError: false, retries: retries + 1 }` (auto-recovery)
+- Se exceder limite ou for outro tipo de erro: mostrar a UI de erro atual
 
