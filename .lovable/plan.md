@@ -1,46 +1,30 @@
 
 
-## Correção: Imagens Duplicadas no Nó de Resultado
+## Remover codigo de confirmacao do email de boas-vindas
 
-### Problema Identificado
-
-Existem **dois mecanismos** que adicionam imagens ao nó de resultado, e eles podem correr em paralelo causando duplicação:
-
-1. **`handleJobCompleted`** (Editor.tsx, linha 274): Quando um job termina, ele **ADICIONA** (append) as novas URLs ao array de imagens do nó.
-2. **Polling fallback** (Editor.tsx, linha 897): A cada 5 segundos, ele lê TODAS as imagens do banco de dados e **SUBSTITUI** o array inteiro do nó.
-
-A corrida acontece assim:
-1. O worker salva as imagens no banco e marca o job como `completed`
-2. O polling fallback dispara, lê o banco (que já tem as novas imagens), e substitui o array do nó com [A, B, C, D]
-3. Logo em seguida, o Realtime dispara o `handleJobCompleted`, que faz append de [C, D] nas imagens que ja estao no nó
-4. Resultado: o nó fica com [A, B, C, D, C, D] -- as duas novas imagens aparecem duplicadas
-
-Ao recarregar a página, só o carregamento inicial do banco roda, e mostra os dados corretos.
+### Problema
+O email de boas-vindas mostra um codigo numerico de confirmacao (ex: "89246788") abaixo do botao "Confirmar Email". Esse codigo e desnecessario porque:
+- Nao existe tela no app para digitar o codigo
+- O botao "Confirmar Email" ja faz a confirmacao completa via link
 
 ### Solucao
-
-Adicionar **deduplicação por URL** no `handleJobCompleted`. Antes de fazer append, filtrar as URLs que já existem no array de imagens do nó. Isso garante que mesmo que o polling fallback já tenha adicionado as imagens, o callback não as duplique.
+Remover a secao do token de todos os templates de email que a exibem, ja que o fluxo do app usa apenas o link de confirmacao.
 
 ### Detalhes Tecnicos
 
-**Arquivo**: `src/pages/Editor.tsx`
+**Arquivos a alterar:**
 
-Na funcao `handleJobCompleted` (por volta da linha 274-288), alterar a logica de append para:
+1. **`supabase/functions/send-auth-email/_templates/welcome.tsx`** - Remover o bloco condicional `{token && (...)}` que renderiza o separador, texto "Ou use este codigo" e o container com o codigo.
 
-1. Ler as imagens existentes do nó (`existingImages`)
-2. Criar um `Set` com as URLs existentes
-3. Filtrar `newImages` removendo qualquer imagem cuja URL ja exista no Set
-4. Fazer append apenas das imagens realmente novas
+2. **`supabase/functions/send-auth-email/_templates/magic-link.tsx`** - Verificar e remover a mesma secao de token se existir.
 
-```text
-Antes:
-  images: [...existingImages, ...newImages]
+3. **`supabase/functions/send-auth-email/_templates/password-reset.tsx`** - Verificar e remover a mesma secao de token se existir.
 
-Depois:
-  const existingUrls = new Set(existingImages.map(img => typeof img === 'string' ? img : img.url));
-  const uniqueNewImages = newImages.filter(img => !existingUrls.has(img.url));
-  images: [...existingImages, ...uniqueNewImages]
-```
+4. **`supabase/functions/send-auth-email/_templates/email-change.tsx`** - Verificar e remover a mesma secao de token se existir.
 
-Essa alteracao e minima (3 linhas) e resolve o problema na raiz sem afetar nenhum outro fluxo.
+5. **`supabase/functions/send-auth-email/index.ts`** - Remover a passagem da prop `token` nos `React.createElement` de cada template, ja que nao sera mais usada.
+
+6. **Deploy** da edge function `send-auth-email` apos as alteracoes.
+
+Os emails ficarao apenas com o botao de acao (Confirmar Email, Redefinir Senha, etc.) seguido do disclaimer, sem a secao de codigo.
 
