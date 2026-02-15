@@ -9,19 +9,46 @@ interface Props {
 interface State {
   hasError: boolean;
   error: Error | null;
+  retries: number;
 }
+
+const isDomManipulationError = (error: Error): boolean => {
+  const msg = error.message?.toLowerCase() || '';
+  return (
+    msg.includes('insertbefore') ||
+    msg.includes('removechild') ||
+    msg.includes('not a child') ||
+    msg.includes('removenode') ||
+    msg.includes('the node to be removed is not a child')
+  );
+};
+
+const MAX_AUTO_RETRIES = 3;
 
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, retries: 0 };
   }
 
-  static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): Partial<State> | null {
     return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    if (isDomManipulationError(error) && this.state.retries < MAX_AUTO_RETRIES) {
+      console.warn('[ErrorBoundary] DOM manipulation error detected, auto-recovering...', {
+        attempt: this.state.retries + 1,
+        message: error.message,
+      });
+      this.setState(prev => ({
+        hasError: false,
+        error: null,
+        retries: prev.retries + 1,
+      }));
+      return;
+    }
+
     console.error('[ErrorBoundary]', error.message, {
       stack: error.stack,
       componentStack: errorInfo.componentStack,
@@ -29,7 +56,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   handleRetry = () => {
-    this.setState({ hasError: false, error: null });
+    this.setState({ hasError: false, error: null, retries: 0 });
   };
 
   handleReload = () => {
