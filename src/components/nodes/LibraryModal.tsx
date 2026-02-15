@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
-import { getTierConfig } from '@/lib/plan-limits';
 import {
   Dialog,
   DialogContent,
@@ -16,9 +15,17 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Copy, Search, Loader2, Lock } from 'lucide-react';
 import { BuyCreditsModal } from '@/components/BuyCreditsModal';
-import type { Tables } from '@/integrations/supabase/types';
 
-type ReferenceImage = Tables<'reference_images'>;
+interface ReferenceImageWithTags {
+  id: string;
+  title: string;
+  prompt: string;
+  category: string;
+  image_url: string;
+  created_at: string;
+  created_by: string | null;
+  tags: string[];
+}
 
 interface ReferenceCategory {
   id: string;
@@ -29,7 +36,7 @@ interface ReferenceCategory {
 interface LibraryModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSelect: (image: ReferenceImage) => void;
+  onSelect: (image: ReferenceImageWithTags) => void;
 }
 
 export function LibraryModal({ open, onOpenChange, onSelect }: LibraryModalProps) {
@@ -40,8 +47,7 @@ export function LibraryModal({ open, onOpenChange, onSelect }: LibraryModalProps
   const { profile } = useAuth();
 
   const tier = (profile?.tier || 'free') as string;
-  const { libraryLimit } = getTierConfig(tier);
-  const isLimited = libraryLimit !== -1;
+  const isFree = tier === 'free';
 
   // Fetch categories
   const { data: categories = [] } = useQuery({
@@ -57,15 +63,40 @@ export function LibraryModal({ open, onOpenChange, onSelect }: LibraryModalProps
     enabled: open,
   });
 
+  // Fetch images with tags
   const { data: images, isLoading } = useQuery({
-    queryKey: ['library-images'],
+    queryKey: ['library-images-with-tags'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data: imgs, error: imgError } = await supabase
         .from('reference_images')
         .select('*')
         .order('created_at', { ascending: false });
-      if (error) throw error;
-      return data;
+      if (imgError) throw imgError;
+
+      const { data: tags, error: tagError } = await supabase
+        .from('reference_image_tags')
+        .select('image_id, category_id');
+      if (tagError) throw tagError;
+
+      const { data: cats, error: catError } = await supabase
+        .from('reference_categories')
+        .select('id, slug');
+      if (catError) throw catError;
+
+      const catMap = new Map(cats.map(c => [c.id, c.slug]));
+      const tagsByImage = new Map<string, string[]>();
+      for (const t of tags) {
+        const slug = catMap.get(t.category_id);
+        if (!slug) continue;
+        const arr = tagsByImage.get(t.image_id) || [];
+        arr.push(slug);
+        tagsByImage.set(t.image_id, arr);
+      }
+
+      return imgs.map(img => ({
+        ...img,
+        tags: tagsByImage.get(img.id) || [],
+      })) as ReferenceImageWithTags[];
     },
     enabled: open,
   });
@@ -75,7 +106,7 @@ export function LibraryModal({ open, onOpenChange, onSelect }: LibraryModalProps
   };
 
   const filteredImages = images?.filter((img) => {
-    if (selectedCategory && img.category !== selectedCategory) {
+    if (selectedCategory && !img.tags.includes(selectedCategory)) {
       return false;
     }
     if (search) {
@@ -143,8 +174,8 @@ export function LibraryModal({ open, onOpenChange, onSelect }: LibraryModalProps
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {filteredImages?.map((image, index) => {
-                  const isLocked = isLimited && index >= libraryLimit;
+                {filteredImages?.map((image) => {
+                  const isLocked = isFree && !image.tags.includes('free');
 
                   return (
                     <div
@@ -173,9 +204,13 @@ export function LibraryModal({ open, onOpenChange, onSelect }: LibraryModalProps
                                 <p className="text-sm font-medium text-white truncate">
                                   {image.title}
                                 </p>
-                                <Badge variant="secondary" className="mt-1 text-xs">
-                                  {getCategoryLabel(image.category)}
-                                </Badge>
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {image.tags.filter(t => t !== 'free').map(tag => (
+                                    <Badge key={tag} variant="secondary" className="text-xs">
+                                      {getCategoryLabel(tag)}
+                                    </Badge>
+                                  ))}
+                                </div>
                               </div>
                               <Button
                                 variant="secondary"

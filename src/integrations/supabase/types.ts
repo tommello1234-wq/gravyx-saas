@@ -304,6 +304,39 @@ export type Database = {
         }
         Relationships: []
       }
+      reference_image_tags: {
+        Row: {
+          category_id: string
+          id: string
+          image_id: string
+        }
+        Insert: {
+          category_id: string
+          id?: string
+          image_id: string
+        }
+        Update: {
+          category_id?: string
+          id?: string
+          image_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reference_image_tags_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "reference_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reference_image_tags_image_id_fkey"
+            columns: ["image_id"]
+            isOneToOne: false
+            referencedRelation: "reference_images"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       reference_images: {
         Row: {
           category: string

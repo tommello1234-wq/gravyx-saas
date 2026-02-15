@@ -11,15 +11,15 @@ import {
 import { Button } from '@/components/ui/button';
 import { ImageViewerModal } from '@/components/ImageViewerModal';
 import { useAuth } from '@/contexts/AuthContext';
-import { getTierConfig } from '@/lib/plan-limits';
 import { BuyCreditsModal } from '@/components/BuyCreditsModal';
 
-interface ReferenceImage {
+interface ReferenceImageWithTags {
   id: string;
   title: string;
   prompt: string;
   category: string;
   image_url: string;
+  tags: string[];
 }
 
 interface ReferenceCategory {
@@ -30,13 +30,12 @@ interface ReferenceCategory {
 
 export default function Library() {
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [selectedImage, setSelectedImage] = useState<ReferenceImage | null>(null);
+  const [selectedImage, setSelectedImage] = useState<ReferenceImageWithTags | null>(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const { profile } = useAuth();
   
   const tier = (profile?.tier || 'free') as string;
-  const { libraryLimit } = getTierConfig(tier);
-  const isLimited = libraryLimit !== -1;
+  const isFree = tier === 'free';
 
   // Fetch categories from database
   const { data: categories = [] } = useQuery({
@@ -51,23 +50,53 @@ export default function Library() {
     },
   });
 
+  // Fetch all images with their tags via join
   const { data: references, isLoading } = useQuery({
-    queryKey: ['references', selectedCategory],
+    queryKey: ['library-images-with-tags'],
     queryFn: async () => {
-      let query = supabase
+      // Fetch images
+      const { data: images, error: imgError } = await supabase
         .from('reference_images')
         .select('*')
         .order('created_at', { ascending: false });
-      
-      if (selectedCategory !== 'all') {
-        query = query.eq('category', selectedCategory);
+      if (imgError) throw imgError;
+
+      // Fetch all tags
+      const { data: tags, error: tagError } = await supabase
+        .from('reference_image_tags')
+        .select('image_id, category_id');
+      if (tagError) throw tagError;
+
+      // Fetch categories for slug mapping
+      const { data: cats, error: catError } = await supabase
+        .from('reference_categories')
+        .select('id, slug');
+      if (catError) throw catError;
+
+      const catMap = new Map(cats.map(c => [c.id, c.slug]));
+
+      // Build tag arrays per image
+      const tagsByImage = new Map<string, string[]>();
+      for (const t of tags) {
+        const slug = catMap.get(t.category_id);
+        if (!slug) continue;
+        const arr = tagsByImage.get(t.image_id) || [];
+        arr.push(slug);
+        tagsByImage.set(t.image_id, arr);
       }
-      
-      const { data, error } = await query;
-      if (error) throw error;
-      return data as ReferenceImage[];
+
+      return images.map(img => ({
+        ...img,
+        tags: tagsByImage.get(img.id) || [],
+      })) as ReferenceImageWithTags[];
     },
   });
+
+  // Filter by selected category
+  const filteredImages = references?.filter(img => {
+    if (selectedCategory === 'all') return true;
+    return img.tags.includes(selectedCategory);
+  }) || [];
 
   // Build filter options with "Todas" first
   const filterOptions = [
@@ -78,9 +107,6 @@ export default function Library() {
   const getCategoryLabel = (slug: string) => {
     return categories.find(c => c.slug === slug)?.label || slug;
   };
-
-  const visibleImages = references || [];
-  const lockedCount = isLimited ? Math.max(0, visibleImages.length - libraryLimit) : 0;
 
   return (
     <div className="min-h-screen bg-background">
@@ -113,7 +139,7 @@ export default function Library() {
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
-        ) : references?.length === 0 ? (
+        ) : filteredImages.length === 0 ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -130,8 +156,8 @@ export default function Library() {
         ) : (
           <>
             <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-4 space-y-4">
-              {visibleImages.map((ref, index) => {
-                const isLocked = isLimited && index >= libraryLimit;
+              {filteredImages.map((ref, index) => {
+                const isLocked = isFree && !ref.tags.includes('free');
 
                 return (
                   <motion.div
@@ -163,9 +189,13 @@ export default function Library() {
                           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                           <div className="absolute bottom-0 left-0 right-0 p-4 translate-y-full group-hover:translate-y-0 transition-transform">
                             <p className="text-white font-medium truncate">{ref.title}</p>
-                            <p className="text-white/70 text-sm capitalize">
-                              {getCategoryLabel(ref.category)}
-                            </p>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {ref.tags.filter(t => t !== 'free').map(tag => (
+                                <span key={tag} className="text-white/70 text-sm capitalize">
+                                  {getCategoryLabel(tag)}
+                                </span>
+                              ))}
+                            </div>
                           </div>
                         </>
                       )}
@@ -175,7 +205,7 @@ export default function Library() {
               })}
             </div>
 
-            {lockedCount > 0 && (
+            {isFree && filteredImages.some(img => !img.tags.includes('free')) && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -183,7 +213,7 @@ export default function Library() {
               >
                 <Lock className="h-8 w-8 text-primary mx-auto mb-3" />
                 <h3 className="text-lg font-semibold mb-1">
-                  +{lockedCount} imagens bloqueadas
+                  Imagens bloqueadas
                 </h3>
                 <p className="text-muted-foreground text-sm mb-4">
                   Faça upgrade para ter acesso completo à biblioteca
@@ -204,7 +234,7 @@ export default function Library() {
           url: selectedImage.image_url,
           title: selectedImage.title,
           prompt: selectedImage.prompt,
-          category: getCategoryLabel(selectedImage.category),
+          category: selectedImage.tags.filter(t => t !== 'free').map(getCategoryLabel).join(', '),
         } : null}
       />
 

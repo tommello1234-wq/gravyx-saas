@@ -15,8 +15,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import type { Tables } from '@/integrations/supabase/types';
-type ReferenceImage = Tables<'reference_images'>;
+
+interface ReferenceImage {
+  id: string;
+  title: string;
+  prompt: string;
+  image_url: string;
+}
 
 interface MediaNodeData {
   label: string;
@@ -116,7 +121,7 @@ export const MediaNode = memo(({
     }
   };
 
-  const handleSelectFromLibrary = (image: ReferenceImage) => {
+  const handleSelectFromLibrary = (image: { image_url: string; prompt: string }) => {
     handleUrlChange(image.image_url, image.prompt);
     setShowLibrary(false);
     toast({
