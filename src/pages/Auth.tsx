@@ -27,7 +27,7 @@ export default function Auth() {
   const location = useLocation();
   const { toast } = useToast();
 
-  const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/projects';
+  const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/home';
 
   // Handle redirect if already logged in
   useEffect(() => {

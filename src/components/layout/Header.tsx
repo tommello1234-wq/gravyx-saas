@@ -10,12 +10,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuth } from '@/contexts/AuthContext';
-import { User, LogOut, LayoutGrid, Images, Library, Shield, Coins, CreditCard, UserPen, GraduationCap } from 'lucide-react';
+import { User, LogOut, LayoutGrid, Images, Library, Shield, Coins, CreditCard, UserPen, GraduationCap, Home } from 'lucide-react';
 import { BuyCreditsModal } from '@/components/BuyCreditsModal';
 import { EditProfileModal } from '@/components/EditProfileModal';
 import gravyxLogo from '@/assets/gravyx-logo.webp';
 
 const navItems = [
+  { path: '/home', label: 'Início', icon: Home },
   { path: '/projects', label: 'Projetos', icon: LayoutGrid },
   { path: '/gallery', label: 'Galeria', icon: Images },
   { path: '/library', label: 'Biblioteca', icon: Library },
@@ -41,7 +42,7 @@ export function Header() {
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 backdrop-blur-xl">
       <div className="container flex h-16 items-center justify-between">
         {/* Logo */}
-        <Link to={user ? "/projects" : "/auth"} className="flex items-center gap-2">
+        <Link to={user ? "/home" : "/auth"} className="flex items-center gap-2">
           <img src={gravyxLogo} alt="Gravyx" className="h-8" />
         </Link>
 
