@@ -77,15 +77,17 @@ export default function Home() {
   const tierConfig = getTierConfig(tier);
   const isFree = tier === 'free';
 
-  // Recent projects
-  const { data: projects } = useQuery({
-    queryKey: ['projects', user?.id],
+  // Recent generations
+  const { data: recentImages } = useQuery({
+    queryKey: ['home-recent-generations', user?.id],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('projects')
-        .select('id, name, created_at, updated_at')
+        .from('generations')
+        .select('id, prompt, image_url, created_at')
         .eq('user_id', user!.id)
-        .order('updated_at', { ascending: false })
+        .eq('status', 'completed')
+        .not('image_url', 'is', null)
+        .order('created_at', { ascending: false })
         .limit(6);
       if (error) throw error;
       return data;
@@ -254,51 +256,40 @@ export default function Home() {
           </div>
         </motion.section>
 
-        {/* ===== RECENT PROJECTS ===== */}
+        {/* ===== RECENT GENERATIONS ===== */}
         <motion.section variants={stagger} initial="hidden" animate="show">
           <div className="flex items-center justify-between mb-5">
             <h2 className="text-xl font-semibold flex items-center gap-2">
-              <LayoutGrid className="h-5 w-5 text-primary" />
+              <Image className="h-5 w-5 text-primary" />
               Suas criações recentes
             </h2>
-            {projects && projects.length > 0 && (
-              <Button variant="ghost" size="sm" className="gap-1" onClick={() => navigate('/projects')}>
+            {recentImages && recentImages.length > 0 && (
+              <Button variant="ghost" size="sm" className="gap-1" onClick={() => navigate('/gallery')}>
                 Ver tudo <ArrowRight className="h-4 w-4" />
               </Button>
             )}
           </div>
 
-          {!projects || projects.length === 0 ? (
+          {!recentImages || recentImages.length === 0 ? (
             <motion.div variants={fadeUp} className="glass-card p-10 text-center">
-              <FolderOpen className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground mb-4">Você ainda não criou nenhum projeto.</p>
+              <Image className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+              <p className="text-muted-foreground mb-4">Você ainda não gerou nenhuma imagem.</p>
               <Button onClick={() => setCreateOpen(true)} className="rounded-full gap-2">
                 <Plus className="h-4 w-4" /> Criar primeiro projeto
               </Button>
             </motion.div>
           ) : (
-            <motion.div variants={stagger} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {projects.map((p) => (
-                <motion.div key={p.id} variants={fadeUp}>
-                  <Card
-                    className="glass-card hover:border-primary/50 transition-all cursor-pointer group"
-                    onClick={() => navigate(`/app?project=${p.id}`)}
-                  >
-                    <CardContent className="p-5">
-                      <h3 className="font-semibold truncate group-hover:text-primary transition-colors mb-2">
-                        {p.name}
-                      </h3>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-muted-foreground flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          {format(new Date(p.updated_at), "d 'de' MMM", { locale: ptBR })}
-                        </span>
-                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-primary">
-                          Continuar <ArrowRight className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
+            <motion.div variants={stagger} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              {recentImages.map((img) => (
+                <motion.div key={img.id} variants={fadeUp} className="group">
+                  <div className="aspect-square rounded-lg overflow-hidden bg-muted border border-border cursor-pointer"
+                       onClick={() => navigate('/gallery')}>
+                    <img
+                      src={img.image_url!}
+                      alt={img.prompt}
+                      className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                    />
+                  </div>
                 </motion.div>
               ))}
             </motion.div>
