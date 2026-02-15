@@ -1,30 +1,31 @@
 
 
-## Remover codigo de confirmacao do email de boas-vindas
+## Atualizar features dos planos no modal de preços
 
-### Problema
-O email de boas-vindas mostra um codigo numerico de confirmacao (ex: "89246788") abaixo do botao "Confirmar Email". Esse codigo e desnecessario porque:
-- Nao existe tela no app para digitar o codigo
-- O botao "Confirmar Email" ja faz a confirmacao completa via link
+### O que muda
 
-### Solucao
-Remover a secao do token de todos os templates de email que a exibem, ja que o fluxo do app usa apenas o link de confirmacao.
+Atualizar o array `features` de cada plano no arquivo `src/components/BuyCreditsModal.tsx`:
 
-### Detalhes Tecnicos
+**Starter** (linha 35):
+- `80 créditos/mês` (manter)
+- `Até 3 projetos ativos`
+- `Templates essenciais`
+- `Acesso completo à biblioteca de referências`
 
-**Arquivos a alterar:**
+**Premium** (linha 45):
+- `250 créditos/mês` (manter)
+- `Projetos ilimitados`
+- `Acesso a todos os Templates de Fluxos`
+- `Acesso completo à biblioteca de referências`
 
-1. **`supabase/functions/send-auth-email/_templates/welcome.tsx`** - Remover o bloco condicional `{token && (...)}` que renderiza o separador, texto "Ou use este codigo" e o container com o codigo.
+**Enterprise** (linha 54):
+- `600 créditos/mês` (manter)
+- `Projetos ilimitados`
+- `Acesso a todos os Templates de Fluxos`
+- `Acesso completo à biblioteca de referências`
+- `Acesso antecipado a novas ferramentas`
 
-2. **`supabase/functions/send-auth-email/_templates/magic-link.tsx`** - Verificar e remover a mesma secao de token se existir.
+### Detalhe técnico
 
-3. **`supabase/functions/send-auth-email/_templates/password-reset.tsx`** - Verificar e remover a mesma secao de token se existir.
-
-4. **`supabase/functions/send-auth-email/_templates/email-change.tsx`** - Verificar e remover a mesma secao de token se existir.
-
-5. **`supabase/functions/send-auth-email/index.ts`** - Remover a passagem da prop `token` nos `React.createElement` de cada template, ja que nao sera mais usada.
-
-6. **Deploy** da edge function `send-auth-email` apos as alteracoes.
-
-Os emails ficarao apenas com o botao de acao (Confirmar Email, Redefinir Senha, etc.) seguido do disclaimer, sem a secao de codigo.
+Alteração apenas nas propriedades `features` dos 3 objetos do array `plans` em `src/components/BuyCreditsModal.tsx`. Nenhuma lógica ou outro arquivo precisa ser alterado.
 
