@@ -21,19 +21,19 @@
     --popover: 220 20% 8%;
     --popover-foreground: 0 0% 98%;
 
-    /* Primary: Cyan blue */
-    --primary: 195 100% 50%;
-    --primary-foreground: 220 20% 4%;
+    /* Primary: Deep blue */
+    --primary: 225 100% 50%;
+    --primary-foreground: 0 0% 100%;
 
-    /* Secondary: Deep blue */
-    --secondary: 210 100% 50%;
-    --secondary-foreground: 0 0% 98%;
+    /* Secondary: Bright blue */
+    --secondary: 197 100% 50%;
+    --secondary-foreground: 0 0% 100%;
 
     --muted: 220 15% 12%;
     --muted-foreground: 220 10% 60%;
 
-    /* Accent: Royal blue */
-    --accent: 220 90% 56%;
+    /* Accent: Light sky blue */
+    --accent: 205 100% 85%;
     --accent-foreground: 0 0% 98%;
 
     --destructive: 0 84% 60%;
@@ -52,34 +52,34 @@
     /* Borders & inputs */
     --border: 220 15% 16%;
     --input: 220 15% 16%;
-    --ring: 195 100% 50%;
+    --ring: 225 100% 50%;
 
     --radius: 0.75rem;
 
     /* Sidebar */
     --sidebar-background: 220 20% 5%;
     --sidebar-foreground: 0 0% 90%;
-    --sidebar-primary: 195 100% 50%;
-    --sidebar-primary-foreground: 220 20% 4%;
+    --sidebar-primary: 225 100% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 220 15% 12%;
     --sidebar-accent-foreground: 0 0% 90%;
     --sidebar-border: 220 15% 16%;
-    --sidebar-ring: 195 100% 50%;
+    --sidebar-ring: 225 100% 50%;
 
-    /* Custom gradients - Cyan to Blue */
-    --gradient-start: 195 100% 50%;
-    --gradient-mid: 210 100% 50%;
-    --gradient-end: 220 90% 56%;
+    /* Custom gradients - Blue gradient (0040FF → 00A1FF → D3E3FF) */
+    --gradient-start: 225 100% 50%;
+    --gradient-mid: 197 100% 50%;
+    --gradient-end: 205 100% 85%;
 
     /* Glow effects */
-    --glow-primary: 195 100% 50%;
-    --glow-secondary: 210 100% 50%;
+    --glow-primary: 225 100% 50%;
+    --glow-secondary: 197 100% 50%;
 
     /* Node colors */
-    --node-prompt: 195 100% 50%;
-    --node-media: 195 100% 50%;
-    --node-settings: 210 100% 50%;
-    --node-output: 220 90% 56%;
+    --node-prompt: 225 100% 50%;
+    --node-media: 225 100% 50%;
+    --node-settings: 197 100% 50%;
+    --node-output: 205 100% 85%;
   }
 
   .light {
@@ -92,33 +92,33 @@
     --popover: 0 0% 100%;
     --popover-foreground: 220 20% 4%;
 
-    --primary: 195 100% 45%;
-    --primary-foreground: 0 0% 98%;
+    --primary: 225 100% 45%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 100% 45%;
-    --secondary-foreground: 0 0% 98%;
+    --secondary: 197 100% 45%;
+    --secondary-foreground: 0 0% 100%;
 
     --muted: 220 10% 96%;
     --muted-foreground: 220 10% 40%;
 
-    --accent: 220 90% 50%;
-    --accent-foreground: 0 0% 98%;
+    --accent: 205 100% 80%;
+    --accent-foreground: 220 20% 10%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
 
     --border: 220 10% 90%;
     --input: 220 10% 90%;
-    --ring: 195 100% 45%;
+    --ring: 225 100% 45%;
 
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 220 10% 26%;
-    --sidebar-primary: 195 100% 45%;
-    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-primary: 225 100% 45%;
+    --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 220 10% 96%;
     --sidebar-accent-foreground: 220 10% 26%;
     --sidebar-border: 220 10% 90%;
-    --sidebar-ring: 195 100% 45%;
+    --sidebar-ring: 225 100% 45%;
   }
 }
 
