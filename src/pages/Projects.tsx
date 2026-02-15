@@ -262,6 +262,7 @@ export default function Projects() {
             onCreateFromTemplate={handleCreateFromTemplate}
             isCreating={createMutation.isPending}
             userTier={profile?.tier ?? 'free'}
+            isAdmin={isAdmin}
           />
         </div>
 

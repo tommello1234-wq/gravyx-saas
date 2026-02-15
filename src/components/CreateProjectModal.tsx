@@ -30,6 +30,7 @@ interface CreateProjectModalProps {
   onCreateFromTemplate: (name: string, templateId: string) => void;
   isCreating?: boolean;
   userTier?: string;
+  isAdmin?: boolean;
 }
 
 export function CreateProjectModal({
@@ -39,6 +40,7 @@ export function CreateProjectModal({
   onCreateFromTemplate,
   isCreating = false,
   userTier = 'free',
+  isAdmin = false,
 }: CreateProjectModalProps) {
   const [step, setStep] = useState<'choose' | 'name'>('choose');
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
@@ -60,6 +62,7 @@ export function CreateProjectModal({
   });
 
   const isTemplateLocked = (template: Template) => {
+    if (isAdmin) return false;
     return !template.allowed_tiers.includes(userTier);
   };
 
