@@ -77,7 +77,7 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
   });
   
   const inputRef = useRef<HTMLInputElement>(null);
-  const { profile } = useAuth();
+  const { profile, isAdmin } = useAuth();
   const { setNodes, setEdges, getNode, getEdges } = useReactFlow();
   const [selectedImage, setSelectedImage] = useState<NodeImage | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -245,7 +245,7 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
   const creditsNeeded = quantity * CREDITS_PER_IMAGE;
   const credits = profile?.credits || 0;
   const hasEnoughCredits = credits >= creditsNeeded;
-  const hasActiveSubscription = profile?.subscription_status === 'trial_active' || profile?.subscription_status === 'active';
+  const hasActiveSubscription = isAdmin || profile?.subscription_status === 'trial_active' || profile?.subscription_status === 'active';
   const isDisabled = !hasActiveSubscription || !hasEnoughCredits || isGenerating || jobQueueState.hasQueuedJobs || jobQueueState.hasProcessingJobs;
 
   return (
