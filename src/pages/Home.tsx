@@ -86,7 +86,7 @@ export default function Home() {
 
   const tier = profile?.tier ?? 'free';
   const tierConfig = getTierConfig(tier);
-  const isFree = tier === 'free';
+  const isFree = tier === 'free' && !isAdmin;
   const subscriptionStatus = (profile as any)?.subscription_status ?? 'inactive';
   const isTrialActive = subscriptionStatus === 'trial_active';
   const isInactive = subscriptionStatus === 'inactive' || subscriptionStatus === 'cancelled';
@@ -228,7 +228,7 @@ export default function Home() {
     setCreateOpen(true);
   };
 
-  const showUpgrade = tier === 'free' || tier === 'starter';
+  const showUpgrade = !isAdmin && (tier === 'free' || tier === 'starter');
   const displayName = profile?.display_name || profile?.email?.split('@')[0] || 'Usuário';
 
   return (
@@ -281,7 +281,7 @@ export default function Home() {
               <div className="flex items-center gap-3 mt-3 flex-wrap">
                 <Badge variant="outline" className="gap-1.5">
                   <Crown className="h-3 w-3" />
-                  {tierLabels[tier] ?? tier}
+                  {isAdmin ? 'Admin' : (tierLabels[tier] ?? tier)}
                 </Badge>
                 <Badge variant="secondary" className="gap-1.5">
                   <Coins className="h-3 w-3" />
