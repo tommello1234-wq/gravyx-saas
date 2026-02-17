@@ -231,6 +231,7 @@ export type Database = {
           credits: number
           display_name: string | null
           email: string
+          has_seen_onboarding: boolean
           id: string
           max_projects: number
           tier: string
@@ -244,6 +245,7 @@ export type Database = {
           credits?: number
           display_name?: string | null
           email: string
+          has_seen_onboarding?: boolean
           id?: string
           max_projects?: number
           tier?: string
@@ -257,6 +259,7 @@ export type Database = {
           credits?: number
           display_name?: string | null
           email?: string
+          has_seen_onboarding?: boolean
           id?: string
           max_projects?: number
           tier?: string

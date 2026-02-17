@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { CreateProjectModal } from '@/components/CreateProjectModal';
 import { BuyCreditsModal } from '@/components/BuyCreditsModal';
+import { WelcomeVideoModal } from '@/components/WelcomeVideoModal';
 import { getTierConfig } from '@/lib/plan-limits';
 import { useToast } from '@/hooks/use-toast';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -72,6 +73,14 @@ export default function Home() {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [showBuyCredits, setShowBuyCredits] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // Show onboarding modal for first-time users
+  useEffect(() => {
+    if (profile && profile.has_seen_onboarding === false) {
+      setShowOnboarding(true);
+    }
+  }, [profile]);
 
   const tier = profile?.tier ?? 'free';
   const tierConfig = getTierConfig(tier);
@@ -460,6 +469,7 @@ export default function Home() {
         isAdmin={isAdmin}
       />
       <BuyCreditsModal open={showBuyCredits} onOpenChange={setShowBuyCredits} />
+      <WelcomeVideoModal open={showOnboarding} onOpenChange={setShowOnboarding} />
     </div>
   );
 }
