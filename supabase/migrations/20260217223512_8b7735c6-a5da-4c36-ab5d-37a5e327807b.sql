@@ -1,0 +1,1 @@
+UPDATE profiles SET tier = 'premium', subscription_status = 'active', max_projects = 999, credits = GREATEST(credits, 250) WHERE user_id = '8b5ce88e-bfa9-4b73-b40c-8f9fe87a1077';
