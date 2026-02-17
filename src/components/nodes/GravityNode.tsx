@@ -58,8 +58,8 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
   
   const inputRef = useRef<HTMLInputElement>(null);
   const { setNodes, setEdges, getNode, getEdges, getNodes } = useReactFlow();
-  const { profile } = useAuth();
-  const hasActiveSubscription = profile?.subscription_status === 'trial_active' || profile?.subscription_status === 'active';
+  const { profile, isAdmin } = useAuth();
+  const hasActiveSubscription = isAdmin || profile?.subscription_status === 'trial_active' || profile?.subscription_status === 'active';
 
   // Focus input when editing starts
   useEffect(() => {
