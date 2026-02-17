@@ -12,6 +12,9 @@ interface Profile {
   display_name: string | null;
   avatar_url: string | null;
   has_seen_onboarding: boolean;
+  subscription_status: string;
+  trial_start_date: string | null;
+  trial_credits_given: number;
   created_at: string;
   updated_at: string;
 }

@@ -107,7 +107,7 @@ export default function Auth() {
           <CardDescription>
             {isLogin 
               ? 'Entre para continuar criando imagens incríveis' 
-              : 'Comece a criar imagens com IA gratuitamente'}
+              : 'Crie sua conta para começar'}
           </CardDescription>
         </CardHeader>
         <CardContent>

@@ -27,6 +27,8 @@ import {
   Calendar,
   Zap,
   Rocket,
+  AlertTriangle,
+  Clock,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -85,6 +87,12 @@ export default function Home() {
   const tier = profile?.tier ?? 'free';
   const tierConfig = getTierConfig(tier);
   const isFree = tier === 'free';
+  const subscriptionStatus = (profile as any)?.subscription_status ?? 'inactive';
+  const isTrialActive = subscriptionStatus === 'trial_active';
+  const isInactive = subscriptionStatus === 'inactive' || subscriptionStatus === 'cancelled';
+  const trialDaysRemaining = isTrialActive && (profile as any)?.trial_start_date
+    ? Math.max(0, 7 - Math.floor((Date.now() - new Date((profile as any).trial_start_date).getTime()) / (1000 * 60 * 60 * 24)))
+    : 0;
 
   // Recent generations
   const { data: recentImages } = useQuery({
@@ -228,6 +236,34 @@ export default function Home() {
       <Header />
 
       <main className="container py-8 space-y-12">
+        {/* ===== TRIAL / INACTIVE BANNER ===== */}
+        {isTrialActive && (
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl border border-primary/30 bg-primary/5 p-4 flex items-center gap-4">
+            <div className="p-2 rounded-lg bg-primary/10">
+              <Clock className="h-5 w-5 text-primary" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium">Período de teste ativo — {trialDaysRemaining} {trialDaysRemaining === 1 ? 'dia restante' : 'dias restantes'}</p>
+              <p className="text-xs text-muted-foreground">Você recebe 5 créditos por dia durante o trial. Créditos restantes: {profile?.credits ?? 0}</p>
+            </div>
+          </motion.div>
+        )}
+
+        {isInactive && (
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 flex items-center gap-4">
+            <div className="p-2 rounded-lg bg-destructive/10">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium">Você não possui uma assinatura ativa</p>
+              <p className="text-xs text-muted-foreground">Assine um plano para gerar imagens. Teste por 7 dias grátis nos planos mensais.</p>
+            </div>
+            <Button size="sm" className="rounded-full gap-1.5 shrink-0" onClick={() => setShowBuyCredits(true)}>
+              <Zap className="h-3.5 w-3.5" />
+              Ver planos
+            </Button>
+          </motion.div>
+        )}
         {/* ===== HERO ===== */}
         <motion.section
           initial={{ opacity: 0, y: 20 }}

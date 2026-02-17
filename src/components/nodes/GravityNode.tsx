@@ -6,6 +6,7 @@ import { Sparkles, Loader2, MoreVertical, Copy, Trash2, RotateCcw, Pencil } from
 import { cn } from '@/lib/utils';
 import { GravityPopup } from './GravityPopup';
 import gravityLogo from '@/assets/gravity-logo.png';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,6 +58,8 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
   
   const inputRef = useRef<HTMLInputElement>(null);
   const { setNodes, setEdges, getNode, getEdges, getNodes } = useReactFlow();
+  const { profile } = useAuth();
+  const hasActiveSubscription = profile?.subscription_status === 'trial_active' || profile?.subscription_status === 'active';
 
   // Focus input when editing starts
   useEffect(() => {
@@ -318,7 +321,7 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
               boxShadow: '0 4px 15px rgba(0, 135, 255, 0.3)'
             }}
             onClick={handleGenerateAllClick}
-            disabled={isGenerating}
+            disabled={isGenerating || !hasActiveSubscription}
           >
             {isGenerating ? (
               <>

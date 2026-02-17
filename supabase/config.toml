@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.ticto-webhook]
 verify_jwt = false
+
+[functions.trial-daily-credits]
+verify_jwt = false

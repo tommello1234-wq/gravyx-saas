@@ -245,7 +245,8 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
   const creditsNeeded = quantity * CREDITS_PER_IMAGE;
   const credits = profile?.credits || 0;
   const hasEnoughCredits = credits >= creditsNeeded;
-  const isDisabled = !hasEnoughCredits || isGenerating || jobQueueState.hasQueuedJobs || jobQueueState.hasProcessingJobs;
+  const hasActiveSubscription = profile?.subscription_status === 'trial_active' || profile?.subscription_status === 'active';
+  const isDisabled = !hasActiveSubscription || !hasEnoughCredits || isGenerating || jobQueueState.hasQueuedJobs || jobQueueState.hasProcessingJobs;
 
   return (
     <>
@@ -448,9 +449,11 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
 
           <p className={cn(
             "text-center text-xs",
-            hasEnoughCredits ? "text-muted-foreground" : "text-destructive"
+            !hasActiveSubscription ? "text-destructive" : hasEnoughCredits ? "text-muted-foreground" : "text-destructive"
           )}>
-            {creditsNeeded} {creditsNeeded === 1 ? 'crédito' : 'créditos'} • {credits} disponíveis
+            {!hasActiveSubscription 
+              ? 'Assine um plano para gerar imagens' 
+              : `${creditsNeeded} ${creditsNeeded === 1 ? 'crédito' : 'créditos'} • ${credits} disponíveis`}
           </p>
         </div>
       </div>

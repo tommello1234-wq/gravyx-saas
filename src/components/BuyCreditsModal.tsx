@@ -3,7 +3,8 @@ import { motion } from 'framer-motion';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Sparkles, Check, Crown, Zap, Rocket } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Sparkles, Check, Crown, Zap, Rocket, HelpCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { PLAN_LIMITS, type TierKey } from '@/lib/plan-limits';
 
@@ -191,6 +192,24 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
 
                 {/* Features */}
                 <ul className="flex-1 space-y-2.5">
+                  {cycle === 'monthly' && (
+                    <li className="flex items-start gap-2.5 text-sm text-muted-foreground">
+                      <Check className={`h-4 w-4 shrink-0 mt-0.5 ${plan.highlight ? 'text-primary' : 'text-green-500'}`} />
+                      <span className="flex items-center gap-1.5">
+                        Teste gratuitamente por 7 dias
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-[280px] text-xs leading-relaxed">
+                              Você pode testar gratuitamente por 7 dias. Durante o teste, você receberá 35 créditos no total, liberados diariamente (5 créditos por dia) para experimentar a ferramenta. Você pode cancelar a qualquer momento. Após os 7 dias, sua assinatura será ativada automaticamente e os créditos completos do plano serão liberados.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </span>
+                    </li>
+                  )}
                   {plan.features.map((f) => (
                     <li key={f} className="flex items-start gap-2.5 text-sm text-muted-foreground">
                       <Check className={`h-4 w-4 shrink-0 mt-0.5 ${plan.highlight ? 'text-primary' : 'text-green-500'}`} />
@@ -203,9 +222,12 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
           })}
         </div>
 
-        <div className="px-6 pb-5 pt-2 text-center">
+        <div className="px-6 pb-5 pt-2 text-center space-y-1">
           <p className="text-xs text-muted-foreground">
             Pagamento seguro via Ticto · Cancele quando quiser · Sem taxa de cancelamento
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Cartão obrigatório. Cancelamento simples.
           </p>
         </div>
       </DialogContent>
