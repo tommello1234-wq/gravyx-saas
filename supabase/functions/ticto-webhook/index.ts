@@ -138,6 +138,7 @@ Deno.serve(async (req: Request) => {
       tier: 'free',
       billing_cycle: 'monthly',
       max_projects: 1,
+      subscription_status: 'inactive',
     }).eq('user_id', userId);
   }
 
@@ -221,8 +222,44 @@ Deno.serve(async (req: Request) => {
   // 5. RETOMADA → reativa o plano (trata como nova aprovação, cai no fluxo de aprovação abaixo)
   // 6. PLANO ALTERADO → atualiza tier (trata como nova aprovação com novo offer code)
   // 7. EXTENDIDA → cai no fluxo de aprovação abaixo
-  // 8. CARTÃO ATUALIZADO / PERÍODO DE TESTES → apenas loga
-  const infoOnlyStatuses = ['cartao', 'card_updated', 'periodo de testes', 'trial'];
+  // 8. PERÍODO DE TESTES / TRIAL → ativar trial do usuário
+  const trialStatuses = ['periodo de testes', 'trial'];
+  const isTrial = trialStatuses.some(s => statusLower.includes(s));
+  if (isTrial) {
+    const profile = await findProfile(customerEmail);
+    if (!profile) {
+      await logWebhook(supabase, status, body, false, `Trial: user not found: ${customerEmail}`);
+      return new Response('User not found', { status: 200, headers: corsHeaders });
+    }
+
+    // Determine tier from offer code
+    const trialConfig = OFFER_CONFIG[offerCode];
+    const trialTier = trialConfig?.tier || 'starter';
+    const trialMaxProjects = trialConfig?.max_projects || 3;
+
+    const { error } = await supabase.from('profiles').update({
+      subscription_status: 'trial_active',
+      trial_start_date: new Date().toISOString(),
+      trial_credits_given: 5,
+      credits: 5,
+      tier: trialTier,
+      max_projects: trialMaxProjects,
+    }).eq('user_id', profile.user_id);
+
+    if (error) {
+      await logWebhook(supabase, status, body, false, `Trial activation failed: ${error.message}`);
+      return new Response('Failed', { status: 500, headers: corsHeaders });
+    }
+
+    console.log(`🎉 Trial ativado: ${customerEmail} → ${trialTier}`);
+    await logWebhook(supabase, status, body, true);
+    return new Response(JSON.stringify({ success: true, action: 'trial_activated' }), {
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  // 8b. CARTÃO ATUALIZADO → apenas loga
+  const infoOnlyStatuses = ['cartao', 'card_updated'];
   const isInfoOnly = infoOnlyStatuses.some(s => statusLower.includes(s));
   if (isInfoOnly) {
     console.log(`ℹ️ Evento informativo: ${status}`);
@@ -307,7 +344,7 @@ Deno.serve(async (req: Request) => {
 
   const { credits, tier, billing_cycle, max_projects } = config;
 
-  // Atualizar perfil: créditos + tier + billing_cycle + max_projects
+  // Atualizar perfil: créditos + tier + billing_cycle + max_projects + subscription_status
   const { error: updateError } = await supabase
     .from('profiles')
     .update({
@@ -315,6 +352,8 @@ Deno.serve(async (req: Request) => {
       tier,
       billing_cycle,
       max_projects,
+      subscription_status: 'active',
+      trial_credits_given: 0,
     })
     .eq('user_id', profile.user_id);
 

@@ -83,7 +83,7 @@ export default function Index() {
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link to="/auth">
                 <Button size="lg" className="rounded-full glow-primary text-lg px-8">
-                  Começar grátis
+                  Começar agora
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
               </Link>
@@ -170,11 +170,11 @@ export default function Index() {
               Pronto para começar?
             </h2>
             <p className="text-lg text-muted-foreground mb-8">
-              Crie sua conta gratuitamente e ganhe 5 créditos para testar
+              Assine um plano e comece a criar com 7 dias grátis
             </p>
             <Link to="/auth">
               <Button size="lg" className="rounded-full glow-primary text-lg px-10">
-                Criar conta grátis
+                Começar agora
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </Link>

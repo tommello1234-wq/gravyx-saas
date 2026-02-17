@@ -234,7 +234,10 @@ export type Database = {
           has_seen_onboarding: boolean
           id: string
           max_projects: number
+          subscription_status: string
           tier: string
+          trial_credits_given: number
+          trial_start_date: string | null
           updated_at: string
           user_id: string
         }
@@ -248,7 +251,10 @@ export type Database = {
           has_seen_onboarding?: boolean
           id?: string
           max_projects?: number
+          subscription_status?: string
           tier?: string
+          trial_credits_given?: number
+          trial_start_date?: string | null
           updated_at?: string
           user_id: string
         }
@@ -262,7 +268,10 @@ export type Database = {
           has_seen_onboarding?: boolean
           id?: string
           max_projects?: number
+          subscription_status?: string
           tier?: string
+          trial_credits_given?: number
+          trial_start_date?: string | null
           updated_at?: string
           user_id?: string
         }
