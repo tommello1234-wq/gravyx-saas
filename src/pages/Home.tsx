@@ -237,7 +237,7 @@ export default function Home() {
 
       <main className="container py-8 space-y-12">
         {/* ===== TRIAL / INACTIVE BANNER ===== */}
-        {isTrialActive && (
+        {!isAdmin && isTrialActive && (
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl border border-primary/30 bg-primary/5 p-4 flex items-center gap-4">
             <div className="p-2 rounded-lg bg-primary/10">
               <Clock className="h-5 w-5 text-primary" />
@@ -249,7 +249,7 @@ export default function Home() {
           </motion.div>
         )}
 
-        {isInactive && (
+        {!isAdmin && isInactive && (
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 flex items-center gap-4">
             <div className="p-2 rounded-lg bg-destructive/10">
               <AlertTriangle className="h-5 w-5 text-destructive" />
@@ -407,7 +407,7 @@ export default function Home() {
 
             <motion.div variants={stagger} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               {libraryImages.map((img: any) => {
-                const locked = isFree && !img.tags.includes('free');
+                const locked = !isAdmin && isFree && !img.tags.includes('free');
                 return (
                   <motion.div key={img.id} variants={fadeUp} className="relative group">
                     <div className="aspect-square rounded-lg overflow-hidden bg-muted border border-border">
@@ -427,7 +427,7 @@ export default function Home() {
               })}
             </motion.div>
 
-            {isFree && (
+            {!isAdmin && isFree && (
               <p className="text-xs text-muted-foreground mt-3 text-center">
                 🔒 Desbloqueie a biblioteca completa no plano Starter.
               </p>
