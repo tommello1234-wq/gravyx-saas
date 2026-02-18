@@ -1,26 +1,91 @@
 
 
-## Liberar geração de imagens para admins
+## Seletor de Idioma na Plataforma (PT / EN / ES)
 
-O problema: nos componentes `GravityNode` e `ResultNode`, a variável `hasActiveSubscription` só verifica `subscription_status === 'trial_active' || 'active'`, sem considerar `isAdmin`. Como o perfil de admin tem status `inactive`, o botão de gerar fica desabilitado e aparece "Assine um plano para gerar imagens".
+### Escopo
 
-### Alterações
+A plataforma inteira tem textos hardcoded em portugues em dezenas de componentes (Header, Auth, Home, Projects, Gallery, Library, Editor, modals, nodes, admin, etc). Implementar i18n completo envolve:
 
-#### 1. `src/components/nodes/GravityNode.tsx`
+1. Criar um sistema de traducoes (Context + arquivos de traducao)
+2. Adicionar o seletor de bandeira no Header
+3. Traduzir todos os textos de todos os componentes
 
-- Importar `isAdmin` do `useAuth()` (já importa `profile`, basta adicionar `isAdmin`)
-- Alterar a linha 62:
-  - De: `const hasActiveSubscription = profile?.subscription_status === 'trial_active' || profile?.subscription_status === 'active';`
-  - Para: `const hasActiveSubscription = isAdmin || profile?.subscription_status === 'trial_active' || profile?.subscription_status === 'active';`
-- Remover o check `!hasActiveSubscription` do disabled do botão (linha 324), ou manter como está pois agora `hasActiveSubscription` será `true` para admins
+### Abordagem
 
-#### 2. `src/components/nodes/ResultNode.tsx`
+Usar um **LanguageContext** proprio (sem bibliotecas externas como react-i18next) com arquivos JSON de traducao organizados por idioma. O idioma escolhido sera salvo no `localStorage` para persistir entre sessoes.
 
-- Importar `isAdmin` do `useAuth()` (adicionar ao destructuring existente)
-- Alterar a linha 248:
-  - De: `const hasActiveSubscription = profile?.subscription_status === 'trial_active' || profile?.subscription_status === 'active';`
-  - Para: `const hasActiveSubscription = isAdmin || profile?.subscription_status === 'trial_active' || profile?.subscription_status === 'active';`
-- A mensagem "Assine um plano para gerar imagens" deixará de aparecer para admins automaticamente
+### Estrutura de Arquivos
 
-Com essas 2 alterações, admins poderão gerar imagens independentemente do `subscription_status`.
+```text
+src/
+  contexts/
+    LanguageContext.tsx        -- Context + hook useLanguage()
+  i18n/
+    pt.ts                     -- Traducoes em portugues
+    en.ts                     -- Traducoes em ingles
+    es.ts                     -- Traducoes em espanhol
+    index.ts                  -- Tipo + mapa de idiomas
+```
+
+### Detalhes Tecnicos
+
+#### 1. LanguageContext
+
+- Armazena o idioma atual (`pt`, `en`, `es`)
+- Funcao `t(key)` que busca a traducao pela chave
+- Funcao `setLanguage(lang)` para trocar o idioma
+- Persiste no `localStorage` com fallback para `pt`
+- Detecta idioma do navegador como fallback inicial (`navigator.language`)
+
+#### 2. Arquivos de Traducao
+
+Organizados por secao, exemplo:
+
+```text
+header.home = "Inicio" / "Home" / "Inicio"
+header.projects = "Projetos" / "Projects" / "Proyectos"
+auth.welcome_back = "Bem-vindo de volta" / "Welcome back" / "Bienvenido de nuevo"
+home.greeting_morning = "Bom dia" / "Good morning" / "Buenos dias"
+...
+```
+
+Aproximadamente 150-200 chaves de traducao cobrindo:
+- Header (nav items, menu do usuario)
+- Auth (login, cadastro, reset password)
+- Home (saudacoes, banners, secoes)
+- Projects (titulos, acoes, modals)
+- Gallery (titulos, acoes, confirmacoes)
+- Library (titulos, filtros)
+- Editor (nodes, toolbars, popups)
+- Modals (BuyCredits, CreateProject, EditProfile, etc)
+- Footer
+- Admin (parcial - so textos visiveis)
+- Mensagens de toast/erro
+
+#### 3. Seletor de Idioma no Header
+
+- Icone de globo (Globe do Lucide) posicionado a esquerda do botao "Comprar creditos"
+- Dropdown com 3 opcoes, cada uma com emoji de bandeira:
+  - Portugues (BR)
+  - English (US)
+  - Espanol (ES)
+- Ao selecionar, troca o idioma instantaneamente
+
+#### 4. Integracao nos Componentes
+
+Cada componente que tem texto hardcoded sera atualizado para usar `const { t } = useLanguage()` e substituir strings por `t('chave')`.
+
+Tambem sera necessario ajustar o locale do `date-fns` dinamicamente (ptBR, enUS, es) conforme o idioma selecionado.
+
+### Volume de Alteracoes
+
+- **Novos arquivos**: 5 (context + 3 traducoes + index)
+- **Arquivos modificados**: ~25-30 componentes
+- **Maior risco**: garantir que nenhum texto ficou sem traduzir
+
+### Limitacoes
+
+- Emails de autenticacao (send-auth-email) continuarao em portugues pois sao templates server-side separados
+- Conteudo dinamico do banco (nomes de projetos, prompts) nao sera traduzido
+- Textos do admin serao traduzidos parcialmente (foco nas telas que usuarios normais nao veem)
 
