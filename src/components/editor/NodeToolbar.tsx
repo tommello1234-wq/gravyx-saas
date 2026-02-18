@@ -1,19 +1,22 @@
 import { Type, Image, Orbit, Sparkles } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface NodeToolbarProps {
   onAddNode: (type: string) => void;
 }
 
-const tools = [
-  { type: 'prompt', icon: Type, label: 'Prompt', color: 'text-amber-500' },
-  { type: 'media', icon: Image, label: 'Mídia', color: 'text-blue-500' },
-  { type: 'gravity', icon: Orbit, label: 'Gravity', color: 'text-violet-500' },
-  { type: 'result', icon: Sparkles, label: 'Resultado', color: 'text-emerald-500' },
-];
-
 export function NodeToolbar({ onAddNode }: NodeToolbarProps) {
+  const { t } = useLanguage();
+
+  const tools = [
+    { type: 'prompt', icon: Type, label: t('toolbar.prompt'), color: 'text-amber-500' },
+    { type: 'media', icon: Image, label: t('toolbar.media'), color: 'text-blue-500' },
+    { type: 'gravity', icon: Orbit, label: t('toolbar.gravity'), color: 'text-violet-500' },
+    { type: 'result', icon: Sparkles, label: t('toolbar.result'), color: 'text-emerald-500' },
+  ];
+
   return (
     <TooltipProvider delayDuration={0}>
       <div className="absolute left-4 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-2 bg-card/90 backdrop-blur-sm border border-border rounded-xl p-2 shadow-lg">

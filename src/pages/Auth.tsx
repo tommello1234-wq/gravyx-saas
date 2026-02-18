@@ -8,28 +8,29 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Loader2, Mail, Lock } from 'lucide-react';
 import gravyxLogo from '@/assets/gravyx-logo.webp';
 import { useToast } from '@/hooks/use-toast';
-
-const authSchema = z.object({
-  email: z.string().email('Email inválido'),
-  password: z.string().min(6, 'Senha deve ter no mínimo 6 caracteres'),
-});
-
-type AuthFormData = z.infer<typeof authSchema>;
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const { signIn, signUp, user } = useAuth();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
 
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/home';
 
-  // Handle redirect if already logged in
+  const authSchema = z.object({
+    email: z.string().email(t('auth.invalid_email')),
+    password: z.string().min(6, t('auth.password_min')),
+  });
+
+  type AuthFormData = z.infer<typeof authSchema>;
+
   useEffect(() => {
     if (user) {
       navigate(from, { replace: true });
@@ -46,15 +47,14 @@ export default function Auth() {
 
   const onSubmit = async (data: AuthFormData) => {
     setIsLoading(true);
-
     try {
       if (isLogin) {
         const { error } = await signIn(data.email, data.password);
         if (error) {
           toast({
-            title: 'Erro ao entrar',
+            title: t('auth.error_login'),
             description: error.message === 'Invalid login credentials' 
-              ? 'Email ou senha incorretos' 
+              ? t('auth.wrong_credentials') 
               : error.message,
             variant: 'destructive',
           });
@@ -66,22 +66,22 @@ export default function Auth() {
         if (error) {
           if (error.message.includes('already registered') || error.message.includes('User already registered')) {
             toast({
-              title: 'Email já cadastrado',
-              description: 'Este email já está em uso. Clique em "Entrar" abaixo para fazer login.',
+              title: t('auth.email_already_registered'),
+              description: t('auth.email_already_registered_desc'),
               variant: 'destructive',
             });
-            setIsLogin(true); // Automaticamente muda para modo login
+            setIsLogin(true);
           } else {
             toast({
-              title: 'Erro ao criar conta',
+              title: t('auth.error_create_account'),
               description: error.message,
               variant: 'destructive',
             });
           }
         } else {
           toast({
-            title: 'Conta criada!',
-            description: 'Verifique seu email para confirmar o cadastro.',
+            title: t('auth.account_created'),
+            description: t('auth.check_email'),
           });
         }
       }
@@ -92,7 +92,6 @@ export default function Auth() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background grid-pattern relative overflow-hidden">
-      {/* Animated orbs */}
       <div className="orb w-96 h-96 bg-primary/30 -top-48 -left-48" />
       <div className="orb w-80 h-80 bg-secondary/30 -bottom-40 -right-40" style={{ animationDelay: '2s' }} />
 
@@ -102,24 +101,22 @@ export default function Auth() {
             <img src={gravyxLogo} alt="Gravyx" className="h-10" />
           </div>
           <CardTitle className="text-2xl gradient-text">
-            {isLogin ? 'Bem-vindo de volta' : 'Criar conta'}
+            {isLogin ? t('auth.welcome_back') : t('auth.create_account')}
           </CardTitle>
           <CardDescription>
-            {isLogin 
-              ? 'Entre para continuar criando imagens incríveis' 
-              : 'Crie sua conta para começar'}
+            {isLogin ? t('auth.login_subtitle') : t('auth.signup_subtitle')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t('auth.email')}</Label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="email"
                   type="email"
-                  placeholder="seu@email.com"
+                  placeholder={t('auth.email_placeholder')}
                   className="pl-10"
                   {...register('email')}
                 />
@@ -130,7 +127,7 @@ export default function Auth() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Senha</Label>
+              <Label htmlFor="password">{t('auth.password')}</Label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -151,7 +148,7 @@ export default function Auth() {
                 to="/reset-password" 
                 className="text-sm text-primary hover:underline block text-right"
               >
-                Esqueceu a senha?
+                {t('auth.forgot_password')}
               </Link>
             )}
 
@@ -163,10 +160,10 @@ export default function Auth() {
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {isLogin ? 'Entrando...' : 'Criando conta...'}
+                  {isLogin ? t('auth.signing_in') : t('auth.creating_account')}
                 </>
               ) : (
-                isLogin ? 'Entrar' : 'Criar conta'
+                isLogin ? t('auth.sign_in') : t('auth.sign_up')
               )}
             </Button>
           </form>
@@ -178,9 +175,9 @@ export default function Auth() {
               className="text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
               {isLogin ? (
-                <>Não tem conta? <span className="text-primary">Criar agora</span></>
+                <>{t('auth.no_account')} <span className="text-primary">{t('auth.create_now')}</span></>
               ) : (
-                <>Já tem conta? <span className="text-primary">Entrar</span></>
+                <>{t('auth.has_account')} <span className="text-primary">{t('auth.sign_in')}</span></>
               )}
             </button>
           </div>
