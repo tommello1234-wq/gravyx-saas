@@ -10,32 +10,35 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuth } from '@/contexts/AuthContext';
-import { User, LogOut, LayoutGrid, Images, Library, Shield, Coins, CreditCard, UserPen, GraduationCap, Home } from 'lucide-react';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { languageLabels, type Language } from '@/i18n';
+import { User, LogOut, LayoutGrid, Images, Library, Shield, Coins, CreditCard, UserPen, GraduationCap, Home, Globe } from 'lucide-react';
 import { BuyCreditsModal } from '@/components/BuyCreditsModal';
 import { EditProfileModal } from '@/components/EditProfileModal';
 import gravyxLogo from '@/assets/gravyx-logo.webp';
 
-const navItems = [
-  { path: '/home', label: 'Início', icon: Home },
-  { path: '/projects', label: 'Projetos', icon: LayoutGrid },
-  { path: '/gallery', label: 'Galeria', icon: Images },
-  { path: '/library', label: 'Biblioteca', icon: Library },
-  { path: 'https://app.upwardacademy.com.br/', label: 'Treinamentos', icon: GraduationCap, external: true },
-];
-
 export function Header() {
   const { user, profile, isAdmin, signOut } = useAuth();
+  const { t, language, setLanguage } = useLanguage();
   const location = useLocation();
   const navigate = useNavigate();
   const [showBuyCredits, setShowBuyCredits] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
+
+  const navItems = [
+    { path: '/home', label: t('header.home'), icon: Home },
+    { path: '/projects', label: t('header.projects'), icon: LayoutGrid },
+    { path: '/gallery', label: t('header.gallery'), icon: Images },
+    { path: '/library', label: t('header.library'), icon: Library },
+    { path: 'https://app.upwardacademy.com.br/', label: t('header.training'), icon: GraduationCap, external: true },
+  ];
 
   const handleSignOut = async () => {
     await signOut();
     navigate('/auth');
   };
 
-  const displayName = profile?.display_name || profile?.email?.split('@')[0] || 'Usuário';
+  const displayName = profile?.display_name || profile?.email?.split('@')[0] || t('header.user');
   const avatarUrl = profile?.avatar_url;
 
   return (
@@ -82,6 +85,27 @@ export function Header() {
 
         {/* Right side */}
         <div className="flex items-center gap-3">
+          {/* Language Selector */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="rounded-full h-9 w-9">
+                <Globe className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              {(Object.keys(languageLabels) as Language[]).map((lang) => (
+                <DropdownMenuItem
+                  key={lang}
+                  onClick={() => setLanguage(lang)}
+                  className={`cursor-pointer gap-2 ${language === lang ? 'bg-primary/10 font-semibold' : ''}`}
+                >
+                  <span className="text-base">{languageLabels[lang].flag}</span>
+                  {languageLabels[lang].label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           {user ? (
             <>
               {/* Buy Credits Button */}
@@ -91,7 +115,7 @@ export function Header() {
                 onClick={() => setShowBuyCredits(true)}
               >
                 <CreditCard className="h-4 w-4" />
-                Comprar créditos
+                {t('header.buy_credits')}
               </Button>
 
               {/* User Menu */}
@@ -126,13 +150,13 @@ export function Header() {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => setShowEditProfile(true)} className="cursor-pointer">
                     <UserPen className="mr-2 h-4 w-4" />
-                    Editar Perfil
+                    {t('header.edit_profile')}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <div className="px-2 py-2">
                     <div className="flex items-center gap-2">
                       <Coins className="h-4 w-4 text-primary" />
-                      <span className="text-sm font-medium">{profile?.credits ?? 0} créditos</span>
+                      <span className="text-sm font-medium">{profile?.credits ?? 0} {t('header.credits')}</span>
                     </div>
                   </div>
                   {isAdmin && (
@@ -141,7 +165,7 @@ export function Header() {
                       <DropdownMenuItem asChild>
                         <Link to="/admin" className="cursor-pointer">
                           <Shield className="mr-2 h-4 w-4" />
-                          Admin
+                          {t('header.admin')}
                         </Link>
                       </DropdownMenuItem>
                     </>
@@ -149,7 +173,7 @@ export function Header() {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
                     <LogOut className="mr-2 h-4 w-4" />
-                    Sair
+                    {t('header.sign_out')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -158,7 +182,7 @@ export function Header() {
             <Link to="/auth">
               <Button className="rounded-full glow-primary">
                 <User className="mr-2 h-4 w-4" />
-                Entrar
+                {t('header.sign_in')}
               </Button>
             </Link>
           )}
