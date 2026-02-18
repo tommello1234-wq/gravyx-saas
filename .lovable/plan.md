@@ -1,91 +1,64 @@
 
+## Continuar Traduzindo Todos os Componentes Restantes
 
-## Seletor de Idioma na Plataforma (PT / EN / ES)
+### Resumo
 
-### Escopo
+Traduzir todos os ~20 componentes restantes que ainda possuem textos hardcoded em portugues, usando o sistema i18n ja criado (`useLanguage()` + `t(key)`).
 
-A plataforma inteira tem textos hardcoded em portugues em dezenas de componentes (Header, Auth, Home, Projects, Gallery, Library, Editor, modals, nodes, admin, etc). Implementar i18n completo envolve:
+### Componentes a Traduzir
 
-1. Criar um sistema de traducoes (Context + arquivos de traducao)
-2. Adicionar o seletor de bandeira no Header
-3. Traduzir todos os textos de todos os componentes
+**Paginas:**
+1. `Home.tsx` - saudacoes, banners de trial/inativo, titulos de secoes, stats, CTA de upgrade
+2. `Projects.tsx` - titulo, acoes (renomear, excluir), dialogs, toasts
+3. `Gallery.tsx` - titulo, selecao, confirmacao de exclusao, viewer inline
+4. `Library.tsx` - titulo, filtros, mensagens de locked/upgrade
+5. `ResetPassword.tsx` - formularios, mensagens de sucesso/erro
+6. `Editor.tsx` - toasts de geracao, erros, otimizacao de projeto
 
-### Abordagem
+**Nodes do Editor:**
+7. `PromptNode.tsx` - label, subtitle, menu dropdown
+8. `MediaNode.tsx` - label, subtitle, tabs, upload, toasts
+9. `ResultNode.tsx` - label, subtitle, proporcao, quantidade, botao gerar, creditos
+10. `OutputNode.tsx` - label, subtitle, botoes
+11. `SettingsNode.tsx` - label, subtitle, proporcao, quantidade, botao gerar, creditos
+12. `GravityNode.tsx` - label, menu, confirmacao, botao gerar todos
+13. `GravityPopup.tsx` - titulo, labels, placeholder, botoes
+14. `OutputImageModal.tsx` - titulo, botoes, metadata
+15. `LibraryModal.tsx` - titulo, busca, mensagens
 
-Usar um **LanguageContext** proprio (sem bibliotecas externas como react-i18next) com arquivos JSON de traducao organizados por idioma. O idioma escolhido sera salvo no `localStorage` para persistir entre sessoes.
-
-### Estrutura de Arquivos
-
-```text
-src/
-  contexts/
-    LanguageContext.tsx        -- Context + hook useLanguage()
-  i18n/
-    pt.ts                     -- Traducoes em portugues
-    en.ts                     -- Traducoes em ingles
-    es.ts                     -- Traducoes em espanhol
-    index.ts                  -- Tipo + mapa de idiomas
-```
+**Modais:**
+16. `BuyCreditsModal.tsx` - titulo, toggle, planos, features, botoes, textos de pagamento
+17. `CreateProjectModal.tsx` - titulo, opcoes, botoes
+18. `EditProfileModal.tsx` - titulo, labels, botoes, toasts
+19. `SubmitToLibraryModal.tsx` - titulo, labels, instrucoes, botoes, mensagem de sucesso
+20. `WelcomeVideoModal.tsx` - titulo, descricao, botao
+21. `ImageViewerModal.tsx` - labels, botoes, contribuicao
+22. `SaveAsTemplateModal.tsx` - titulo, labels, tabs, botoes
 
 ### Detalhes Tecnicos
 
-#### 1. LanguageContext
+**Para cada componente:**
+- Importar `useLanguage` de `@/contexts/LanguageContext`
+- Chamar `const { t } = useLanguage()` no inicio do componente
+- Substituir cada string hardcoded por `t('chave.correspondente')`
+- Para nodes memo (PromptNode, MediaNode, etc), usar `useLanguage()` dentro do componente memo
 
-- Armazena o idioma atual (`pt`, `en`, `es`)
-- Funcao `t(key)` que busca a traducao pela chave
-- Funcao `setLanguage(lang)` para trocar o idioma
-- Persiste no `localStorage` com fallback para `pt`
-- Detecta idioma do navegador como fallback inicial (`navigator.language`)
+**Chaves de traducao a adicionar nos 3 arquivos (pt.ts, en.ts, es.ts):**
+- Aproximadamente 80-100 chaves novas cobrindo os componentes listados acima
+- As chaves ja criadas na primeira fase (header, auth, footer, etc) continuam inalteradas
 
-#### 2. Arquivos de Traducao
+**Formatacao de datas:**
+- Nos componentes que usam `date-fns` com `locale: ptBR`, trocar dinamicamente para o locale correspondente ao idioma selecionado:
+  - `pt` -> `ptBR`
+  - `en` -> `enUS` 
+  - `es` -> `es` (locale do date-fns)
 
-Organizados por secao, exemplo:
-
-```text
-header.home = "Inicio" / "Home" / "Inicio"
-header.projects = "Projetos" / "Projects" / "Proyectos"
-auth.welcome_back = "Bem-vindo de volta" / "Welcome back" / "Bienvenido de nuevo"
-home.greeting_morning = "Bom dia" / "Good morning" / "Buenos dias"
-...
-```
-
-Aproximadamente 150-200 chaves de traducao cobrindo:
-- Header (nav items, menu do usuario)
-- Auth (login, cadastro, reset password)
-- Home (saudacoes, banners, secoes)
-- Projects (titulos, acoes, modals)
-- Gallery (titulos, acoes, confirmacoes)
-- Library (titulos, filtros)
-- Editor (nodes, toolbars, popups)
-- Modals (BuyCredits, CreateProject, EditProfile, etc)
-- Footer
-- Admin (parcial - so textos visiveis)
-- Mensagens de toast/erro
-
-#### 3. Seletor de Idioma no Header
-
-- Icone de globo (Globe do Lucide) posicionado a esquerda do botao "Comprar creditos"
-- Dropdown com 3 opcoes, cada uma com emoji de bandeira:
-  - Portugues (BR)
-  - English (US)
-  - Espanol (ES)
-- Ao selecionar, troca o idioma instantaneamente
-
-#### 4. Integracao nos Componentes
-
-Cada componente que tem texto hardcoded sera atualizado para usar `const { t } = useLanguage()` e substituir strings por `t('chave')`.
-
-Tambem sera necessario ajustar o locale do `date-fns` dinamicamente (ptBR, enUS, es) conforme o idioma selecionado.
+**Textos com variaveis (interpolacao):**
+- Strings como `"Seu plano {plan} permite ate {max} projeto(s)"` serao mantidas com placeholders e substituidas via `.replace()` no ponto de uso
+- Exemplo: `t('home.project_limit_desc').replace('{plan}', tierConfig.label).replace('{max}', String(tierConfig.maxProjects))`
 
 ### Volume de Alteracoes
 
-- **Novos arquivos**: 5 (context + 3 traducoes + index)
-- **Arquivos modificados**: ~25-30 componentes
-- **Maior risco**: garantir que nenhum texto ficou sem traduzir
-
-### Limitacoes
-
-- Emails de autenticacao (send-auth-email) continuarao em portugues pois sao templates server-side separados
-- Conteudo dinamico do banco (nomes de projetos, prompts) nao sera traduzido
-- Textos do admin serao traduzidos parcialmente (foco nas telas que usuarios normais nao veem)
-
+- **3 arquivos de traducao** modificados (adicionar ~100 chaves cada)
+- **~22 componentes** modificados (importar useLanguage + substituir strings)
+- Nenhum arquivo novo criado
