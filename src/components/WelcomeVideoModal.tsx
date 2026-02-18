@@ -8,6 +8,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Play } from 'lucide-react';
 
 interface WelcomeVideoModalProps {
@@ -17,6 +18,7 @@ interface WelcomeVideoModalProps {
 
 export function WelcomeVideoModal({ open, onOpenChange }: WelcomeVideoModalProps) {
   const { user, refreshProfile } = useAuth();
+  const { t } = useLanguage();
 
   const handleClose = async () => {
     if (user) {
@@ -35,10 +37,10 @@ export function WelcomeVideoModal({ open, onOpenChange }: WelcomeVideoModalProps
         <DialogHeader className="p-6 pb-2">
           <div className="flex items-center gap-2 mb-1">
             <Play className="h-5 w-5 text-primary" />
-            <DialogTitle className="text-lg">Bem-vindo à Gravyx!</DialogTitle>
+            <DialogTitle className="text-lg">{t('welcome.title')}</DialogTitle>
           </div>
           <DialogDescription className="text-sm text-muted-foreground">
-            Novo por aqui? Entenda rapidamente como você pode criar sua primeira arte 100% com IA assistindo esse vídeo
+            {t('welcome.subtitle')}
           </DialogDescription>
         </DialogHeader>
 
@@ -57,7 +59,7 @@ export function WelcomeVideoModal({ open, onOpenChange }: WelcomeVideoModalProps
         <div className="p-6 pt-4">
           <Button onClick={handleClose} className="w-full rounded-full glow-primary gap-2">
             <Play className="h-4 w-4" />
-            Entendi, vamos começar!
+            {t('welcome.got_it')}
           </Button>
         </div>
       </DialogContent>

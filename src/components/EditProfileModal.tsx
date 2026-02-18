@@ -1,9 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Loader2, Upload, X } from 'lucide-react';
 
 interface EditProfileModalProps {
@@ -22,6 +20,7 @@ interface EditProfileModalProps {
 export function EditProfileModal({ open, onOpenChange }: EditProfileModalProps) {
   const { user, profile, refreshProfile } = useAuth();
   const { toast } = useToast();
+  const { t } = useLanguage();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [displayName, setDisplayName] = useState('');
@@ -29,7 +28,6 @@ export function EditProfileModal({ open, onOpenChange }: EditProfileModalProps) 
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Initialize form when modal opens
   useEffect(() => {
     if (open && profile) {
       setDisplayName(profile.display_name || '');
@@ -40,30 +38,16 @@ export function EditProfileModal({ open, onOpenChange }: EditProfileModalProps) 
   const handleAvatarUpload = async (file: File) => {
     if (!user) return;
     setUploading(true);
-
     try {
       const fileExt = file.name.split('.').pop();
       const fileName = `${user.id}/avatar-${Date.now()}.${fileExt}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('user-media')
-        .upload(fileName, file, { upsert: true });
-
+      const { error: uploadError } = await supabase.storage.from('user-media').upload(fileName, file, { upsert: true });
       if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage
-        .from('user-media')
-        .getPublicUrl(fileName);
-
+      const { data: urlData } = supabase.storage.from('user-media').getPublicUrl(fileName);
       setAvatarUrl(urlData.publicUrl);
-      toast({ title: 'Foto enviada!' });
+      toast({ title: t('profile.photo_sent') });
     } catch (error) {
-      console.error('Upload error:', error);
-      toast({
-        title: 'Erro no upload',
-        description: (error as Error).message,
-        variant: 'destructive',
-      });
+      toast({ title: t('profile.upload_error'), description: (error as Error).message, variant: 'destructive' });
     } finally {
       setUploading(false);
     }
@@ -71,36 +55,20 @@ export function EditProfileModal({ open, onOpenChange }: EditProfileModalProps) 
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      handleAvatarUpload(file);
-    }
+    if (file) handleAvatarUpload(file);
   };
 
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
-
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          display_name: displayName || null,
-          avatar_url: avatarUrl,
-        })
-        .eq('user_id', user.id);
-
+      const { error } = await supabase.from('profiles').update({ display_name: displayName || null, avatar_url: avatarUrl }).eq('user_id', user.id);
       if (error) throw error;
-
       await refreshProfile();
-      toast({ title: 'Perfil atualizado!' });
+      toast({ title: t('profile.profile_updated') });
       onOpenChange(false);
     } catch (error) {
-      console.error('Save error:', error);
-      toast({
-        title: 'Erro ao salvar',
-        description: (error as Error).message,
-        variant: 'destructive',
-      });
+      toast({ title: t('profile.error_save'), description: (error as Error).message, variant: 'destructive' });
     } finally {
       setSaving(false);
     }
@@ -108,9 +76,7 @@ export function EditProfileModal({ open, onOpenChange }: EditProfileModalProps) 
 
   const clearAvatar = () => {
     setAvatarUrl(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const currentDisplayName = displayName || profile?.email?.split('@')[0] || 'U';
@@ -119,82 +85,42 @@ export function EditProfileModal({ open, onOpenChange }: EditProfileModalProps) 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Editar Perfil</DialogTitle>
+          <DialogTitle>{t('profile.edit_profile')}</DialogTitle>
         </DialogHeader>
-
         <div className="space-y-6 py-4">
-          {/* Avatar */}
           <div className="flex flex-col items-center gap-4">
             <div className="relative">
               <Avatar className="h-24 w-24">
                 {avatarUrl && <AvatarImage src={avatarUrl} alt={currentDisplayName} />}
-                <AvatarFallback className="bg-primary text-primary-foreground text-2xl">
-                  {currentDisplayName.charAt(0).toUpperCase()}
-                </AvatarFallback>
+                <AvatarFallback className="bg-primary text-primary-foreground text-2xl">{currentDisplayName.charAt(0).toUpperCase()}</AvatarFallback>
               </Avatar>
               {avatarUrl && (
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="icon"
-                  className="absolute -top-2 -right-2 h-7 w-7 rounded-full"
-                  onClick={clearAvatar}
-                >
+                <Button type="button" variant="destructive" size="icon" className="absolute -top-2 -right-2 h-7 w-7 rounded-full" onClick={clearAvatar}>
                   <X className="h-4 w-4" />
                 </Button>
               )}
             </div>
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              accept="image/*"
-              className="hidden"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-            >
-              {uploading ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Upload className="h-4 w-4 mr-2" />
-              )}
-              {uploading ? 'Enviando...' : 'Alterar foto'}
+            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
+            <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+              {uploading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
+              {uploading ? t('profile.uploading') : t('profile.change_photo')}
             </Button>
           </div>
-
-          {/* Display Name */}
           <div className="space-y-2">
-            <Label htmlFor="displayName">Nome de exibição</Label>
-            <Input
-              id="displayName"
-              placeholder="Como você quer ser chamado?"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              Este nome será exibido no seu perfil
-            </p>
+            <Label htmlFor="displayName">{t('profile.display_name')}</Label>
+            <Input id="displayName" placeholder={t('profile.display_name_placeholder')} value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+            <p className="text-xs text-muted-foreground">{t('profile.display_name_hint')}</p>
           </div>
-
-          {/* Email (read-only) */}
           <div className="space-y-2">
-            <Label>Email</Label>
+            <Label>{t('auth.email')}</Label>
             <Input value={profile?.email || ''} disabled className="bg-muted" />
           </div>
         </div>
-
         <div className="flex justify-end gap-3">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancelar
-          </Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
           <Button onClick={handleSave} disabled={saving}>
             {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            Salvar
+            {t('common.save')}
           </Button>
         </div>
       </DialogContent>
