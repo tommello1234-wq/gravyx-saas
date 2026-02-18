@@ -8,6 +8,7 @@ import { Header } from '@/components/layout/Header';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useLanguage } from '@/contexts/LanguageContext';
 import {
   Dialog,
   DialogContent,
@@ -32,7 +33,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { ptBR, enUS, es as esLocale } from 'date-fns/locale';
 import { CreateProjectModal } from '@/components/CreateProjectModal';
 import { getTierConfig } from '@/lib/plan-limits';
 import { Badge } from '@/components/ui/badge';
@@ -55,10 +56,18 @@ interface CanvasState {
   edges: unknown[];
 }
 
+const dateLocales = { pt: ptBR, en: enUS, es: esLocale };
+const dateFormats = {
+  pt: "d 'de' MMM",
+  en: "MMM d",
+  es: "d 'de' MMM",
+};
+
 export default function Projects() {
   const { user, profile, isAdmin } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { t, language } = useLanguage();
   const queryClient = useQueryClient();
   
   const [createOpen, setCreateOpen] = useState(false);
@@ -71,8 +80,8 @@ export default function Projects() {
     const currentCount = projects?.length ?? 0;
     if (!isAdmin && tierConfig.maxProjects !== -1 && currentCount >= tierConfig.maxProjects) {
       toast({
-        title: 'Limite de projetos atingido',
-        description: `Seu plano ${tierConfig.label} permite até ${tierConfig.maxProjects} projeto(s). Faça upgrade para criar mais.`,
+        title: t('home.project_limit_reached'),
+        description: t('home.project_limit_desc').replace('{plan}', tierConfig.label).replace('{max}', String(tierConfig.maxProjects)),
         variant: 'destructive',
       });
       return;
@@ -80,7 +89,7 @@ export default function Projects() {
     setCreateOpen(true);
   };
 
-  // Fetch projects - only select needed columns to avoid loading huge canvas_state
+  // Fetch projects
   const { data: projects, isLoading } = useQuery({
     queryKey: ['projects', user?.id],
     queryFn: async () => {
@@ -96,13 +105,12 @@ export default function Projects() {
     enabled: !!user,
   });
 
-  // Create project mutation (updated to support templates)
+  // Create project mutation
   const createMutation = useMutation({
     mutationFn: async ({ name, templateId }: { name: string; templateId?: string }) => {
       let canvasState: CanvasState = { nodes: [], edges: [] };
       
       if (templateId) {
-        // Fetch template canvas_state
         const { data: template } = await supabase
           .from('project_templates')
           .select('canvas_state')
@@ -111,42 +119,25 @@ export default function Projects() {
         
         if (template?.canvas_state) {
           const templateState = template.canvas_state as unknown as CanvasState;
-          
-          // Create a mapping from old IDs to new IDs
           const idMapping: Record<string, string> = {};
-          
-          // Regenerate node IDs and keep track of the mapping
           const newNodes = templateState.nodes?.map((node: CanvasNode) => {
             const newId = `${node.type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
             idMapping[node.id] = newId;
-            return {
-              ...node,
-              id: newId
-            };
+            return { ...node, id: newId };
           }) || [];
-          
-          // Remap edges to use new node IDs
           const newEdges = (templateState.edges || []).map((edge: { id?: string; source: string; target: string; [key: string]: unknown }) => ({
             ...edge,
             id: `edge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             source: idMapping[edge.source] || edge.source,
             target: idMapping[edge.target] || edge.target
           }));
-          
-          canvasState = {
-            nodes: newNodes,
-            edges: newEdges
-          };
+          canvasState = { nodes: newNodes, edges: newEdges };
         }
       }
       
       const { data, error } = await supabase
         .from('projects')
-        .insert([{ 
-          name, 
-          user_id: user?.id, 
-          canvas_state: canvasState 
-        }] as never)
+        .insert([{ name, user_id: user?.id, canvas_state: canvasState }] as never)
         .select()
         .single();
       
@@ -160,7 +151,7 @@ export default function Projects() {
     },
     onError: (error) => {
       toast({
-        title: 'Erro ao criar projeto',
+        title: t('home.error_create_project'),
         description: error.message,
         variant: 'destructive',
       });
@@ -182,17 +173,16 @@ export default function Projects() {
         .from('projects')
         .update({ name })
         .eq('id', id);
-      
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       setEditingProject(null);
-      toast({ title: 'Projeto renomeado!' });
+      toast({ title: t('projects.project_renamed') });
     },
     onError: (error) => {
       toast({
-        title: 'Erro ao renomear',
+        title: t('projects.error_rename'),
         description: error.message,
         variant: 'destructive',
       });
@@ -202,20 +192,16 @@ export default function Projects() {
   // Delete project mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('projects')
-        .delete()
-        .eq('id', id);
-      
+      const { error } = await supabase.from('projects').delete().eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
-      toast({ title: 'Projeto excluído!' });
+      toast({ title: t('projects.project_deleted') });
     },
     onError: (error) => {
       toast({
-        title: 'Erro ao excluir',
+        title: t('projects.error_delete'),
         description: error.message,
         variant: 'destructive',
       });
@@ -234,16 +220,16 @@ export default function Projects() {
       <main className="container py-8">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold mb-2">Meus Projetos</h1>
+            <h1 className="text-3xl font-bold mb-2">{t('projects.my_projects')}</h1>
             <p className="text-muted-foreground">
-              Gerencie seus projetos de geração de imagens
+              {t('projects.manage')}
             </p>
           </div>
 
           <div className="flex items-center gap-3">
             {user && profile && (
               <Badge variant="outline" className="text-xs">
-                {projects?.length ?? 0}/{tierConfig.maxProjects === -1 ? '∞' : tierConfig.maxProjects} projetos
+                {projects?.length ?? 0}/{tierConfig.maxProjects === -1 ? '∞' : tierConfig.maxProjects} {t('projects.projects_count')}
               </Badge>
             )}
             <Button 
@@ -251,7 +237,7 @@ export default function Projects() {
               onClick={handleNewProject}
             >
               <Plus className="mr-2 h-4 w-4" />
-              Novo Projeto
+              {t('projects.new_project')}
             </Button>
           </div>
 
@@ -277,13 +263,13 @@ export default function Projects() {
             className="glass-card p-12 text-center"
           >
             <FolderOpen className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-xl font-semibold mb-2">Nenhum projeto ainda</h3>
+            <h3 className="text-xl font-semibold mb-2">{t('projects.no_projects')}</h3>
             <p className="text-muted-foreground mb-6">
-              Crie seu primeiro projeto para começar a gerar imagens
+              {t('projects.create_first')}
             </p>
             <Button onClick={() => setCreateOpen(true)} className="rounded-full">
               <Plus className="mr-2 h-4 w-4" />
-              Criar primeiro projeto
+              {t('home.create_first_project')}
             </Button>
           </motion.div>
         ) : (
@@ -317,7 +303,7 @@ export default function Projects() {
                             setEditName(project.name);
                           }}>
                             <Pencil className="mr-2 h-4 w-4" />
-                            Renomear
+                            {t('projects.rename')}
                           </DropdownMenuItem>
                           <DropdownMenuItem 
                             className="text-destructive"
@@ -327,7 +313,7 @@ export default function Projects() {
                             }}
                           >
                             <Trash2 className="mr-2 h-4 w-4" />
-                            Excluir
+                            {t('projects.delete')}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -336,7 +322,7 @@ export default function Projects() {
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Calendar className="h-4 w-4" />
                       <span>
-                        Atualizado {format(new Date(project.updated_at), "d 'de' MMM", { locale: ptBR })}
+                        {t('projects.updated')} {format(new Date(project.updated_at), dateFormats[language], { locale: dateLocales[language] })}
                       </span>
                     </div>
                   </CardContent>
@@ -350,7 +336,7 @@ export default function Projects() {
         <Dialog open={!!editingProject} onOpenChange={() => setEditingProject(null)}>
           <DialogContent className="glass-card">
             <DialogHeader>
-              <DialogTitle>Renomear projeto</DialogTitle>
+              <DialogTitle>{t('projects.rename_project')}</DialogTitle>
             </DialogHeader>
             <Input
               value={editName}
@@ -359,11 +345,11 @@ export default function Projects() {
             />
             <DialogFooter>
               <Button variant="outline" onClick={() => setEditingProject(null)}>
-                Cancelar
+                {t('common.cancel')}
               </Button>
               <Button onClick={handleEdit} disabled={updateMutation.isPending}>
                 {updateMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Salvar
+                {t('common.save')}
               </Button>
             </DialogFooter>
           </DialogContent>

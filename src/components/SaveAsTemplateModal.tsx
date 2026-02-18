@@ -8,36 +8,22 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Loader2 } from 'lucide-react';
 import { ALL_TIERS, PLAN_LIMITS, type TierKey } from '@/lib/plan-limits';
 import type { Node, Edge } from '@xyflow/react';
 import type { Json } from '@/integrations/supabase/types';
 
 interface SaveAsTemplateModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  nodes: Node[];
-  edges: Edge[];
-  projectName: string;
-  userId: string;
-  sanitizeCanvasState: (nodes: Node[], edges: Edge[]) => Json;
+  open: boolean; onOpenChange: (open: boolean) => void; nodes: Node[]; edges: Edge[];
+  projectName: string; userId: string; sanitizeCanvasState: (nodes: Node[], edges: Edge[]) => Json;
 }
 
-interface TemplateOption {
-  id: string;
-  name: string;
-}
+interface TemplateOption { id: string; name: string; }
 
-export function SaveAsTemplateModal({
-  open,
-  onOpenChange,
-  nodes,
-  edges,
-  projectName,
-  userId,
-  sanitizeCanvasState,
-}: SaveAsTemplateModalProps) {
+export function SaveAsTemplateModal({ open, onOpenChange, nodes, edges, projectName, userId, sanitizeCanvasState }: SaveAsTemplateModalProps) {
   const { toast } = useToast();
+  const { t } = useLanguage();
   const [tab, setTab] = useState<string>('new');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -47,173 +33,83 @@ export function SaveAsTemplateModal({
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
 
-  // Pre-fill name when modal opens
   useEffect(() => {
-    if (open) {
-      setName(projectName);
-      setDescription('');
-      setAllowedTiers([...ALL_TIERS]);
-      setSelectedTemplateId('');
-      loadTemplates();
-    }
+    if (open) { setName(projectName); setDescription(''); setAllowedTiers([...ALL_TIERS]); setSelectedTemplateId(''); loadTemplates(); }
   }, [open, projectName]);
 
   const loadTemplates = async () => {
     setIsLoadingTemplates(true);
-    const { data, error } = await supabase
-      .from('project_templates')
-      .select('id, name')
-      .order('name');
-
-    if (!error && data) {
-      setTemplates(data);
-    }
+    const { data, error } = await supabase.from('project_templates').select('id, name').order('name');
+    if (!error && data) setTemplates(data);
     setIsLoadingTemplates(false);
   };
 
   const handleSaveNew = async () => {
-    if (!name.trim()) {
-      toast({ title: 'Preencha o nome do template', variant: 'destructive' });
-      return;
-    }
-
+    if (!name.trim()) { toast({ title: t('template.fill_name'), variant: 'destructive' }); return; }
     setIsSaving(true);
     const canvasState = sanitizeCanvasState(nodes, edges);
-
-    const { error } = await supabase.from('project_templates').insert({
-      name: name.trim(),
-      description: description.trim() || null,
-      canvas_state: canvasState,
-      created_by: userId,
-      allowed_tiers: allowedTiers,
-    });
-
+    const { error } = await supabase.from('project_templates').insert({ name: name.trim(), description: description.trim() || null, canvas_state: canvasState, created_by: userId, allowed_tiers: allowedTiers });
     setIsSaving(false);
-
-    if (error) {
-      toast({ title: 'Erro ao criar template', description: error.message, variant: 'destructive' });
-    } else {
-      toast({ title: 'Template criado com sucesso!' });
-      onOpenChange(false);
-    }
+    if (error) toast({ title: t('template.error_create'), description: error.message, variant: 'destructive' });
+    else { toast({ title: t('template.created_success') }); onOpenChange(false); }
   };
 
   const handleUpdateExisting = async () => {
-    if (!selectedTemplateId) {
-      toast({ title: 'Selecione um template para atualizar', variant: 'destructive' });
-      return;
-    }
-
+    if (!selectedTemplateId) { toast({ title: t('template.select_to_update'), variant: 'destructive' }); return; }
     setIsSaving(true);
     const canvasState = sanitizeCanvasState(nodes, edges);
-
-    const { error } = await supabase
-      .from('project_templates')
-      .update({ canvas_state: canvasState })
-      .eq('id', selectedTemplateId);
-
+    const { error } = await supabase.from('project_templates').update({ canvas_state: canvasState }).eq('id', selectedTemplateId);
     setIsSaving(false);
-
-    if (error) {
-      toast({ title: 'Erro ao atualizar template', description: error.message, variant: 'destructive' });
-    } else {
-      toast({ title: 'Template atualizado com sucesso!' });
-      onOpenChange(false);
-    }
+    if (error) toast({ title: t('template.error_update'), description: error.message, variant: 'destructive' });
+    else { toast({ title: t('template.updated_success') }); onOpenChange(false); }
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Salvar como Template</DialogTitle>
-          <DialogDescription>
-            Salve o canvas atual como um template para outros usuários utilizarem.
-          </DialogDescription>
+          <DialogTitle>{t('template.save_as_template')}</DialogTitle>
+          <DialogDescription>{t('template.save_desc')}</DialogDescription>
         </DialogHeader>
-
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="w-full">
-            <TabsTrigger value="new" className="flex-1">Novo Template</TabsTrigger>
-            <TabsTrigger value="update" className="flex-1">Atualizar Existente</TabsTrigger>
+            <TabsTrigger value="new" className="flex-1">{t('template.new_template')}</TabsTrigger>
+            <TabsTrigger value="update" className="flex-1">{t('template.update_existing')}</TabsTrigger>
           </TabsList>
-
           <TabsContent value="new" className="space-y-4 mt-4">
+            <div className="space-y-2"><Label htmlFor="template-name">{t('template.name')}</Label><Input id="template-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('template.name_placeholder')} /></div>
+            <div className="space-y-2"><Label htmlFor="template-desc">{t('template.description')}</Label><Input id="template-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t('template.description_placeholder')} /></div>
             <div className="space-y-2">
-              <Label htmlFor="template-name">Nome</Label>
-              <Input
-                id="template-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Nome do template"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="template-desc">Descrição (opcional)</Label>
-              <Input
-                id="template-desc"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Breve descrição do template"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Planos com acesso</Label>
+              <Label>{t('template.allowed_plans')}</Label>
               <div className="flex flex-wrap gap-3">
                 {ALL_TIERS.map((tier) => (
                   <label key={tier} className="flex items-center gap-2 text-sm">
-                    <Checkbox
-                      checked={allowedTiers.includes(tier)}
-                      onCheckedChange={(checked) => {
-                        setAllowedTiers(prev =>
-                          checked ? [...prev, tier] : prev.filter(t => t !== tier)
-                        );
-                      }}
-                    />
+                    <Checkbox checked={allowedTiers.includes(tier)} onCheckedChange={(checked) => setAllowedTiers(prev => checked ? [...prev, tier] : prev.filter(tItem => tItem !== tier))} />
                     {PLAN_LIMITS[tier].label}
                   </label>
                 ))}
               </div>
             </div>
             <Button onClick={handleSaveNew} disabled={isSaving} className="w-full">
-              {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Criar Template
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}{t('template.create_template')}
             </Button>
           </TabsContent>
-
           <TabsContent value="update" className="space-y-4 mt-4">
             {isLoadingTemplates ? (
-              <div className="flex justify-center py-4">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-              </div>
+              <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
             ) : templates.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                Nenhum template existente encontrado.
-              </p>
+              <p className="text-sm text-muted-foreground text-center py-4">{t('template.no_templates')}</p>
             ) : (
               <div className="space-y-2">
-                <Label>Selecione o template</Label>
+                <Label>{t('template.select_template')}</Label>
                 <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Escolha um template..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {templates.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>
-                        {t.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
+                  <SelectTrigger><SelectValue placeholder={t('template.choose_template')} /></SelectTrigger>
+                  <SelectContent>{templates.map((tmpl) => (<SelectItem key={tmpl.id} value={tmpl.id}>{tmpl.name}</SelectItem>))}</SelectContent>
                 </Select>
               </div>
             )}
-            <Button
-              onClick={handleUpdateExisting}
-              disabled={isSaving || !selectedTemplateId}
-              className="w-full"
-            >
-              {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Atualizar Template
+            <Button onClick={handleUpdateExisting} disabled={isSaving || !selectedTemplateId} className="w-full">
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}{t('template.update_template')}
             </Button>
           </TabsContent>
         </Tabs>

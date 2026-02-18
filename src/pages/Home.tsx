@@ -13,6 +13,7 @@ import { BuyCreditsModal } from '@/components/BuyCreditsModal';
 import { WelcomeVideoModal } from '@/components/WelcomeVideoModal';
 import { getTierConfig } from '@/lib/plan-limits';
 import { useToast } from '@/hooks/use-toast';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus,
@@ -31,14 +32,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-
-function getGreeting(): string {
-  const h = new Date().getHours();
-  if (h < 12) return 'Bom dia';
-  if (h < 18) return 'Boa tarde';
-  return 'Boa noite';
-}
+import { ptBR, enUS, es as esLocale } from 'date-fns/locale';
 
 const tierLabels: Record<string, string> = {
   free: 'Free',
@@ -72,6 +66,7 @@ export default function Home() {
   const { user, profile, isAdmin } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { t } = useLanguage();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [showBuyCredits, setShowBuyCredits] = useState(false);
@@ -147,7 +142,7 @@ export default function Home() {
       return (data ?? []).map((img: any) => ({
         ...img,
         tags: (img.reference_image_tags ?? []).map(
-          (t: any) => t.reference_categories?.slug
+          (tag: any) => tag.reference_categories?.slug
         ).filter(Boolean),
       }));
     },
@@ -170,7 +165,7 @@ export default function Home() {
     enabled: !!user,
   });
 
-  // Create project mutation (reused from Projects page)
+  // Create project mutation
   const createMutation = useMutation({
     mutationFn: async ({ name, templateId }: { name: string; templateId?: string }) => {
       let canvasState: CanvasState = { nodes: [], edges: [] };
@@ -211,7 +206,7 @@ export default function Home() {
       navigate(`/app?project=${data.id}`);
     },
     onError: (error) => {
-      toast({ title: 'Erro ao criar projeto', description: error.message, variant: 'destructive' });
+      toast({ title: t('home.error_create_project'), description: error.message, variant: 'destructive' });
     },
   });
 
@@ -219,8 +214,8 @@ export default function Home() {
     const currentCount = stats?.projects ?? 0;
     if (!isAdmin && tierConfig.maxProjects !== -1 && currentCount >= tierConfig.maxProjects) {
       toast({
-        title: 'Limite de projetos atingido',
-        description: `Seu plano ${tierConfig.label} permite até ${tierConfig.maxProjects} projeto(s). Faça upgrade para criar mais.`,
+        title: t('home.project_limit_reached'),
+        description: t('home.project_limit_desc').replace('{plan}', tierConfig.label).replace('{max}', String(tierConfig.maxProjects)),
         variant: 'destructive',
       });
       return;
@@ -229,7 +224,14 @@ export default function Home() {
   };
 
   const showUpgrade = !isAdmin && (tier === 'free' || tier === 'starter');
-  const displayName = profile?.display_name || profile?.email?.split('@')[0] || 'Usuário';
+  const displayName = profile?.display_name || profile?.email?.split('@')[0] || t('common.user');
+
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 12) return t('home.good_morning');
+    if (h < 18) return t('home.good_afternoon');
+    return t('home.good_evening');
+  })();
 
   return (
     <div className="min-h-screen bg-background">
@@ -243,8 +245,8 @@ export default function Home() {
               <Clock className="h-5 w-5 text-primary" />
             </div>
             <div className="flex-1">
-              <p className="text-sm font-medium">Período de teste ativo — {trialDaysRemaining} {trialDaysRemaining === 1 ? 'dia restante' : 'dias restantes'}</p>
-              <p className="text-xs text-muted-foreground">Você recebe 5 créditos por dia durante o trial. Créditos restantes: {profile?.credits ?? 0}</p>
+              <p className="text-sm font-medium">{t('home.trial_active')} — {trialDaysRemaining} {trialDaysRemaining === 1 ? t('home.day_remaining') : t('home.days_remaining')}</p>
+              <p className="text-xs text-muted-foreground">{t('home.trial_credits_info')} {profile?.credits ?? 0}</p>
             </div>
           </motion.div>
         )}
@@ -255,12 +257,12 @@ export default function Home() {
               <AlertTriangle className="h-5 w-5 text-destructive" />
             </div>
             <div className="flex-1">
-              <p className="text-sm font-medium">Você não possui uma assinatura ativa</p>
-              <p className="text-xs text-muted-foreground">Assine um plano para gerar imagens. Teste por 7 dias grátis nos planos mensais.</p>
+              <p className="text-sm font-medium">{t('home.no_subscription')}</p>
+              <p className="text-xs text-muted-foreground">{t('home.subscribe_info')}</p>
             </div>
             <Button size="sm" className="rounded-full gap-1.5 shrink-0" onClick={() => setShowBuyCredits(true)}>
               <Zap className="h-3.5 w-3.5" />
-              Ver planos
+              {t('home.see_plans')}
             </Button>
           </motion.div>
         )}
@@ -276,7 +278,7 @@ export default function Home() {
           <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
             <div>
               <h1 className="text-3xl md:text-4xl font-bold mb-2">
-                {getGreeting()}, <span className="gradient-text">{displayName}</span> 👋
+                {greeting}, <span className="gradient-text">{displayName}</span> 👋
               </h1>
               <div className="flex items-center gap-3 mt-3 flex-wrap">
                 <Badge variant="outline" className="gap-1.5">
@@ -285,7 +287,7 @@ export default function Home() {
                 </Badge>
                 <Badge variant="secondary" className="gap-1.5">
                   <Coins className="h-3 w-3" />
-                  {profile?.credits ?? 0} créditos
+                  {profile?.credits ?? 0} {t('header.credits')}
                 </Badge>
               </div>
             </div>
@@ -296,7 +298,7 @@ export default function Home() {
               onClick={handleNewProject}
             >
               <Plus className="h-5 w-5" />
-              Criar novo projeto
+              {t('home.create_new_project')}
             </Button>
           </div>
         </motion.section>
@@ -306,11 +308,11 @@ export default function Home() {
           <div className="flex items-center justify-between mb-5">
             <h2 className="text-xl font-semibold flex items-center gap-2">
               <Image className="h-5 w-5 text-primary" />
-              Suas criações recentes
+              {t('home.recent_creations')}
             </h2>
             {recentImages && recentImages.length > 0 && (
               <Button variant="ghost" size="sm" className="gap-1" onClick={() => navigate('/gallery')}>
-                Ver tudo <ArrowRight className="h-4 w-4" />
+                {t('home.view_all')} <ArrowRight className="h-4 w-4" />
               </Button>
             )}
           </div>
@@ -318,9 +320,9 @@ export default function Home() {
           {!recentImages || recentImages.length === 0 ? (
             <motion.div variants={fadeUp} className="glass-card p-10 text-center">
               <Image className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground mb-4">Você ainda não gerou nenhuma imagem.</p>
+              <p className="text-muted-foreground mb-4">{t('home.no_images_yet')}</p>
               <Button onClick={() => setCreateOpen(true)} className="rounded-full gap-2">
-                <Plus className="h-4 w-4" /> Criar primeiro projeto
+                <Plus className="h-4 w-4" /> {t('home.create_first_project')}
               </Button>
             </motion.div>
           ) : (
@@ -347,19 +349,19 @@ export default function Home() {
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-xl font-semibold flex items-center gap-2">
                 <Sparkles className="h-5 w-5 text-primary" />
-                Comece algo novo
+                {t('home.start_something_new')}
               </h2>
             </div>
 
             <motion.div variants={stagger} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {templates.map((t) => (
-                <motion.div key={t.id} variants={fadeUp}>
+              {templates.map((tmpl) => (
+                <motion.div key={tmpl.id} variants={fadeUp}>
                   <Card className="glass-card overflow-hidden hover:border-primary/50 transition-all group">
                     <div className="aspect-video bg-muted relative overflow-hidden">
-                      {t.thumbnail_url ? (
+                      {tmpl.thumbnail_url ? (
                         <img
-                          src={t.thumbnail_url}
-                          alt={t.name}
+                          src={tmpl.thumbnail_url}
+                          alt={tmpl.name}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                         />
                       ) : (
@@ -369,20 +371,19 @@ export default function Home() {
                       )}
                     </div>
                     <CardContent className="p-4">
-                      <h3 className="font-medium text-sm truncate mb-1">{t.name}</h3>
-                      {t.description && (
-                        <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{t.description}</p>
+                      <h3 className="font-medium text-sm truncate mb-1">{tmpl.name}</h3>
+                      {tmpl.description && (
+                        <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{tmpl.description}</p>
                       )}
                       <Button
                         variant="outline"
                         size="sm"
                         className="w-full gap-1"
                         onClick={() => {
-                          // Open create modal — user can type name then
                           setCreateOpen(true);
                         }}
                       >
-                        Usar template
+                        {t('home.use_template')}
                       </Button>
                     </CardContent>
                   </Card>
@@ -398,10 +399,10 @@ export default function Home() {
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-xl font-semibold flex items-center gap-2">
                 <Image className="h-5 w-5 text-primary" />
-                Biblioteca em destaque
+                {t('home.library_highlights')}
               </h2>
               <Button variant="ghost" size="sm" className="gap-1" onClick={() => navigate('/library')}>
-                Explorar biblioteca <ArrowRight className="h-4 w-4" />
+                {t('home.explore_library')} <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
 
@@ -429,7 +430,7 @@ export default function Home() {
 
             {!isAdmin && isFree && (
               <p className="text-xs text-muted-foreground mt-3 text-center">
-                🔒 Desbloqueie a biblioteca completa no plano Starter.
+                {t('home.unlock_library')}
               </p>
             )}
           </motion.section>
@@ -443,10 +444,10 @@ export default function Home() {
           className="grid grid-cols-2 md:grid-cols-4 gap-4"
         >
           {[
-            { label: 'Projetos criados', value: stats?.projects ?? 0, icon: LayoutGrid },
-            { label: 'Imagens geradas', value: stats?.generations ?? 0, icon: Image },
-            { label: 'Créditos restantes', value: profile?.credits ?? 0, icon: Coins },
-            { label: 'Plano atual', value: tierLabels[tier] ?? tier, icon: Crown },
+            { label: t('home.projects_created'), value: stats?.projects ?? 0, icon: LayoutGrid },
+            { label: t('home.images_generated'), value: stats?.generations ?? 0, icon: Image },
+            { label: t('home.remaining_credits'), value: profile?.credits ?? 0, icon: Coins },
+            { label: t('home.current_plan'), value: tierLabels[tier] ?? tier, icon: Crown },
           ].map((s, i) => (
             <motion.div key={i} variants={fadeUp}>
               <Card className="glass-card">
@@ -475,10 +476,10 @@ export default function Home() {
                 </div>
                 <div className="flex-1 text-center md:text-left">
                   <h3 className="text-lg font-semibold mb-1">
-                    Desbloqueie todo o potencial da Gravyx
+                    {t('home.unlock_potential')}
                   </h3>
                   <p className="text-sm text-muted-foreground">
-                    Projetos ilimitados, mais créditos e acesso completo à biblioteca com o plano Premium.
+                    {t('home.unlimited_projects')}
                   </p>
                 </div>
                 <Button
@@ -487,7 +488,7 @@ export default function Home() {
                   onClick={() => setShowBuyCredits(true)}
                 >
                   <Zap className="h-4 w-4" />
-                  Ver planos
+                  {t('home.see_plans')}
                 </Button>
               </CardContent>
             </Card>

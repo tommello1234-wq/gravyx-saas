@@ -6,8 +6,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { X, Copy, Check, Download, Calendar } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { ptBR, enUS, es as esLocale } from 'date-fns/locale';
 
 interface ImageViewerModalProps {
   open: boolean;
@@ -24,6 +25,8 @@ interface ImageViewerModalProps {
   showDownload?: boolean;
 }
 
+const dateLocales = { pt: ptBR, en: enUS, es: esLocale };
+
 export function ImageViewerModal({
   open,
   onOpenChange,
@@ -32,13 +35,14 @@ export function ImageViewerModal({
 }: ImageViewerModalProps) {
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
+  const { t, language } = useLanguage();
 
   if (!image) return null;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(image.prompt);
     setCopied(true);
-    toast({ title: 'Prompt copiado!' });
+    toast({ title: t('viewer.prompt_copied') });
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -55,6 +59,8 @@ export function ImageViewerModal({
     window.URL.revokeObjectURL(downloadUrl);
   };
 
+  const dateFormat = language === 'en' ? "MMM d, yyyy" : "d 'de' MMM 'de' yyyy";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl p-0 overflow-hidden bg-card border-border">
@@ -68,24 +74,16 @@ export function ImageViewerModal({
         </Button>
 
         <div className="flex flex-col md:flex-row">
-          {/* Image */}
           <div className="flex-1 bg-black/20 flex items-center justify-center p-4">
-            <img
-              src={image.url}
-              alt={image.title || 'Image'}
-              className="max-h-[60vh] w-auto object-contain rounded-lg"
-            />
+            <img src={image.url} alt={image.title || 'Image'} className="max-h-[60vh] w-auto object-contain rounded-lg" />
           </div>
 
-          {/* Details */}
           <div className="w-full md:w-80 p-6 space-y-4 border-t md:border-t-0 md:border-l border-border">
             {image.title && (
               <div>
                 <h3 className="font-semibold text-lg text-foreground">{image.title}</h3>
                 {image.category && (
-                  <span className="text-xs text-muted-foreground capitalize">
-                    {image.category}
-                  </span>
+                  <span className="text-xs text-muted-foreground capitalize">{image.category}</span>
                 )}
               </div>
             )}
@@ -100,7 +98,7 @@ export function ImageViewerModal({
                   </div>
                 )}
                 <span className="text-muted-foreground">
-                  Contribuição de <strong className="text-foreground">{image.submittedBy.name || 'Usuário'}</strong>
+                  {t('library.contribution_by')} <strong className="text-foreground">{image.submittedBy.name || t('common.user')}</strong>
                 </span>
               </div>
             )}
@@ -116,32 +114,20 @@ export function ImageViewerModal({
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Calendar className="h-4 w-4" />
                 <span>
-                  {format(new Date(image.createdAt), "d 'de' MMM 'de' yyyy", { locale: ptBR })}
+                  {format(new Date(image.createdAt), dateFormat, { locale: dateLocales[language] })}
                 </span>
                 {image.aspectRatio && (
-                  <span className="px-2 py-0.5 rounded-full bg-muted text-xs">
-                    {image.aspectRatio}
-                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-muted text-xs">{image.aspectRatio}</span>
                 )}
               </div>
             )}
 
             <div className="flex gap-2 pt-2">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={handleCopy}
-              >
+              <Button variant="outline" className="flex-1" onClick={handleCopy}>
                 {copied ? (
-                  <>
-                    <Check className="h-4 w-4 mr-2" />
-                    Copiado!
-                  </>
+                  <><Check className="h-4 w-4 mr-2" />{t('viewer.copied')}</>
                 ) : (
-                  <>
-                    <Copy className="h-4 w-4 mr-2" />
-                    Copiar prompt
-                  </>
+                  <><Copy className="h-4 w-4 mr-2" />{t('viewer.copy_prompt')}</>
                 )}
               </Button>
               {showDownload && (

@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Download, Trash2, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 export interface NodeImage {
   url: string;
@@ -19,14 +20,10 @@ interface OutputImageModalProps {
   onDelete: (image: NodeImage) => void;
 }
 
-export function OutputImageModal({
-  image,
-  isOpen,
-  onClose,
-  onDelete,
-}: OutputImageModalProps) {
+export function OutputImageModal({ image, isOpen, onClose, onDelete }: OutputImageModalProps) {
   const [isDownloading, setIsDownloading] = useState(false);
   const { toast } = useToast();
+  const { t, language } = useLanguage();
 
   if (!image) return null;
 
@@ -43,13 +40,9 @@ export function OutputImageModal({
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(downloadUrl);
-      toast({ title: 'Download iniciado!' });
-    } catch (error) {
-      toast({
-        title: 'Erro ao baixar',
-        description: 'Não foi possível baixar a imagem.',
-        variant: 'destructive',
-      });
+      toast({ title: t('output.download_started') });
+    } catch {
+      toast({ title: t('output.error_download'), description: t('output.error_download_desc'), variant: 'destructive' });
     } finally {
       setIsDownloading(false);
     }
@@ -58,54 +51,32 @@ export function OutputImageModal({
   const handleDelete = () => {
     onDelete(image);
     onClose();
-    toast({ title: 'Imagem removida do node' });
+    toast({ title: t('output.image_removed') });
   };
+
+  const locale = language === 'en' ? 'en-US' : language === 'es' ? 'es-ES' : 'pt-BR';
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto bg-card border-border">
         <DialogHeader>
-          <DialogTitle className="text-foreground">Visualizar Imagem</DialogTitle>
+          <DialogTitle className="text-foreground">{t('output.view_image')}</DialogTitle>
         </DialogHeader>
-
-        {/* Image */}
         <div className="relative rounded-xl overflow-hidden bg-muted/20">
-          <img
-            src={image.url}
-            alt="Generated"
-            className="w-full h-auto max-h-[60vh] object-contain"
-          />
+          <img src={image.url} alt="Generated" className="w-full h-auto max-h-[60vh] object-contain" />
         </div>
-
-        {/* Actions */}
         <div className="flex gap-3 pt-2">
-          <Button
-            variant="outline"
-            className="flex-1 rounded-xl border-blue-500/30 hover:bg-blue-500/10 hover:border-blue-500/50"
-            onClick={handleDownload}
-            disabled={isDownloading}
-          >
-            {isDownloading ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <Download className="h-4 w-4 mr-2" />
-            )}
-            Baixar
+          <Button variant="outline" className="flex-1 rounded-xl border-blue-500/30 hover:bg-blue-500/10 hover:border-blue-500/50" onClick={handleDownload} disabled={isDownloading}>
+            {isDownloading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+            {t('output.download')}
           </Button>
-
-          <Button
-            variant="outline"
-            className="flex-1 rounded-xl border-destructive/30 hover:bg-destructive/10 hover:border-destructive/50 text-destructive"
-            onClick={handleDelete}
-          >
+          <Button variant="outline" className="flex-1 rounded-xl border-destructive/30 hover:bg-destructive/10 hover:border-destructive/50 text-destructive" onClick={handleDelete}>
             <Trash2 className="h-4 w-4 mr-2" />
-            Excluir
+            {t('output.delete')}
           </Button>
         </div>
-
-        {/* Metadata */}
         <div className="text-xs text-muted-foreground pt-2">
-          <span>Gerado em: {new Date(image.generatedAt).toLocaleString('pt-BR')}</span>
+          <span>{t('output.generated_at')} {new Date(image.generatedAt).toLocaleString(locale)}</span>
         </div>
       </DialogContent>
     </Dialog>
