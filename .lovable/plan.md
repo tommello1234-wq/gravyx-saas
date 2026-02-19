@@ -1,40 +1,75 @@
 
 
-## Correcao: Bloquear Trials Duplicados no Webhook Ticto
+## Migracao de Ticto para Stripe
 
-### Problema
-A Ticto envia multiplos webhooks de "periodo de testes" para o mesmo usuario. O codigo atual reseta os creditos para 5 a cada evento, permitindo que o usuario consuma creditos e receba mais. No caso do `dagagdfagad@gmail.com`, foram 5 webhooks em 40 minutos, resultando em 11 imagens geradas.
+### Resumo
 
-### Solucao
-Adicionar uma verificacao no handler de trial: se o usuario ja tem `subscription_status = 'trial_active'` ou `'active'`, ignorar o webhook duplicado e logar.
+Substituir a Ticto pela Stripe como gateway de pagamento, aproveitando a integracao nativa da Lovable. A Stripe cobra ~3.99% + R$0.39 por transacao (vs ~7-10% da Ticto), gerando economia significativa.
 
-### Alteracao
+### Etapas
 
-**Arquivo:** `supabase/functions/ticto-webhook/index.ts`
+#### 1. Habilitar Stripe na Lovable
+- Usar a ferramenta nativa para conectar a conta Stripe ao projeto
+- Isso vai fornecer as ferramentas necessarias para criar produtos e precos automaticamente
 
-Na secao de tratamento de trial (linha ~329), apos encontrar/criar o profile e antes de ativar o trial, adicionar:
+#### 2. Criar Produtos e Precos no Stripe
+- 3 produtos: Starter, Premium, Enterprise
+- 6 precos (mensal + anual para cada):
+  - Starter Mensal: R$ 79/mes (trial 7 dias)
+  - Starter Anual: R$ 420/ano
+  - Premium Mensal: R$ 167/mes (trial 7 dias)
+  - Premium Anual: R$ 1.097/ano
+  - Enterprise Mensal: R$ 347/mes (trial 7 dias)
+  - Enterprise Anual: R$ 2.597/ano
 
-```typescript
-// Verificar se ja esta em trial ou ativo - ignorar duplicata
-const { data: currentProfile } = await supabase
-  .from('profiles')
-  .select('subscription_status')
-  .eq('user_id', profile.user_id)
-  .single();
+#### 3. Criar Edge Function `stripe-webhook`
+- Receber eventos do Stripe (checkout.session.completed, invoice.paid, customer.subscription.deleted, etc.)
+- Validar assinatura do webhook usando o Stripe webhook secret
+- Logica equivalente ao ticto-webhook atual:
+  - Pagamento aprovado -> ativar plano + adicionar creditos
+  - Trial iniciado -> ativar trial com 5 creditos
+  - Cancelamento -> manter beneficios ate fim do ciclo
+  - Assinatura encerrada -> downgrade para Free
+  - Reembolso -> reverter creditos
+- Auto-criar conta se usuario nao existir (manter logica atual)
 
-if (currentProfile?.subscription_status === 'trial_active' || 
-    currentProfile?.subscription_status === 'active') {
-  console.log(`Trial duplicado ignorado: ${customerEmail} ja esta ${currentProfile.subscription_status}`);
-  await logWebhook(supabase, status, body, true, `Trial duplicate ignored - already ${currentProfile.subscription_status}`);
-  return new Response(JSON.stringify({ success: true, action: 'trial_duplicate_ignored' }), {
-    status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
-}
+#### 4. Atualizar `BuyCreditsModal.tsx`
+- Remover links da Ticto
+- Usar Stripe Checkout Sessions (via edge function) para redirecionar ao pagamento
+- Criar edge function `create-checkout-session` que:
+  - Recebe o price_id e user_id
+  - Cria sessao de checkout no Stripe
+  - Retorna URL de checkout
+
+#### 5. Mapeamento de Eventos Stripe vs Ticto
+
+```text
+Ticto                    Stripe
+-----                    ------
+"periodo de testes"  ->  checkout.session.completed (mode=subscription, trial)
+"venda realizada"    ->  invoice.paid
+"cancelada"          ->  customer.subscription.updated (cancel_at_period_end=true)
+"encerrada"          ->  customer.subscription.deleted
+"reembolso"          ->  charge.refunded
+"atrasada"           ->  invoice.payment_failed
 ```
 
-### Impacto
-- 1 arquivo modificado
-- Sem alteracao no banco de dados
-- Webhooks duplicados de trial serao logados e ignorados
-- Novos trials continuam funcionando normalmente
+#### 6. O que acontece com assinantes atuais da Ticto
+- Manter o `ticto-webhook` funcionando para assinantes existentes
+- Novos assinantes vao pela Stripe
+- Conforme assinantes da Ticto cancelam naturalmente, a migração se completa
+
+### Arquivos Criados
+1. `supabase/functions/create-checkout-session/index.ts` - Cria sessao de checkout
+2. `supabase/functions/stripe-webhook/index.ts` - Processa eventos do Stripe
+
+### Arquivos Modificados
+1. `src/components/BuyCreditsModal.tsx` - Trocar links Ticto por Stripe Checkout
+2. `supabase/config.toml` - Registrar novas edge functions
+
+### Sem Mudancas no Banco de Dados
+Todas as tabelas necessarias ja existem (profiles, credit_purchases, webhook_logs).
+
+### Primeira Acao
+Habilitar a integracao Stripe na Lovable para obter as ferramentas de criacao de produtos e configuracao de webhooks.
 
