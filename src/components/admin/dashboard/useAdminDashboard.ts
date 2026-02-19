@@ -44,6 +44,21 @@ export interface DashboardData {
   topUser: { name: string; count: number } | null;
   activityRate: number;
 
+  // Strategic metrics
+  trialsActive: number;
+  paidActive: number;
+  trialsStartedPeriod: number;
+  conversionsPeriod: number;
+  conversionRate: number;
+  cancelledPeriod: number;
+  churnRate: number;
+  arpu: number;
+  avgCreditsPerPaid: number;
+  avgCreditsPerTrial: number;
+  zeroBalanceUsers: number;
+  trialsWithNoCreditsUsed: number;
+  costGrowthVsRevenue: number;
+
   // Growth
   userGrowth: number;
   activeUserGrowth: number;
@@ -352,6 +367,34 @@ export function useAdminDashboard(
     const completedJobs = jobs.filter(j => j.status === 'completed').length;
     const jobSuccessRate = totalJobs > 0 ? (completedJobs / totalJobs) * 100 : 100;
 
+    // Strategic metrics
+    const trialsActive = filteredProfiles.filter(p => p.subscription_status === 'trial_active').length;
+    const paidActive = filteredProfiles.filter(p => p.tier !== 'free' && p.subscription_status === 'active').length;
+    const trialsStartedPeriod = filteredProfiles.filter(p => p.trial_start_date && new Date(p.trial_start_date) >= periodStart).length;
+    const conversionsPeriod = filteredProfiles.filter(p => p.subscription_status === 'active' && p.trial_start_date && p.tier !== 'free' && new Date(p.updated_at) >= periodStart).length;
+    const conversionRate = trialsStartedPeriod > 0 ? (conversionsPeriod / trialsStartedPeriod) * 100 : 0;
+    const cancelledPeriod = filteredProfiles.filter(p => p.subscription_status === 'inactive' && p.tier === 'free' && p.trial_start_date && new Date(p.updated_at) >= periodStart).length;
+    const churnRate = paidActive + cancelledPeriod > 0 ? (cancelledPeriod / (paidActive + cancelledPeriod)) * 100 : 0;
+    const arpu = paidActive > 0 ? periodRevenue / paidActive : 0;
+
+    // Usage metrics
+    const paidUserIds = new Set(filteredProfiles.filter(p => p.tier !== 'free' && p.subscription_status === 'active').map(p => p.user_id));
+    const trialUserIds = new Set(filteredProfiles.filter(p => p.subscription_status === 'trial_active').map(p => p.user_id));
+    const paidPeriodImages = periodGens.filter(g => paidUserIds.has(g.user_id)).length;
+    const trialPeriodImages = periodGens.filter(g => trialUserIds.has(g.user_id)).length;
+    const avgCreditsPerPaid = paidActive > 0 ? paidPeriodImages / paidActive : 0;
+    const avgCreditsPerTrial = trialsActive > 0 ? trialPeriodImages / trialsActive : 0;
+    const zeroBalanceUsers = filteredProfiles.filter(p => (p.credits || 0) === 0).length;
+
+    // Trials with no credits used
+    const trialUsersWithImages = new Set(filteredGenerations.filter(g => trialUserIds.has(g.user_id)).map(g => g.user_id)).size;
+    const trialsWithNoCreditsUsed = trialsActive > 0 ? ((trialsActive - trialUsersWithImages) / trialsActive) * 100 : 0;
+
+    // Cost growth vs revenue
+    const prevCost = prevGens.length * costPerImage * 100;
+    const costGrowth = prevCost > 0 ? ((periodCost - prevCost) / prevCost) * 100 : 0;
+    const costGrowthVsRevenue = costGrowth > revenueGrowth && periodCost > 0 ? 1 : 0;
+
     // Alerts
     const alerts: { type: 'error' | 'warning' | 'info'; message: string }[] = [];
     if (jobs24h.length > 0) {
@@ -363,13 +406,13 @@ export function useAdminDashboard(
     if (todayImages > avgDaily * 2 && todayImages > 5) {
       alerts.push({ type: 'info', message: `🔥 Pico de uso: ${todayImages} imagens hoje (média: ${avgDaily.toFixed(0)}/dia)` });
     }
-    const zeroCredits = filteredProfiles.filter(p => (p.credits || 0) === 0).length;
-    if (zeroCredits > 0) alerts.push({ type: 'warning', message: `💳 ${zeroCredits} usuário(s) com 0 créditos` });
 
     return {
       profiles: filteredProfiles, generations: filteredGenerations, jobs, purchases: filteredPurchases, authUsers,
       totalUsers, activeUsers, newUsers, paidSubscriptions, newPaidSubscriptions, estimatedChurn,
       totalImages, periodImages, creditsConsumed, creditsRemaining, avgImagesPerActiveUser, topUser, activityRate,
+      trialsActive, paidActive, trialsStartedPeriod, conversionsPeriod, conversionRate, cancelledPeriod, churnRate, arpu,
+      avgCreditsPerPaid, avgCreditsPerTrial, zeroBalanceUsers, trialsWithNoCreditsUsed, costGrowthVsRevenue,
       userGrowth, activeUserGrowth, imageGrowth, revenueGrowth, newUserGrowth,
       activityByDay, planDistribution, topUsers,
       grossRevenue, periodRevenue, operationalCost, periodCost, grossProfit, margin, estimatedMRR, estimatedARR,
