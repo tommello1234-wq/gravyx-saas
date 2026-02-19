@@ -55,7 +55,13 @@ async function uploadBase64ToStorage(
   }
 }
 
-// Generate a single image via AI Gateway
+// Models to try in order (primary + fallback)
+const IMAGE_MODELS = [
+  "google/gemini-3-pro-image-preview",
+  "google/gemini-2.5-flash-image",
+];
+
+// Generate a single image via AI Gateway with automatic model fallback
 async function generateSingleImage(
   LOVABLE_API_KEY: string,
   messageContent: { type: string; text?: string; image_url?: { url: string } }[],
@@ -63,52 +69,68 @@ async function generateSingleImage(
   userId: string,
   index: number
 ): Promise<string | null> {
-  try {
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-pro-image-preview",
-        messages: [{ role: "user", content: messageContent }],
-        modalities: ["image", "text"]
-      }),
-    });
+  for (const model of IMAGE_MODELS) {
+    try {
+      console.log(`Trying model: ${model} for image ${index}`);
+      const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: messageContent }],
+          modalities: ["image", "text"]
+        }),
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("AI Gateway error:", response.status, errorText);
-      
-      if (response.status === 429) {
-        throw new Error("RATE_LIMIT");
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`AI Gateway error (${model}):`, response.status, errorText);
+        
+        if (response.status === 429) {
+          throw new Error("RATE_LIMIT");
+        }
+        
+        // Try next model on 500 errors
+        if (response.status >= 500) {
+          console.warn(`Model ${model} returned ${response.status}, trying fallback...`);
+          continue;
+        }
+        
+        return null;
       }
+
+      const data = await response.json();
+      const base64Url = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
       
-      return null;
-    }
+      if (!base64Url) {
+        console.error(`No image URL in response from ${model}`);
+        continue;
+      }
 
-    const data = await response.json();
-    const base64Url = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-    
-    if (!base64Url) {
-      console.error("No image URL in response");
-      return null;
-    }
+      const fileName = `${Date.now()}-${index}-${Math.random().toString(36).substring(7)}`;
+      const publicUrl = await uploadBase64ToStorage(supabaseAdmin, base64Url, userId, fileName);
+      
+      if (!publicUrl) {
+        console.error("Failed to upload image to storage");
+        return null;
+      }
 
-    const fileName = `${Date.now()}-${index}-${Math.random().toString(36).substring(7)}`;
-    const publicUrl = await uploadBase64ToStorage(supabaseAdmin, base64Url, userId, fileName);
-    
-    if (!publicUrl) {
-      console.error("Failed to upload image to storage");
-      return null;
+      if (model !== IMAGE_MODELS[0]) {
+        console.log(`Successfully used fallback model: ${model}`);
+      }
+      return publicUrl;
+    } catch (error) {
+      if ((error as Error).message === "RATE_LIMIT") throw error;
+      console.error(`Model ${model} failed:`, error);
+      continue;
     }
-
-    return publicUrl;
-  } catch (error) {
-    console.error("Single image generation error:", error);
-    throw error;
   }
+  
+  console.error("All models failed for image generation");
+  return null;
 }
 
 serve(async (req) => {
