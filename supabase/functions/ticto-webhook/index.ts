@@ -303,8 +303,29 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // 3. CANCELADA → apenas loga. Usuário mantém benefícios até fim do ciclo.
+  // 3. CANCELADA → verificar se é trial (downgrade imediato) ou paga (manter benefícios)
   if (statusLower.includes('cancelada') || statusLower.includes('cancelled') || statusLower.includes('canceled')) {
+    const profile = await findProfile(customerEmail);
+
+    if (profile) {
+      // Verificar se está em trial - se sim, downgrade imediato (nunca pagou)
+      const { data: currentProfile } = await supabase
+        .from('profiles')
+        .select('subscription_status')
+        .eq('user_id', profile.user_id)
+        .single();
+
+      if (currentProfile?.subscription_status === 'trial_active') {
+        await downgradeToFree(profile.user_id, profile.credits, profile.credits);
+        console.log(`🔻 Trial cancelado - downgrade imediato: ${customerEmail}`);
+        await logWebhook(supabase, status, body, true, 'Trial cancelled - immediate downgrade to Free');
+        return new Response(JSON.stringify({ success: true, action: 'trial_cancelled_downgraded' }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    // Assinatura paga cancelada - manter benefícios até fim do ciclo
     console.log(`⚠️ Assinatura cancelada (mantém benefícios): ${customerEmail}`);
     await logWebhook(supabase, status, body, true, 'Subscription cancelled - benefits kept until cycle end');
     return new Response(JSON.stringify({ success: true, action: 'cancelled_logged' }), {
