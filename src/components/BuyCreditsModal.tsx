@@ -4,40 +4,38 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Sparkles, Check, Crown, Zap, Rocket, HelpCircle, Loader2 } from 'lucide-react';
+import { Sparkles, Check, Crown, Zap, Rocket, HelpCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { PLAN_LIMITS, type TierKey } from '@/lib/plan-limits';
-import { supabase } from '@/integrations/supabase/client';
-import { toast } from '@/hooks/use-toast';
 
 interface BuyCreditsModalProps { open: boolean; onOpenChange: (open: boolean) => void; }
 type BillingCycle = 'monthly' | 'annual';
 
 interface PlanInfo {
   tier: TierKey; icon: typeof Sparkles; description: string;
-  monthly: { price: string; credits: number; priceId: string; installment?: string };
-  annual: { price: string; installment: string; credits: number; priceId: string };
+  monthly: { price: string; credits: number; checkout: string; installment?: string };
+  annual: { price: string; installment: string; credits: number; checkout: string };
   highlight?: boolean; badge?: string; features: string[];
 }
 
 const plans: PlanInfo[] = [
   {
     tier: 'starter', icon: Zap, description: 'Para quem está começando a criar com IA',
-    monthly: { price: 'R$ 79', credits: 80, priceId: 'price_1T2dH9QaS2QCKPVAO3z0v3as' },
-    annual: { price: 'R$ 420/ano', installment: 'R$ 43,44', credits: 1000, priceId: 'price_1T2dI8QaS2QCKPVA5KUWv6A1' },
+    monthly: { price: 'R$ 79', credits: 80, checkout: 'https://checkout.ticto.app/O7A4C2615' },
+    annual: { price: 'R$ 420/ano', installment: 'R$ 43,44', credits: 1000, checkout: 'https://checkout.ticto.app/OA871890B' },
     features: ['80 créditos/mês', 'Até 3 projetos ativos', 'Templates essenciais', 'Acesso completo à biblioteca de referências'],
   },
   {
     tier: 'premium', icon: Crown, highlight: true, badge: 'MAIS POPULAR', description: 'Para criativos que buscam uso ilimitado e flexível',
-    monthly: { price: 'R$ 167', credits: 250, priceId: 'price_1T2dNOQaS2QCKPVAPcfLgTg6' },
-    annual: { price: 'R$ 1.097/ano', installment: 'R$ 91,42', credits: 3000, priceId: 'price_1T2dNfQaS2QCKPVAZ6xDyCDl' },
+    monthly: { price: 'R$ 167', credits: 250, checkout: 'https://checkout.ticto.app/O465B8044' },
+    annual: { price: 'R$ 1.097/ano', installment: 'R$ 91,42', credits: 3000, checkout: 'https://checkout.ticto.app/O06B270AF' },
     features: ['250 créditos/mês', 'Projetos ilimitados', 'Acesso a todos os Templates de Fluxos', 'Acesso completo à biblioteca de referências'],
   },
   {
     tier: 'enterprise', icon: Rocket, badge: 'PROFISSIONAL', description: 'Para profissionais escalando sua produção de conteúdo',
-    monthly: { price: 'R$ 347', credits: 600, priceId: 'price_1T2dSeQaS2QCKPVAboY5jaQF' },
-    annual: { price: 'R$ 2.597/ano', installment: 'R$ 216,42', credits: 7200, priceId: 'price_1T2dT8QaS2QCKPVAf7yajEeK' },
+    monthly: { price: 'R$ 347', credits: 600, checkout: 'https://checkout.ticto.app/O8AA396EB' },
+    annual: { price: 'R$ 2.597/ano', installment: 'R$ 216,42', credits: 7200, checkout: 'https://checkout.ticto.app/OA8BDDA9B' },
     features: ['600 créditos/mês', 'Projetos ilimitados', 'Acesso a todos os Templates de Fluxos', 'Acesso completo à biblioteca de referências', 'Acesso antecipado a novas ferramentas'],
   },
 ];
@@ -47,30 +45,11 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
   const { t } = useLanguage();
   const currentTier = (profile?.tier as TierKey) || 'free';
   const [cycle, setCycle] = useState<BillingCycle>('annual');
-  const [loadingTier, setLoadingTier] = useState<string | null>(null);
 
-  const handleSelectPlan = async (plan: PlanInfo) => {
-    const priceId = cycle === 'monthly' ? plan.monthly.priceId : plan.annual.priceId;
-    if (!priceId) return;
-
-    setLoadingTier(plan.tier);
-    try {
-      const { data, error } = await supabase.functions.invoke('create-checkout-session', {
-        body: { price_id: priceId },
-      });
-
-      if (error) throw error;
-      if (data?.url) {
-        window.open(data.url, '_blank');
-      } else {
-        throw new Error('No checkout URL returned');
-      }
-    } catch (err) {
-      console.error('Checkout error:', err);
-      toast({ title: 'Erro ao iniciar checkout', description: 'Tente novamente em alguns instantes.', variant: 'destructive' });
-    } finally {
-      setLoadingTier(null);
-    }
+  const handleSelectPlan = (plan: PlanInfo) => {
+    const url = cycle === 'monthly' ? plan.monthly.checkout : plan.annual.checkout;
+    if (!url) return;
+    window.open(url, '_blank');
   };
 
   return (
@@ -125,8 +104,7 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
                 </div>
                 {cycle === 'annual' && <p className="text-xs text-muted-foreground mb-3">{t('modal.billed_annually')} {plan.annual.price}</p>}
                 {cycle === 'monthly' && <div className="mb-3" />}
-                <Button variant={isCurrent ? 'secondary' : plan.highlight ? 'default' : 'outline'} className={`w-full rounded-xl h-11 font-semibold mb-5 ${plan.highlight && !isCurrent ? 'bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20' : ''}`} disabled={isCurrent || loadingTier !== null} onClick={() => handleSelectPlan(plan)}>
-                  {loadingTier === plan.tier ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                <Button variant={isCurrent ? 'secondary' : plan.highlight ? 'default' : 'outline'} className={`w-full rounded-xl h-11 font-semibold mb-5 ${plan.highlight && !isCurrent ? 'bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20' : ''}`} disabled={isCurrent} onClick={() => handleSelectPlan(plan)}>
                   {isCurrent ? t('modal.current_plan') : `${t('modal.subscribe')} ${config.label}`}
                 </Button>
                 <div className={`rounded-xl p-3 mb-4 ${plan.highlight ? 'bg-primary/10 border border-primary/20' : 'bg-muted/30 border border-border/30'}`}>
