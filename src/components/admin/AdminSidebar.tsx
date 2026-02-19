@@ -1,4 +1,4 @@
-import { BarChart3, DollarSign, Users, Images, LayoutTemplate, Settings, PanelLeftClose, PanelLeft } from 'lucide-react';
+import { LayoutDashboard, Users, Images, LayoutTemplate, Settings, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { useAdminContext, type AdminSection } from './AdminContext';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -6,8 +6,7 @@ import { Button } from '@/components/ui/button';
 import gravyxIcon from '@/assets/gravyx-icon.png';
 
 const navItems: { section: AdminSection; label: string; icon: React.ElementType }[] = [
-  { section: 'operations', label: 'Operação', icon: BarChart3 },
-  { section: 'financial', label: 'Financeiro', icon: DollarSign },
+  { section: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { section: 'users', label: 'Usuários', icon: Users },
   { section: 'library', label: 'Biblioteca', icon: Images },
   { section: 'templates', label: 'Templates', icon: LayoutTemplate },
@@ -25,13 +24,11 @@ export function AdminSidebar() {
         collapsed ? 'w-16' : 'w-60'
       )}
     >
-      {/* Logo */}
       <div className="flex items-center gap-3 px-4 h-14 border-b border-border/50">
         <img src={gravyxIcon} alt="Gravyx" className="h-7 w-7" />
         {!collapsed && <span className="font-bold text-sm tracking-wide gradient-text">ADMIN</span>}
       </div>
 
-      {/* Nav */}
       <nav className="flex-1 py-3 px-2 space-y-1">
         {navItems.map(({ section, label, icon: Icon }) => {
           const active = activeSection === section;
@@ -53,7 +50,6 @@ export function AdminSidebar() {
         })}
       </nav>
 
-      {/* Collapse toggle */}
       <div className="p-2 border-t border-border/50">
         <Button
           variant="ghost"

@@ -5,8 +5,7 @@ import { UsersTable } from '@/components/admin/dashboard/UsersTable';
 import { useAdminDashboard } from '@/components/admin/dashboard/useAdminDashboard';
 import { AdminProvider, useAdminContext } from '@/components/admin/AdminContext';
 import { AdminLayout } from '@/components/admin/AdminLayout';
-import { OperationsDashboard } from '@/components/admin/operations/OperationsDashboard';
-import { FinancialDashboard } from '@/components/admin/financial/FinancialDashboard';
+import { StrategicDashboard } from '@/components/admin/strategic/StrategicDashboard';
 import { AdminTopbar } from '@/components/admin/AdminTopbar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -310,10 +309,8 @@ function AdminContent() {
   // Render active section
   const renderContent = () => {
     switch (activeSection) {
-      case 'operations':
-        return <OperationsDashboard />;
-      case 'financial':
-        return <FinancialDashboard />;
+      case 'dashboard':
+        return <StrategicDashboard />;
       case 'users':
         return (
           <>
