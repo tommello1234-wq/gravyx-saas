@@ -1,9 +1,13 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { Resend } from 'npm:resend@4.0.0'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+const DEFAULT_PASSWORD = 'Gravyx@2025!';
+const LOGIN_URL = 'https://app.gravyx.com.br';
 
 // Mapeamento completo de ofertas Ticto -> config do plano
 interface OfferConfig {
@@ -58,6 +62,104 @@ interface TictoPayload {
     cpf?: string;
   };
   token?: string;
+}
+
+// === HELPER: criar conta e profile automaticamente ===
+async function createAccountAndProfile(
+  supabase: ReturnType<typeof createClient>,
+  email: string,
+  customerName?: string
+): Promise<{ user_id: string; credits: number; tier: string } | null> {
+  const normalizedEmail = email.toLowerCase().trim();
+  
+  console.log(`🔄 Auto-criando conta para: ${normalizedEmail}`);
+
+  // 1. Criar usuário no Supabase Auth
+  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    email: normalizedEmail,
+    password: DEFAULT_PASSWORD,
+    email_confirm: true,
+    user_metadata: {
+      display_name: customerName || normalizedEmail.split('@')[0],
+    },
+  });
+
+  if (authError) {
+    console.error(`❌ Erro ao criar usuário auth: ${authError.message}`);
+    return null;
+  }
+
+  const userId = authData.user.id;
+  console.log(`✅ Usuário auth criado: ${userId}`);
+
+  // 2. Aguardar o trigger handle_new_user criar o profile (retry com delay)
+  let profile = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const { data } = await supabase
+      .from('profiles')
+      .select('user_id, credits, tier')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (data) {
+      profile = data;
+      break;
+    }
+    console.log(`⏳ Aguardando profile... tentativa ${attempt + 1}/5`);
+  }
+
+  if (!profile) {
+    console.error(`❌ Profile não foi criado pelo trigger para: ${userId}`);
+    return null;
+  }
+
+  console.log(`✅ Profile encontrado para: ${normalizedEmail}`);
+
+  // 3. Enviar email de boas-vindas com credenciais
+  try {
+    const resend = new Resend(Deno.env.get('RESEND_API_KEY') as string);
+    const html = buildWelcomeCredentialsHtml(normalizedEmail, DEFAULT_PASSWORD, LOGIN_URL);
+
+    const { error: emailError } = await resend.emails.send({
+      from: 'Gravyx <noreply@upwardacademy.com.br>',
+      to: [normalizedEmail],
+      subject: 'Sua conta Gravyx foi criada! 🚀',
+      html,
+    });
+
+    if (emailError) {
+      console.error(`⚠️ Erro ao enviar email de credenciais:`, emailError);
+    } else {
+      console.log(`📧 Email de credenciais enviado para: ${normalizedEmail}`);
+    }
+  } catch (e) {
+    console.error(`⚠️ Exceção ao enviar email:`, e);
+  }
+
+  return profile;
+}
+
+// === HELPER: buscar perfil por email, ou criar conta se não existir ===
+async function findOrCreateProfile(
+  supabase: ReturnType<typeof createClient>,
+  email: string,
+  customerName?: string,
+  autoCreate = false
+) {
+  if (!email) return null;
+  const { data } = await supabase
+    .from('profiles')
+    .select('user_id, credits, tier')
+    .eq('email', email.toLowerCase().trim())
+    .maybeSingle();
+  
+  if (data) return data;
+
+  if (autoCreate) {
+    return await createAccountAndProfile(supabase, email, customerName);
+  }
+
+  return null;
 }
 
 Deno.serve(async (req: Request) => {
@@ -117,10 +219,11 @@ Deno.serve(async (req: Request) => {
   const status = body.status || '';
   const transactionId = body.order?.hash || '';
   const customerEmail = body.customer?.email || '';
+  const customerName = body.customer?.name;
   const offerCode = body.query_params?.code || body.offer?.code || body.item?.offer_code || body.url_params?.query_params?.code || '';
   const amountPaid = body.order?.paid_amount || body.item?.amount || 0;
 
-  // === HELPER: buscar perfil por email ===
+  // === HELPER: buscar perfil por email (sem auto-criar) ===
   async function findProfile(email: string) {
     if (!email) return null;
     const { data } = await supabase
@@ -201,7 +304,6 @@ Deno.serve(async (req: Request) => {
   }
 
   // 3. CANCELADA → apenas loga. Usuário mantém benefícios até fim do ciclo.
-  //    Quando o ciclo acabar sem renovação, a Ticto envia "Encerrada" e aí sim faz downgrade.
   if (statusLower.includes('cancelada') || statusLower.includes('cancelled') || statusLower.includes('canceled')) {
     console.log(`⚠️ Assinatura cancelada (mantém benefícios): ${customerEmail}`);
     await logWebhook(supabase, status, body, true, 'Subscription cancelled - benefits kept until cycle end');
@@ -219,17 +321,16 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // 5. RETOMADA → reativa o plano (trata como nova aprovação, cai no fluxo de aprovação abaixo)
-  // 6. PLANO ALTERADO → atualiza tier (trata como nova aprovação com novo offer code)
-  // 7. EXTENDIDA → cai no fluxo de aprovação abaixo
-  // 8. PERÍODO DE TESTES / TRIAL → ativar trial do usuário
+  // 5-7. RETOMADA / PLANO ALTERADO / EXTENDIDA → cai no fluxo de aprovação abaixo
+
+  // 8. PERÍODO DE TESTES / TRIAL → ativar trial do usuário (auto-cria conta se não existir)
   const trialStatuses = ['periodo de testes', 'trial'];
   const isTrial = trialStatuses.some(s => statusLower.includes(s));
   if (isTrial) {
-    const profile = await findProfile(customerEmail);
+    const profile = await findOrCreateProfile(supabase, customerEmail, customerName, true);
     if (!profile) {
-      await logWebhook(supabase, status, body, false, `Trial: user not found: ${customerEmail}`);
-      return new Response('User not found', { status: 200, headers: corsHeaders });
+      await logWebhook(supabase, status, body, false, `Trial: failed to find or create user: ${customerEmail}`);
+      return new Response('User creation failed', { status: 200, headers: corsHeaders });
     }
 
     // Determine tier from offer code
@@ -320,17 +421,13 @@ Deno.serve(async (req: Request) => {
     return new Response('Already processed', { status: 200, headers: corsHeaders });
   }
 
-  // Buscar usuário por email
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('email', customerEmail.toLowerCase().trim())
-    .maybeSingle();
+  // Buscar usuário por email (auto-cria conta se não existir)
+  const profile = await findOrCreateProfile(supabase, customerEmail, customerName, true);
 
-  if (profileError || !profile) {
-    console.error(`Usuário não encontrado: ${customerEmail}`, profileError);
-    await logWebhook(supabase, status, body, false, `User not found: ${customerEmail}`);
-    return new Response('User not found', { status: 200, headers: corsHeaders });
+  if (!profile) {
+    console.error(`Falha ao encontrar/criar usuário: ${customerEmail}`);
+    await logWebhook(supabase, status, body, false, `Failed to find or create user: ${customerEmail}`);
+    return new Response('User creation failed', { status: 200, headers: corsHeaders });
   }
 
   // Config da oferta (já validada acima)
@@ -411,4 +508,47 @@ async function logWebhook(
   } catch (e) {
     console.error('Erro ao salvar log:', e);
   }
+}
+
+function buildWelcomeCredentialsHtml(email: string, password: string, loginUrl: string): string {
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="background-color:#0a0a14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:0;padding:0;">
+<div style="margin:0 auto;padding:40px 20px;max-width:600px;">
+  <div style="text-align:center;margin-bottom:32px;">
+    <p style="font-size:28px;font-weight:bold;color:#00b8ff;margin:0;">🚀 Gravyx</p>
+  </div>
+  <div style="background-color:#0f0f1a;border:1px solid rgba(0,135,255,0.15);border-radius:16px;padding:32px;box-shadow:0 0 40px rgba(0,135,255,0.1);">
+    <h1 style="color:#fafafa;font-size:24px;font-weight:bold;text-align:center;margin:0 0 16px 0;">Sua conta foi criada! 🎉</h1>
+    <p style="color:#71717a;font-size:16px;line-height:24px;text-align:center;margin:0 0 24px 0;">
+      Você adquiriu um plano no Gravyx e criamos sua conta automaticamente. Use as credenciais abaixo para acessar:
+    </p>
+    <div style="background-color:#0a0a14;border:1px solid rgba(0,135,255,0.15);border-radius:8px;padding:12px 16px;margin-bottom:12px;">
+      <p style="color:#71717a;font-size:13px;margin:0 0 4px 0;">📧 Email de acesso</p>
+      <p style="color:#fafafa;font-size:16px;font-weight:bold;margin:0;">${email}</p>
+    </div>
+    <div style="background-color:#0a0a14;border:1px solid rgba(0,135,255,0.15);border-radius:8px;padding:12px 16px;margin-bottom:12px;">
+      <p style="color:#71717a;font-size:13px;margin:0 0 4px 0;">🔑 Senha de acesso</p>
+      <p style="color:#00b8ff;font-size:20px;font-weight:bold;letter-spacing:2px;margin:0;">${password}</p>
+    </div>
+    <div style="background-color:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);border-radius:8px;padding:12px 16px;margin:16px 0 24px 0;">
+      <p style="color:#fbbf24;font-size:14px;line-height:20px;margin:0;text-align:center;">
+        ⚠️ Esta é uma senha padrão. Recomendamos que você a troque após o primeiro acesso.
+      </p>
+    </div>
+    <a href="${loginUrl}" style="display:block;background:linear-gradient(135deg,#00b8ff,#001eff);color:#ffffff;font-size:16px;font-weight:bold;text-decoration:none;text-align:center;padding:14px 32px;border-radius:9999px;box-shadow:0 0 20px rgba(0,135,255,0.4);margin:0 auto;">
+      Acessar o Gravyx
+    </a>
+    <hr style="border-color:rgba(0,135,255,0.15);margin:24px 0;">
+    <p style="color:#71717a;font-size:14px;line-height:22px;text-align:center;margin:0;">
+      Se você não realizou esta compra, entre em contato com nosso suporte.
+    </p>
+  </div>
+  <div style="text-align:center;margin-top:32px;">
+    <p style="color:#71717a;font-size:12px;margin:0;">© ${new Date().getFullYear()} Gravyx · Geração de Imagens com IA</p>
+  </div>
+</div>
+</body>
+</html>`;
 }
