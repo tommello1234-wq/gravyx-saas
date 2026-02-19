@@ -1,64 +1,80 @@
 
-## Continuar Traduzindo Todos os Componentes Restantes
+
+## Auto-criar conta quando Ticto recebe pagamento de email nao cadastrado
 
 ### Resumo
 
-Traduzir todos os ~20 componentes restantes que ainda possuem textos hardcoded em portugues, usando o sistema i18n ja criado (`useLanguage()` + `t(key)`).
+Quando o webhook da Ticto receber um pagamento (ou trial) de um email que nao existe na plataforma, o sistema vai automaticamente:
+1. Criar o usuario no Supabase Auth com uma senha padrao
+2. Aguardar o trigger `handle_new_user` criar o profile
+3. Atualizar o profile com o plano/creditos corretos
+4. Enviar um email de boas-vindas customizado com a senha padrao e o link de login
 
-### Componentes a Traduzir
+### O que muda
 
-**Paginas:**
-1. `Home.tsx` - saudacoes, banners de trial/inativo, titulos de secoes, stats, CTA de upgrade
-2. `Projects.tsx` - titulo, acoes (renomear, excluir), dialogs, toasts
-3. `Gallery.tsx` - titulo, selecao, confirmacao de exclusao, viewer inline
-4. `Library.tsx` - titulo, filtros, mensagens de locked/upgrade
-5. `ResetPassword.tsx` - formularios, mensagens de sucesso/erro
-6. `Editor.tsx` - toasts de geracao, erros, otimizacao de projeto
+**1. Edge Function `ticto-webhook/index.ts`**
+- Criar uma funcao helper `createAccountAndProfile()` que:
+  - Gera uma senha padrao segura (ex: `Gravyx@2025!` ou algo memoravel)
+  - Usa `supabase.auth.admin.createUser()` com `email_confirm: true` (pula confirmacao, ja que pagou)
+  - Aguarda o trigger criar o profile (pequeno delay + retry)
+  - Retorna o `user_id` criado
+- Nos pontos onde hoje retorna "User not found" (trial e aprovacao), em vez de ignorar:
+  - Chamar `createAccountAndProfile()`
+  - Continuar o fluxo normalmente com o profile recem-criado
+- Enviar email de boas-vindas com credenciais via Resend diretamente do webhook
 
-**Nodes do Editor:**
-7. `PromptNode.tsx` - label, subtitle, menu dropdown
-8. `MediaNode.tsx` - label, subtitle, tabs, upload, toasts
-9. `ResultNode.tsx` - label, subtitle, proporcao, quantidade, botao gerar, creditos
-10. `OutputNode.tsx` - label, subtitle, botoes
-11. `SettingsNode.tsx` - label, subtitle, proporcao, quantidade, botao gerar, creditos
-12. `GravityNode.tsx` - label, menu, confirmacao, botao gerar todos
-13. `GravityPopup.tsx` - titulo, labels, placeholder, botoes
-14. `OutputImageModal.tsx` - titulo, botoes, metadata
-15. `LibraryModal.tsx` - titulo, busca, mensagens
+**2. Novo template de email `_templates/welcome-credentials.tsx`**
+- Email no estilo visual do Gravyx (usando o BaseLayout existente)
+- Conteudo:
+  - "Sua conta foi criada com sucesso!"
+  - Email de acesso
+  - Senha padrao (em destaque)
+  - Aviso que e uma senha padrao e recomendacao de trocar
+  - Botao "Acessar o Gravyx" apontando para `https://app.gravyx.com.br`
 
-**Modais:**
-16. `BuyCreditsModal.tsx` - titulo, toggle, planos, features, botoes, textos de pagamento
-17. `CreateProjectModal.tsx` - titulo, opcoes, botoes
-18. `EditProfileModal.tsx` - titulo, labels, botoes, toasts
-19. `SubmitToLibraryModal.tsx` - titulo, labels, instrucoes, botoes, mensagem de sucesso
-20. `WelcomeVideoModal.tsx` - titulo, descricao, botao
-21. `ImageViewerModal.tsx` - labels, botoes, contribuicao
-22. `SaveAsTemplateModal.tsx` - titulo, labels, tabs, botoes
+**3. Sem mudancas no banco de dados**
+- O trigger `handle_new_user` ja cria o profile automaticamente quando um usuario e criado no Auth
+- Nenhuma migration necessaria
 
 ### Detalhes Tecnicos
 
-**Para cada componente:**
-- Importar `useLanguage` de `@/contexts/LanguageContext`
-- Chamar `const { t } = useLanguage()` no inicio do componente
-- Substituir cada string hardcoded por `t('chave.correspondente')`
-- Para nodes memo (PromptNode, MediaNode, etc), usar `useLanguage()` dentro do componente memo
+**Fluxo de criacao automatica:**
 
-**Chaves de traducao a adicionar nos 3 arquivos (pt.ts, en.ts, es.ts):**
-- Aproximadamente 80-100 chaves novas cobrindo os componentes listados acima
-- As chaves ja criadas na primeira fase (header, auth, footer, etc) continuam inalteradas
+```text
+Ticto Webhook recebido
+       |
+  Email existe no profiles?
+      / \
+    Sim   Nao
+     |      |
+  Continua  Cria usuario via admin.createUser()
+  normal      |
+            Trigger handle_new_user cria profile
+              |
+            Atualiza profile (tier, credits, etc)
+              |
+            Envia email com senha padrao via Resend
+              |
+            Continua fluxo normal
+```
 
-**Formatacao de datas:**
-- Nos componentes que usam `date-fns` com `locale: ptBR`, trocar dinamicamente para o locale correspondente ao idioma selecionado:
-  - `pt` -> `ptBR`
-  - `en` -> `enUS` 
-  - `es` -> `es` (locale do date-fns)
+**Senha padrao:** `Gravyx@2025!` - fixa para simplificar. O email instruira o usuario a trocar.
 
-**Textos com variaveis (interpolacao):**
-- Strings como `"Seu plano {plan} permite ate {max} projeto(s)"` serao mantidas com placeholders e substituidas via `.replace()` no ponto de uso
-- Exemplo: `t('home.project_limit_desc').replace('{plan}', tierConfig.label).replace('{max}', String(tierConfig.maxProjects))`
+**`supabase.auth.admin.createUser()`** - disponivel com service_role_key, permite:
+- Definir senha
+- Marcar email como confirmado (`email_confirm: true`)
+- Pular o fluxo de confirmacao por email
 
-### Volume de Alteracoes
+**Email de credenciais:** Enviado diretamente via Resend (mesma API key ja configurada), sem passar pelo hook de auth do Supabase. Isso porque o hook de auth so dispara em eventos como signup/recovery, e aqui estamos criando o usuario via admin API.
 
-- **3 arquivos de traducao** modificados (adicionar ~100 chaves cada)
-- **~22 componentes** modificados (importar useLanguage + substituir strings)
-- Nenhum arquivo novo criado
+### Arquivos alterados
+
+1. `supabase/functions/ticto-webhook/index.ts` - adicionar logica de auto-criacao
+2. `supabase/functions/send-auth-email/_templates/welcome-credentials.tsx` - novo template de email (arquivo novo)
+
+### Seguranca
+
+- A senha padrao e a mesma para todos, entao o email deixa claro que deve ser trocada
+- O `email_confirm: true` e seguro aqui pois o usuario ja validou identidade ao pagar com cartao
+- O service_role_key ja esta disponivel na edge function
+
