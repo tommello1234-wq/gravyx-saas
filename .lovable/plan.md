@@ -1,76 +1,35 @@
 
 
-## Corrigir cancelamento de trial e erro de build
+## Mensagem amigavel para falha na geracao + remover fallback
 
-### Problema 1: Cancelamento durante trial nao faz downgrade
+### O que muda
 
-Quando um usuario cancela durante o periodo de teste (trial), o webhook da Ticto envia `subscription_canceled`. O codigo atual apenas loga o evento e mantem todos os beneficios, assumindo que o usuario pagou e deve manter acesso ate o fim do ciclo. Porem, quem esta em trial nunca pagou -- deveria perder o acesso imediatamente.
+1. **Remover modelo fallback** do `image-worker` -- usar apenas `google/gemini-3-pro-image-preview`
+2. **Mensagem amigavel** quando a API do Google retorna erro 500, em vez de "All image generations failed"
+3. **Traduzir mensagem no frontend** para garantir que o toast mostre texto amigavel
 
-**Caso real:** `eddyaresd@gmail.com` entrou em trial as 16:35, cancelou as 18:14, e continua com `tier: premium` e `subscription_status: trial_active`.
+### Detalhes tecnicos
 
-### Solucao
+#### Arquivo: `supabase/functions/image-worker/index.ts`
 
-No handler de cancelamento em `supabase/functions/ticto-webhook/index.ts` (linha ~295), verificar se o usuario esta em trial (`subscription_status = 'trial_active'`). Se sim, fazer downgrade imediato para Free. Se nao (assinatura paga), manter o comportamento atual (logar e manter beneficios ate fim do ciclo).
+- Remover o array `IMAGE_MODELS` e o loop de fallback
+- Voltar a usar apenas `google/gemini-3-pro-image-preview`
+- Quando a API retornar status 500, definir a mensagem de erro como: `"Estamos enfrentando uma instabilidade temporária nos servidores da API do Google. Aguarde um instante e tente novamente mais tarde."`
+- Essa mensagem sera salva no campo `error` do job, que e exibida no toast do frontend
 
-### Alteracao tecnica
+#### Arquivo: `src/pages/Editor.tsx`
 
-**Arquivo:** `supabase/functions/ticto-webhook/index.ts`
+- Nenhuma mudanca necessaria -- o `handleJobFailed` ja exibe `error` como `description` do toast, entao a mensagem amigavel do worker vai aparecer automaticamente
 
-Na secao de cancelamento (~linha 295), antes de apenas logar:
+### Resultado
 
-```
-if (statusLower.includes('cancelada') || statusLower.includes('cancelled') || statusLower.includes('canceled')) {
-  const profile = await findProfile(customerEmail);
-  
-  if (profile) {
-    // Verificar se esta em trial - se sim, downgrade imediato
-    const { data: currentProfile } = await supabase
-      .from('profiles')
-      .select('subscription_status')
-      .eq('user_id', profile.user_id)
-      .single();
-    
-    if (currentProfile?.subscription_status === 'trial_active') {
-      // Trial cancelado = downgrade imediato (nunca pagou)
-      await downgradeToFree(profile.user_id, profile.credits, profile.credits);
-      console.log(`Trial cancelado - downgrade imediato: ${customerEmail}`);
-      await logWebhook(supabase, status, body, true, 'Trial cancelled - immediate downgrade to Free');
-      return new Response(JSON.stringify({ success: true, action: 'trial_cancelled_downgraded' }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-  }
-  
-  // Assinatura paga cancelada - manter beneficios ate fim do ciclo
-  console.log(`Assinatura cancelada (mantem beneficios): ${customerEmail}`);
-  await logWebhook(supabase, status, body, true, 'Subscription cancelled - benefits kept until cycle end');
-  return new Response(JSON.stringify({ success: true, action: 'cancelled_logged' }), {
-    status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
-}
-```
+Quando o Google retornar erro 500, o usuario vera no toast:
 
-### Problema 2: Erro de build no send-auth-email
+> **Falha na geracao**
+> Estamos enfrentando uma instabilidade temporaria nos servidores da API do Google. Aguarde um instante e tente novamente mais tarde.
 
-O import `npm:@react-email/components@0.0.22` esta causando erro de typecheck. Trocar para importacao via esm.sh que funciona melhor no Deno.
+Em vez de:
 
-**Arquivo:** `supabase/functions/send-auth-email/index.ts` (linha 4)
+> **Falha na geracao**
+> All image generations failed
 
-Trocar:
-```
-import { renderAsync } from 'npm:@react-email/components@0.0.22'
-```
-Por:
-```
-import { renderAsync } from 'https://esm.sh/@react-email/components@0.0.22'
-```
-
-### Correcao manual do usuario eddyaresd
-
-Apos o deploy, o usuario `eddyaresd@gmail.com` ja estara com status errado no banco. Sera necessario corrigir manualmente via SQL ou eu posso corrigir diretamente apos aplicar o fix.
-
-### Impacto
-- 2 arquivos modificados
-- Sem alteracao no banco de dados (apenas dados do usuario especifico)
-- Trials cancelados agora fazem downgrade imediato
-- Assinaturas pagas canceladas continuam mantendo beneficios ate fim do ciclo
