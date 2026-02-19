@@ -121,9 +121,12 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
                       <Check className={`h-4 w-4 shrink-0 mt-0.5 ${plan.highlight ? 'text-primary' : 'text-green-500'}`} />
                       <span className="flex items-center gap-1.5">
                         {t('modal.free_trial_7_days')}
-                        <TooltipProvider><Tooltip><TooltipTrigger asChild><HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" /></TooltipTrigger>
-                          <TooltipContent side="top" className="max-w-[280px] text-xs leading-relaxed">{t('modal.free_trial_tooltip')}</TooltipContent>
-                        </Tooltip></TooltipProvider>
+                        <span className="relative group">
+                          <HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 w-[280px] rounded-md border bg-popover px-3 py-1.5 text-xs text-popover-foreground shadow-md leading-relaxed">
+                            {t('modal.free_trial_tooltip')}
+                          </span>
+                        </span>
                       </span>
                     </li>
                   )}
