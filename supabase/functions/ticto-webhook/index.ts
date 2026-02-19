@@ -333,6 +333,22 @@ Deno.serve(async (req: Request) => {
       return new Response('User creation failed', { status: 200, headers: corsHeaders });
     }
 
+    // Verificar se ja esta em trial ou ativo - ignorar duplicata
+    const { data: currentProfile } = await supabase
+      .from('profiles')
+      .select('subscription_status')
+      .eq('user_id', profile.user_id)
+      .single();
+
+    if (currentProfile?.subscription_status === 'trial_active' || 
+        currentProfile?.subscription_status === 'active') {
+      console.log(`Trial duplicado ignorado: ${customerEmail} ja esta ${currentProfile.subscription_status}`);
+      await logWebhook(supabase, status, body, true, `Trial duplicate ignored - already ${currentProfile.subscription_status}`);
+      return new Response(JSON.stringify({ success: true, action: 'trial_duplicate_ignored' }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Determine tier from offer code
     const trialConfig = OFFER_CONFIG[offerCode];
     const trialTier = trialConfig?.tier || 'starter';
