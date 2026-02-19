@@ -1,0 +1,1 @@
+UPDATE profiles SET tier = 'free', subscription_status = 'inactive', max_projects = 1, billing_cycle = 'monthly', trial_start_date = NULL, trial_credits_given = 0 WHERE email = 'eddyaresd@gmail.com';
