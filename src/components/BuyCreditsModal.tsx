@@ -17,6 +17,7 @@ interface PlanInfo {
   monthly: { price: string; credits: number; checkout: string; installment?: string };
   annual: { price: string; installment: string; credits: number; checkout: string };
   highlight?: boolean; badge?: string; features: string[];
+  costPerImageMonthly: string; costPerImageAnnual: string;
 }
 
 const plans: PlanInfo[] = [
@@ -25,18 +26,21 @@ const plans: PlanInfo[] = [
     monthly: { price: 'R$ 79', credits: 80, checkout: 'https://checkout.ticto.app/O7A4C2615' },
     annual: { price: 'R$ 420/ano', installment: 'R$ 43,44', credits: 1000, checkout: 'https://checkout.ticto.app/OA871890B' },
     features: ['80 créditos/mês', 'Até 3 projetos ativos', 'Templates essenciais', 'Acesso completo à biblioteca de referências'],
+    costPerImageMonthly: 'R$0,98', costPerImageAnnual: 'R$0,42',
   },
   {
     tier: 'premium', icon: Crown, highlight: true, badge: 'MAIS POPULAR', description: 'Para criativos que buscam uso ilimitado e flexível',
     monthly: { price: 'R$ 167', credits: 250, checkout: 'https://checkout.ticto.app/O465B8044' },
     annual: { price: 'R$ 1.097/ano', installment: 'R$ 91,42', credits: 3000, checkout: 'https://checkout.ticto.app/O06B270AF' },
     features: ['250 créditos/mês', 'Projetos ilimitados', 'Acesso a todos os Templates de Fluxos', 'Acesso completo à biblioteca de referências'],
+    costPerImageMonthly: 'R$0,67', costPerImageAnnual: 'R$0,37',
   },
   {
     tier: 'enterprise', icon: Rocket, badge: 'PROFISSIONAL', description: 'Para profissionais escalando sua produção de conteúdo',
     monthly: { price: 'R$ 347', credits: 600, checkout: 'https://checkout.ticto.app/O8AA396EB' },
     annual: { price: 'R$ 2.597/ano', installment: 'R$ 216,42', credits: 7200, checkout: 'https://checkout.ticto.app/OA8BDDA9B' },
     features: ['600 créditos/mês', 'Projetos ilimitados', 'Acesso a todos os Templates de Fluxos', 'Acesso completo à biblioteca de referências', 'Acesso antecipado a novas ferramentas'],
+    costPerImageMonthly: 'R$0,57', costPerImageAnnual: 'R$0,32',
   },
 ];
 
@@ -116,6 +120,10 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
                   </div>
                 </div>
                 <ul className="flex-1 space-y-2.5">
+                  <li className="flex items-start gap-2.5 text-sm text-muted-foreground">
+                    <Check className={`h-4 w-4 shrink-0 mt-0.5 ${plan.highlight ? 'text-primary' : 'text-green-500'}`} />
+                    Apenas {cycle === 'monthly' ? plan.costPerImageMonthly : plan.costPerImageAnnual} por imagem
+                  </li>
                   {cycle === 'monthly' && (
                     <li className="flex items-start gap-2.5 text-sm text-muted-foreground">
                       <Check className={`h-4 w-4 shrink-0 mt-0.5 ${plan.highlight ? 'text-primary' : 'text-green-500'}`} />
