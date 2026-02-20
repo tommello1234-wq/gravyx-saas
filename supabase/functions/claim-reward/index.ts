@@ -115,9 +115,9 @@ serve(async (req) => {
 async function verifyMission(client: any, userId: string, day: number): Promise<boolean> {
   switch (day) {
     case 1: {
-      const { count } = await client.from('generations').select('id', { count: 'exact', head: true })
-        .eq('user_id', userId).eq('status', 'completed');
-      return (count ?? 0) >= 1;
+      const { data: profile } = await client.from('profiles').select('total_generations')
+        .eq('user_id', userId).single();
+      return (profile?.total_generations ?? 0) >= 1;
     }
     case 2: {
       const { count } = await client.from('projects').select('id', { count: 'exact', head: true })

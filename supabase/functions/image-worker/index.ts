@@ -273,6 +273,15 @@ serve(async (req) => {
         }));
 
         await supabaseAdmin.from('generations').insert(generationInserts);
+
+        // Increment permanent total_generations counter for each saved image
+        for (let i = 0; i < savedImages.length; i++) {
+          try {
+            await supabaseAdmin.rpc('increment_total_generations', { uid: claimedJob.user_id });
+          } catch (e) {
+            console.error('Failed to increment total_generations:', e);
+          }
+        }
       }
 
       // Mark job as completed with results
