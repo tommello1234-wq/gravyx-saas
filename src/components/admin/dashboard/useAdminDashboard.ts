@@ -226,7 +226,7 @@ export function useAdminDashboard(
     const paidSubscriptions = filteredProfiles.filter(p => p.tier !== 'free').length;
     const newPaidSubscriptions = periodProfiles.filter(p => p.tier !== 'free').length;
     const estimatedChurn = 0; // No subscription events table
-    const totalImages = filteredGenerations.length;
+    const totalImages = filteredProfiles.reduce((s, p) => s + (p.total_generations || 0), 0);
     const periodImages = periodGens.length;
     const creditsConsumed = periodImages; // 1 credit per image
     const creditsRemaining = filteredProfiles.reduce((s, p) => s + (p.credits || 0), 0);
@@ -239,7 +239,7 @@ export function useAdminDashboard(
     const topUserProfile = topEntry ? filteredProfiles.find(p => p.user_id === topEntry[0]) : null;
     const topUser = topEntry ? { name: topUserProfile?.display_name || topUserProfile?.email || 'N/A', count: topEntry[1] } : null;
 
-    const usersWithImages = new Set(filteredGenerations.map(g => g.user_id)).size;
+    const usersWithImages = filteredProfiles.filter(p => (p.total_generations || 0) > 0).length;
     const activityRate = totalUsers > 0 ? (usersWithImages / totalUsers) * 100 : 0;
 
     // Growth
@@ -273,7 +273,7 @@ export function useAdminDashboard(
     const estimatedOperationalCostBRL = estimatedOperationalCostUSD * USD_TO_BRL_RATE;
     const totalRevenueBRL = grossRevenue / 100;
     const profitMarginBRL = totalRevenueBRL - estimatedOperationalCostBRL;
-    const estimatedCreditsConsumed = Math.max(0, (5 * totalUsers + filteredPurchases.reduce((s, p) => s + (p.credits_added || 0), 0)) - creditsRemaining);
+    const estimatedCreditsConsumed = totalImages; // Use permanent total_generations sum
 
     // Activity by day
     const numDays = period === 'today' ? 1 : period === '90d' ? 90 : period === 'custom' ? Math.max(1, differenceInDays(customRange?.end || now, customRange?.start || now)) : parseInt(period);
@@ -346,18 +346,18 @@ export function useAdminDashboard(
     });
 
     // Top users
-    const sortedUsers = Array.from(userImgCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10);
-    const topUsers = sortedUsers.map(([userId, total]) => {
-      const profile = filteredProfiles.find(p => p.user_id === userId);
-      return {
-        user_id: userId,
-        email: profile?.email || 'N/A',
-        display_name: profile?.display_name || null,
-        tier: profile?.tier || 'free',
-        credits: profile?.credits || 0,
-        total_images: total,
-      };
-    });
+    const topUsers = [...filteredProfiles]
+      .filter(p => (p.total_generations || 0) > 0)
+      .sort((a, b) => (b.total_generations || 0) - (a.total_generations || 0))
+      .slice(0, 10)
+      .map(profile => ({
+        user_id: profile.user_id,
+        email: profile.email || 'N/A',
+        display_name: profile.display_name || null,
+        tier: profile.tier || 'free',
+        credits: profile.credits || 0,
+        total_images: profile.total_generations || 0,
+      }));
 
     // Platform performance
     const totalJobs = jobs.length;
