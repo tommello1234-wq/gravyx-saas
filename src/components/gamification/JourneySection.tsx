@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Lock, Check, Gift } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -34,8 +35,8 @@ export function JourneySection({ unlockedDay, missions, onRefresh }: JourneySect
     const mission = missions.find(m => m.day_number === day);
     if (day > unlockedDay) return 'locked';
     if (mission?.reward_claimed) return 'completed';
-    if (mission?.completed) return 'reward-pending';
-    return 'unlocked';
+    // Any unlocked day that hasn't been claimed is claimable
+    return 'reward-pending';
   };
 
   const handleClaimReward = async (day: number) => {
@@ -68,6 +69,10 @@ export function JourneySection({ unlockedDay, missions, onRefresh }: JourneySect
     }
   };
 
+  const dayLabel = (day: number) => {
+    return day === 10 ? '🎁' : `Dia ${String(day).padStart(2, '0')}`;
+  };
+
   return (
     <motion.section initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
       <div className="flex items-center gap-2 mb-5">
@@ -88,58 +93,81 @@ export function JourneySection({ unlockedDay, missions, onRefresh }: JourneySect
           {Array.from({ length: 10 }, (_, i) => i + 1).map((day) => {
             const state = getMissionState(day);
             const isDay10 = day === 10;
+            const missionDef = MISSIONS.find(m => m.day === day);
 
             return (
-              <div key={day} className="relative flex flex-col items-center z-10" style={{ minWidth: '2.5rem' }}>
-                {/* Reward animation */}
-                {rewardAnim?.day === day && (
-                  <RewardAnimation
-                    show={true}
-                    text={rewardAnim.text}
-                    onComplete={() => setRewardAnim(null)}
-                  />
+              <Popover key={day}>
+                <PopoverTrigger asChild>
+                  <div className="relative flex flex-col items-center z-10 cursor-pointer" style={{ minWidth: '2.5rem' }}>
+                    {/* Reward animation */}
+                    {rewardAnim?.day === day && (
+                      <RewardAnimation
+                        show={true}
+                        text={rewardAnim.text}
+                        onComplete={() => setRewardAnim(null)}
+                      />
+                    )}
+
+                    {/* Circle */}
+                    <motion.button
+                      disabled={state === 'locked' || state === 'completed' || claiming !== null}
+                      onClick={(e) => {
+                        if (state === 'reward-pending') {
+                          e.stopPropagation();
+                          handleClaimReward(day);
+                        }
+                      }}
+                      whileHover={state === 'reward-pending' ? { scale: 1.1 } : {}}
+                      whileTap={state === 'reward-pending' ? { scale: 0.95 } : {}}
+                      className={`relative w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all ${
+                        state === 'locked'
+                          ? 'border-border/40 bg-muted/30 text-muted-foreground'
+                          : state === 'completed'
+                          ? 'border-primary/60 bg-primary/20 text-primary'
+                          : state === 'reward-pending'
+                          ? 'border-primary bg-primary/10 text-primary cursor-pointer shadow-[0_0_12px_hsl(var(--primary)/0.3)] animate-pulse'
+                          : 'border-border bg-background text-muted-foreground'
+                      } ${isDay10 && state !== 'locked' ? 'w-12 h-12 shadow-[0_0_16px_hsl(220_100%_50%/0.3)]' : ''}`}
+                    >
+                      {state === 'locked' && <Lock className="h-3.5 w-3.5" />}
+                      {state === 'completed' && <Check className="h-4 w-4" />}
+                      {state === 'reward-pending' && (claiming === day ? (
+                        <div className="h-3.5 w-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Gift className="h-4 w-4" />
+                      ))}
+                    </motion.button>
+
+                    {/* Day label */}
+                    <span className={`mt-1.5 text-[10px] font-medium whitespace-nowrap ${
+                      state === 'locked' ? 'text-muted-foreground/50' : 'text-muted-foreground'
+                    }`}>
+                      {dayLabel(day)}
+                    </span>
+                  </div>
+                </PopoverTrigger>
+
+                {/* Popover with mission info */}
+                {state !== 'locked' && (
+                  <PopoverContent side="bottom" className="w-56 p-3" align="center">
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-semibold">
+                        {isDay10 ? '🎁 ' : ''}{t(`gamification.mission_${day}_title`)}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {t(`gamification.mission_${day}_desc`)}
+                      </p>
+                      <div className="text-[11px] font-medium text-primary">
+                        {missionDef?.rewardCredits ? `+${missionDef.rewardCredits} ${t('header.credits')}` : ''}
+                        {missionDef?.badgeId ? `🏅 ${t(`gamification.badge_${missionDef.badgeId}`)}` : ''}
+                      </div>
+                      {state === 'completed' && (
+                        <p className="text-[10px] text-primary/70">✓ {t('gamification.mission_claimed')}</p>
+                      )}
+                    </div>
+                  </PopoverContent>
                 )}
-
-                {/* Circle */}
-                <motion.button
-                  disabled={state === 'locked' || state === 'completed' || claiming !== null}
-                  onClick={() => state === 'reward-pending' && handleClaimReward(day)}
-                  whileHover={state === 'reward-pending' ? { scale: 1.1 } : {}}
-                  whileTap={state === 'reward-pending' ? { scale: 0.95 } : {}}
-                  className={`relative w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all ${
-                    state === 'locked'
-                      ? 'border-border/40 bg-muted/30 text-muted-foreground'
-                      : state === 'completed'
-                      ? 'border-primary/60 bg-primary/20 text-primary'
-                      : state === 'reward-pending'
-                      ? 'border-primary bg-primary/10 text-primary cursor-pointer shadow-[0_0_12px_hsl(var(--primary)/0.3)] animate-pulse'
-                      : 'border-border bg-background text-muted-foreground'
-                  } ${isDay10 && state !== 'locked' ? 'w-12 h-12 shadow-[0_0_16px_hsl(220_100%_50%/0.3)]' : ''}`}
-                >
-                  {state === 'locked' && <Lock className="h-3.5 w-3.5" />}
-                  {state === 'completed' && <Check className="h-4 w-4" />}
-                  {state === 'reward-pending' && (claiming === day ? (
-                    <div className="h-3.5 w-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <Gift className="h-4 w-4" />
-                  ))}
-                  {state === 'unlocked' && <span className="text-xs font-semibold">{day}</span>}
-                </motion.button>
-
-                {/* Day label */}
-                <span className={`mt-1.5 text-[10px] font-medium ${
-                  state === 'locked' ? 'text-muted-foreground/50' : 'text-muted-foreground'
-                }`}>
-                  {isDay10 ? '🎁' : `D${day}`}
-                </span>
-
-                {/* Mission tooltip on hover */}
-                {state === 'unlocked' && (
-                  <span className="mt-0.5 text-[9px] text-muted-foreground/60 text-center max-w-[4rem] line-clamp-2 hidden sm:block">
-                    {t(`gamification.mission_${day}_short`)}
-                  </span>
-                )}
-              </div>
+              </Popover>
             );
           })}
         </div>
