@@ -71,7 +71,8 @@ export function JourneySection({ unlockedDay, missions, onRefresh }: JourneySect
   return (
     <motion.section initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
       <div className="flex items-center gap-2 mb-5">
-        <h2 className="text-xl font-semibold">🛤 {t('gamification.journey_title')}</h2>
+        <img src="/gravyx-icon.png" alt="Gravyx" className="h-6 w-6" />
+        <h2 className="text-xl font-semibold">{t('gamification.journey_title')}</h2>
       </div>
 
       <div className="glass-card p-6 rounded-2xl">
