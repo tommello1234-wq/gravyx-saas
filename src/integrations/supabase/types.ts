@@ -236,6 +236,7 @@ export type Database = {
           max_projects: number
           subscription_status: string
           tier: string
+          total_generations: number
           trial_credits_given: number
           trial_start_date: string | null
           updated_at: string
@@ -254,6 +255,7 @@ export type Database = {
           max_projects?: number
           subscription_status?: string
           tier?: string
+          total_generations?: number
           trial_credits_given?: number
           trial_start_date?: string | null
           updated_at?: string
@@ -272,6 +274,7 @@ export type Database = {
           max_projects?: number
           subscription_status?: string
           tier?: string
+          total_generations?: number
           trial_credits_given?: number
           trial_start_date?: string | null
           updated_at?: string
@@ -617,6 +620,7 @@ export type Database = {
         Args: { amount: number; uid: string }
         Returns: number
       }
+      increment_total_generations: { Args: { uid: string }; Returns: undefined }
     }
     Enums: {
       app_role: "admin" | "user"

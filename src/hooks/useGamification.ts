@@ -94,8 +94,8 @@ export function useGamification() {
   const { data: levelStats } = useQuery({
     queryKey: ['gamification-level-stats', user?.id],
     queryFn: async () => {
-      const [genRes, projRes, projWithGravity] = await Promise.all([
-        supabase.from('generations').select('id', { count: 'exact', head: true }).eq('user_id', user!.id).eq('status', 'completed'),
+      const [profileRes, projRes, projWithGravity] = await Promise.all([
+        supabase.from('profiles').select('total_generations').eq('user_id', user!.id).single(),
         supabase.from('projects').select('id', { count: 'exact', head: true }).eq('user_id', user!.id),
         supabase.from('projects').select('canvas_state').eq('user_id', user!.id),
       ]);
@@ -104,7 +104,7 @@ export function useGamification() {
         return cs?.nodes?.some((n: any) => n.type === 'gravity');
       });
       return {
-        generations: genRes.count ?? 0,
+        generations: (profileRes.data as any)?.total_generations ?? 0,
         projects: projRes.count ?? 0,
         usedGravity,
       };
