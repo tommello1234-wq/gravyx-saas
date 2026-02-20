@@ -1,35 +1,35 @@
 
+## Adicionar custo por imagem como primeiro bullet point em cada plano
 
-## Mensagem amigavel para falha na geracao + remover fallback
+### O que sera feito
 
-### O que muda
+Adicionar um novo campo `costPerImage` ao tipo `PlanInfo` com valores para mensal e anual, e inserir como primeiro item da lista de features de cada plano.
 
-1. **Remover modelo fallback** do `image-worker` -- usar apenas `google/gemini-3-pro-image-preview`
-2. **Mensagem amigavel** quando a API do Google retorna erro 500, em vez de "All image generations failed"
-3. **Traduzir mensagem no frontend** para garantir que o toast mostre texto amigavel
+### Valores
 
-### Detalhes tecnicos
+| Plano | Mensal | Anual |
+|-------|--------|-------|
+| Starter | R$0,98 | R$0,42 |
+| Premium | R$0,67 | R$0,37 |
+| Enterprise | R$0,57 | R$0,32 |
 
-#### Arquivo: `supabase/functions/image-worker/index.ts`
+### Alteracao tecnica
 
-- Remover o array `IMAGE_MODELS` e o loop de fallback
-- Voltar a usar apenas `google/gemini-3-pro-image-preview`
-- Quando a API retornar status 500, definir a mensagem de erro como: `"Estamos enfrentando uma instabilidade temporária nos servidores da API do Google. Aguarde um instante e tente novamente mais tarde."`
-- Essa mensagem sera salva no campo `error` do job, que e exibida no toast do frontend
+**Arquivo:** `src/components/BuyCreditsModal.tsx`
 
-#### Arquivo: `src/pages/Editor.tsx`
+1. Adicionar ao tipo `PlanInfo` os campos `costPerImageMonthly` e `costPerImageAnnual` (strings)
+2. Preencher nos dados de cada plano:
+   - Starter: `'R$0,98'` / `'R$0,42'`
+   - Premium: `'R$0,67'` / `'R$0,37'`
+   - Enterprise: `'R$0,57'` / `'R$0,32'`
+3. Na renderizacao da lista `ul` de features (~linha 127), inserir antes do map um `li` adicional com o texto `"Apenas {valor} por imagem"`, escolhendo o valor com base no `cycle`
 
-- Nenhuma mudanca necessaria -- o `handleJobFailed` ja exibe `error` como `description` do toast, entao a mensagem amigavel do worker vai aparecer automaticamente
+### Resultado visual
 
-### Resultado
+Cada card de plano tera como primeiro bullet:
 
-Quando o Google retornar erro 500, o usuario vera no toast:
+- **Apenas R$0,98 por imagem** (Starter mensal)
+- **Apenas R$0,42 por imagem** (Starter anual)
+- etc.
 
-> **Falha na geracao**
-> Estamos enfrentando uma instabilidade temporaria nos servidores da API do Google. Aguarde um instante e tente novamente mais tarde.
-
-Em vez de:
-
-> **Falha na geracao**
-> All image generations failed
-
+Seguido dos bullets existentes (creditos, projetos, templates...).
