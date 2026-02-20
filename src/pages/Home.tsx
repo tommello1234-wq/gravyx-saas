@@ -156,13 +156,13 @@ export default function Home() {
   const { data: stats } = useQuery({
     queryKey: ['home-stats', user?.id],
     queryFn: async () => {
-      const [projectsRes, generationsRes] = await Promise.all([
+      const [projectsRes, profileRes] = await Promise.all([
         supabase.from('projects').select('id', { count: 'exact', head: true }).eq('user_id', user!.id),
-        supabase.from('generations').select('id', { count: 'exact', head: true }).eq('user_id', user!.id).eq('status', 'completed'),
+        supabase.from('profiles').select('total_generations').eq('user_id', user!.id).single(),
       ]);
       return {
         projects: projectsRes.count ?? 0,
-        generations: generationsRes.count ?? 0,
+        generations: profileRes.data?.total_generations ?? 0,
       };
     },
     enabled: !!user,
