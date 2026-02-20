@@ -31,17 +31,10 @@ export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [page, setPage] = useState(0);
 
-  // Image counts per user
-  const imageCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    data.generations.forEach(g => counts.set(g.user_id, (counts.get(g.user_id) || 0) + 1));
-    return counts;
-  }, [data.generations]);
-
   const filteredUsers = useMemo(() => {
     let users = data.profiles.map(p => ({
       ...p,
-      images: imageCounts.get(p.user_id) || 0,
+      images: p.total_generations || 0,
     }));
 
     if (search) {
@@ -66,7 +59,7 @@ export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser
     });
 
     return users;
-  }, [data.profiles, search, tierFilter, sortKey, sortDir, imageCounts, data.authUsers]);
+  }, [data.profiles, search, tierFilter, sortKey, sortDir, data.authUsers]);
 
   const totalPages = Math.ceil(filteredUsers.length / PAGE_SIZE);
   const paginatedUsers = filteredUsers.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
