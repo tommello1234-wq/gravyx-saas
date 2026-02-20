@@ -228,7 +228,7 @@ export function useAdminDashboard(
     const estimatedChurn = 0; // No subscription events table
     const totalImages = filteredProfiles.reduce((s, p) => s + (p.total_generations || 0), 0);
     const periodImages = periodGens.length;
-    const creditsConsumed = periodImages; // 1 credit per image
+    const creditsConsumed = totalImages; // Use permanent total from profiles
     const creditsRemaining = filteredProfiles.reduce((s, p) => s + (p.credits || 0), 0);
     const avgImagesPerActiveUser = activeUsers > 0 ? periodImages / activeUsers : 0;
 
