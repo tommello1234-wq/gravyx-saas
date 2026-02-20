@@ -306,6 +306,15 @@ export default function Home() {
           </div>
         </motion.section>
 
+        {/* ===== JOURNEY ===== */}
+        {user && (
+          <JourneySection
+            unlockedDay={unlockedDay}
+            missions={missions}
+            onRefresh={refreshAll}
+          />
+        )}
+
         {/* ===== RECENT GENERATIONS ===== */}
         <motion.section key={`recent-${recentImages?.length ?? 'loading'}`} variants={stagger} initial="hidden" animate="show">
           <div className="flex items-center justify-between mb-5">
@@ -345,15 +354,6 @@ export default function Home() {
             </motion.div>
           )}
         </motion.section>
-
-        {/* ===== JOURNEY ===== */}
-        {user && (
-          <JourneySection
-            unlockedDay={unlockedDay}
-            missions={missions}
-            onRefresh={refreshAll}
-          />
-        )}
 
         {/* ===== TEMPLATES ===== */}
         {templates && templates.length > 0 && (
