@@ -240,6 +240,7 @@ export type Database = {
           trial_start_date: string | null
           updated_at: string
           user_id: string
+          user_level: string
         }
         Insert: {
           avatar_url?: string | null
@@ -257,6 +258,7 @@ export type Database = {
           trial_start_date?: string | null
           updated_at?: string
           user_id: string
+          user_level?: string
         }
         Update: {
           avatar_url?: string | null
@@ -274,6 +276,7 @@ export type Database = {
           trial_start_date?: string | null
           updated_at?: string
           user_id?: string
+          user_level?: string
         }
         Relationships: []
       }
@@ -424,6 +427,78 @@ export type Database = {
         }
         Relationships: []
       }
+      user_badges: {
+        Row: {
+          badge_id: string
+          earned_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          badge_id: string
+          earned_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          badge_id?: string
+          earned_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_journey: {
+        Row: {
+          current_day: number
+          journey_start_date: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          current_day?: number
+          journey_start_date?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          current_day?: number
+          journey_start_date?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_missions: {
+        Row: {
+          claimed_at: string | null
+          completed: boolean
+          completed_at: string | null
+          day_number: number
+          id: string
+          reward_claimed: boolean
+          user_id: string
+        }
+        Insert: {
+          claimed_at?: string | null
+          completed?: boolean
+          completed_at?: string | null
+          day_number: number
+          id?: string
+          reward_claimed?: boolean
+          user_id: string
+        }
+        Update: {
+          claimed_at?: string | null
+          completed?: boolean
+          completed_at?: string | null
+          day_number?: number
+          id?: string
+          reward_claimed?: boolean
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -441,6 +516,30 @@ export type Database = {
           created_at?: string
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_streaks: {
+        Row: {
+          current_streak: number
+          last_login_date: string | null
+          longest_streak: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          current_streak?: number
+          last_login_date?: string | null
+          longest_streak?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          current_streak?: number
+          last_login_date?: string | null
+          longest_streak?: number
+          updated_at?: string
           user_id?: string
         }
         Relationships: []

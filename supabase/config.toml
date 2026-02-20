@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.trial-daily-credits]
 verify_jwt = false
+
+[functions.claim-reward]
+verify_jwt = false

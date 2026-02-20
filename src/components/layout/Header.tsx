@@ -15,6 +15,9 @@ import { languageLabels, type Language } from '@/i18n';
 import { User, LogOut, LayoutGrid, Images, Library, Shield, Coins, CreditCard, UserPen, GraduationCap, Home, Globe } from 'lucide-react';
 import { BuyCreditsModal } from '@/components/BuyCreditsModal';
 import { EditProfileModal } from '@/components/EditProfileModal';
+import { StreakIndicator } from '@/components/gamification/StreakIndicator';
+import { LevelBadge } from '@/components/gamification/LevelBadge';
+import { useGamification } from '@/hooks/useGamification';
 import gravyxLogo from '@/assets/gravyx-logo.webp';
 
 export function Header() {
@@ -24,6 +27,7 @@ export function Header() {
   const navigate = useNavigate();
   const [showBuyCredits, setShowBuyCredits] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const { streak, streakJustIncreased, currentLevel } = useGamification();
 
   const navItems = [
     { path: '/home', label: t('header.home'), icon: Home },
@@ -108,6 +112,10 @@ export function Header() {
 
           {user ? (
             <>
+              {/* Streak & Level */}
+              <StreakIndicator streak={streak.current_streak} justIncreased={streakJustIncreased} />
+              <LevelBadge level={currentLevel} />
+
               {/* Buy Credits Button */}
               <Button
                 variant="outline"

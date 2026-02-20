@@ -11,6 +11,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Loader2, Upload, X } from 'lucide-react';
+import { BadgesSection } from '@/components/gamification/BadgesSection';
+import { LevelBadge } from '@/components/gamification/LevelBadge';
+import { useGamification } from '@/hooks/useGamification';
+import { getLevelProgress, getNextLevel } from '@/lib/gamification';
+import { Progress } from '@/components/ui/progress';
 
 interface EditProfileModalProps {
   open: boolean;
@@ -22,11 +27,16 @@ export function EditProfileModal({ open, onOpenChange }: EditProfileModalProps) 
   const { toast } = useToast();
   const { t } = useLanguage();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { badges, currentLevel, levelStats } = useGamification();
 
   const [displayName, setDisplayName] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const earnedBadgeIds = badges.map(b => b.badge_id);
+  const levelProgress = getLevelProgress(currentLevel, levelStats.generations, levelStats.projects);
+  const nextLevel = getNextLevel(currentLevel);
 
   useEffect(() => {
     if (open && profile) {
@@ -83,7 +93,7 @@ export function EditProfileModal({ open, onOpenChange }: EditProfileModalProps) 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t('profile.edit_profile')}</DialogTitle>
         </DialogHeader>
@@ -114,6 +124,24 @@ export function EditProfileModal({ open, onOpenChange }: EditProfileModalProps) 
           <div className="space-y-2">
             <Label>{t('auth.email')}</Label>
             <Input value={profile?.email || ''} disabled className="bg-muted" />
+          </div>
+
+          {/* Level & Progress */}
+          <div className="space-y-2 pt-2 border-t border-border/40">
+            <div className="flex items-center justify-between">
+              <LevelBadge level={currentLevel} />
+              {nextLevel && (
+                <span className="text-xs text-muted-foreground">
+                  → {t(`gamification.level_${nextLevel.id}`)}
+                </span>
+              )}
+            </div>
+            <Progress value={levelProgress} className="h-2" />
+          </div>
+
+          {/* Badges */}
+          <div className="pt-2 border-t border-border/40">
+            <BadgesSection earnedBadgeIds={earnedBadgeIds} />
           </div>
         </div>
         <div className="flex justify-end gap-3">

@@ -11,6 +11,8 @@ import { Badge } from '@/components/ui/badge';
 import { CreateProjectModal } from '@/components/CreateProjectModal';
 import { BuyCreditsModal } from '@/components/BuyCreditsModal';
 import { WelcomeVideoModal } from '@/components/WelcomeVideoModal';
+import { JourneySection } from '@/components/gamification/JourneySection';
+import { useGamification } from '@/hooks/useGamification';
 import { getTierConfig } from '@/lib/plan-limits';
 import { useToast } from '@/hooks/use-toast';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -71,6 +73,7 @@ export default function Home() {
   const [createOpen, setCreateOpen] = useState(false);
   const [showBuyCredits, setShowBuyCredits] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const { unlockedDay, missions, refreshAll } = useGamification();
 
   // Show onboarding modal for first-time users
   useEffect(() => {
@@ -342,6 +345,15 @@ export default function Home() {
             </motion.div>
           )}
         </motion.section>
+
+        {/* ===== JOURNEY ===== */}
+        {user && (
+          <JourneySection
+            unlockedDay={unlockedDay}
+            missions={missions}
+            onRefresh={refreshAll}
+          />
+        )}
 
         {/* ===== TEMPLATES ===== */}
         {templates && templates.length > 0 && (
