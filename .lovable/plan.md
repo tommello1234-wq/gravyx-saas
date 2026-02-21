@@ -1,61 +1,81 @@
 
-## Correcao: Historico de Geracoes Permanente
 
-### Problema
-Quando um usuario exclui imagens da galeria, as linhas sao removidas da tabela `generations`. O sistema de gamificacao (niveis, missoes) conta essas linhas para calcular progresso, entao o contador cai de 39 para 6 quando o usuario limpa a galeria.
+# Redesign da Trilha de Conquistas - Missoes com Verificacao Real
 
-### Solucao
-Adicionar um contador permanente `total_generations` na tabela `profiles` que so incrementa e nunca diminui. Esse contador sera a fonte de verdade para gamificacao e niveis.
+## Problema Atual
+- Qualquer dia desbloqueado aparece como "pronto para resgatar" (icone de presente pulsando), mesmo sem a pessoa ter feito nada.
+- O clique no circulo resgata direto os creditos sem mostrar o que precisa ser feito.
+- O popover so aparece em dias desbloqueados e nao explica claramente a tarefa.
+- Dia 10 nao tem destaque especial.
 
-### Mudancas
+## Solucao
 
-**1. Banco de Dados**
-- Adicionar coluna `total_generations` (integer, default 0) na tabela `profiles`
-- Criar uma funcao SQL `increment_total_generations(uid)` que incrementa o contador em 1
-- Backfill: popular o valor inicial para todos os usuarios existentes contando as `generations` atuais com status 'completed' (nota: usuarios que ja deletaram imagens nao terao o historico recuperado, mas a partir de agora o contador sera correto)
+### 1. Novo fluxo de interacao
 
-**2. Edge Function / Fluxo de Geracao**
-- No momento em que uma geracao e marcada como `completed`, chamar `increment_total_generations` para incrementar o contador no perfil
-- Isso acontece no fluxo do worker (`image-worker` ou `generate-image`)
+Ao clicar em qualquer dia (incluindo bloqueados), abre um popover detalhado com:
+- Titulo da missao
+- Descricao do que precisa fazer
+- Recompensa (creditos ou badge)
+- Status: bloqueado / a fazer / concluido / resgatado
+- Botao "Resgatar" apenas quando a missao foi concluida
 
-**3. Frontend - useGamification.ts**
-- Alterar a query `gamification-level-stats` para buscar `total_generations` do `profiles` em vez de contar linhas da tabela `generations`
-- Isso corrige o calculo de nivel automaticamente
+O resgate NAO acontece mais ao clicar no circulo. O circulo apenas abre o popover. O botao de resgate fica DENTRO do popover.
 
-**4. Edge Function - claim-reward**
-- Missao 1 (criar primeira arte): usar `total_generations >= 1` do `profiles` em vez de contar `generations`
-- Missao 9 (2 geracoes no mesmo projeto): essa continua consultando `generations` por projeto, pois precisa saber o projeto especifico - mas como a missao e resgatada antes de deletar, normalmente funciona
+### 2. Verificacao de conclusao no cliente
 
-### Detalhes Tecnicos
+Criar uma funcao que verifica localmente se cada missao foi concluida (espelhando a logica do `claim-reward`), usando dados ja disponiveis no app (projetos, geracoes, canvas_state). Isso permite mostrar visualmente "Missao concluida - resgatar!" vs "Voce ainda precisa fazer X".
 
-**Migration SQL:**
-```sql
-ALTER TABLE public.profiles 
-  ADD COLUMN IF NOT EXISTS total_generations integer NOT NULL DEFAULT 0;
+### 3. Estados visuais dos circulos (4 estados)
 
--- Backfill com dados atuais
-UPDATE public.profiles p
-SET total_generations = COALESCE(
-  (SELECT COUNT(*) FROM public.generations g 
-   WHERE g.user_id = p.user_id AND g.status = 'completed'), 0
-);
+- **Bloqueado** (cadeado cinza): dia ainda nao chegou
+- **A fazer** (circulo vazio com borda): dia desbloqueado, missao nao concluida
+- **Pronto para resgatar** (presente pulsando): missao concluida, recompensa disponivel
+- **Resgatado** (check verde): ja resgatou
 
--- Funcao para incrementar (service role only)
-CREATE OR REPLACE FUNCTION public.increment_total_generations(uid uuid)
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO '' AS $$
-BEGIN
-  IF auth.uid() IS NOT NULL THEN
-    RAISE EXCEPTION 'Unauthorized: Service role only';
-  END IF;
-  UPDATE public.profiles
-  SET total_generations = total_generations + 1, updated_at = now()
-  WHERE user_id = uid;
-END;
-$$;
-```
+### 4. Dia 10 com destaque especial
 
-**Arquivos modificados:**
-- `supabase/functions/image-worker/index.ts` ou `generate-image/index.ts` - chamar `increment_total_generations` ao completar geracao
-- `src/hooks/useGamification.ts` - ler `total_generations` de `profiles` em vez de contar `generations`
-- `supabase/functions/claim-reward/index.ts` - missao 1 usar `total_generations` do perfil
-- Migration SQL para adicionar coluna e backfill
+- Circulo maior com brilho dourado
+- Icone de presente especial
+- No popover: banner destacado com "Presente Surpresa" e descricao do treinamento
+- Animacao de confete ao resgatar
+
+## Detalhes Tecnicos
+
+### Arquivos a modificar
+
+**`src/components/gamification/JourneySection.tsx`**
+- Remover o `onClick` do `motion.button` que faz resgate direto
+- Adicionar hook de verificacao de missoes
+- Mover botao de resgate para dentro do `PopoverContent`
+- Mostrar popover para TODOS os dias (inclusive bloqueados)
+- Adicionar 4 estados visuais
+- Estilizar Dia 10 com classes especiais (borda dourada, glow maior, escala)
+
+**`src/lib/gamification.ts`** (novo export)
+- Adicionar funcao `checkMissionCompletion(day, userData)` que verifica no cliente se cada missao esta concluida, usando os mesmos criterios do edge function:
+  - Dia 1: total_generations >= 1
+  - Dia 2: projetos >= 2
+  - Dia 3: projetos >= 1 (uso de template)
+  - Dia 4: algum projeto com node gravity
+  - Dia 5: algum projeto com 2+ result nodes
+  - Dia 6: algum projeto editado (updated > created + 1min)
+  - Dia 7: projeto com prompt + media + result
+  - Dia 8: pipeline com 2+ results conectados
+  - Dia 9: 2+ geracoes em um projeto
+  - Dia 10: 10+ dias desde inicio da jornada
+
+**`src/hooks/useGamification.ts`**
+- Adicionar query para buscar dados necessarios para verificacao (projetos com canvas_state, geracoes por projeto)
+- Exportar `missionCompletionStatus: Record<number, boolean>`
+
+**`src/i18n/pt.ts`**, **`src/i18n/en.ts`**, **`src/i18n/es.ts`**
+- Adicionar traducoes para novos textos:
+  - `gamification.mission_locked` ("Dia ainda nao disponivel")
+  - `gamification.mission_todo` ("Complete a tarefa para desbloquear")
+  - `gamification.claim_reward` ("Resgatar recompensa")
+  - `gamification.mission_requirement` ("O que fazer:")
+  - `gamification.day10_highlight` (texto especial pro dia 10)
+
+### Edge function `claim-reward`
+- Sem mudancas - ja faz a verificacao correta no servidor. O cliente agora tambem verificara antes de habilitar o botao, mas a validacao final continua no servidor.
+
