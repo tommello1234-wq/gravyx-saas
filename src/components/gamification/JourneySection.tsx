@@ -83,12 +83,17 @@ export function JourneySection({ unlockedDay, missions, missionCompletionStatus,
       <div className="glass-card p-6 rounded-2xl">
         {/* Journey line */}
         <div className="relative flex items-center justify-between">
-          {/* Connecting line - centered with circles, behind them */}
-          <div className="absolute top-1/2 -translate-y-1/2 left-[1.25rem] right-[1.25rem] h-[2px] bg-border/30 -z-0" />
-          <div
-            className="absolute top-1/2 -translate-y-1/2 left-[1.25rem] h-[2px] bg-primary/60 transition-all duration-700 -z-0"
-            style={{ width: `calc(${Math.max(0, ((Math.min(unlockedDay, 10) - 1) / 9) * 100)}% - 2.5rem)` }}
-          />
+          {/* Background track line */}
+          <div className="absolute top-5 left-0 right-0 flex items-center px-5 pointer-events-none" style={{ zIndex: 0 }}>
+            <div className="w-full h-[2px] bg-border/30 rounded-full" />
+          </div>
+          {/* Progress line */}
+          <div className="absolute top-5 left-0 right-0 flex items-center px-5 pointer-events-none" style={{ zIndex: 0 }}>
+            <div
+              className="h-[2px] bg-primary/60 rounded-full transition-all duration-700"
+              style={{ width: `${Math.max(0, ((Math.min(unlockedDay, 10) - 1) / 9) * 100)}%` }}
+            />
+          </div>
 
           {Array.from({ length: 10 }, (_, i) => i + 1).map((day) => {
             const state = getMissionState(day);
