@@ -1,8 +1,8 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { calculateLevel, type UserLevel } from '@/lib/gamification';
+import { calculateLevel, checkMissionCompletion, type UserLevel, type MissionCheckData } from '@/lib/gamification';
 
 interface StreakData {
   current_streak: number;
@@ -90,23 +90,36 @@ export function useGamification() {
     enabled: !!user,
   });
 
-  // Stats for level calculation
+  // Stats for level calculation + mission check data
   const { data: levelStats } = useQuery({
     queryKey: ['gamification-level-stats', user?.id],
     queryFn: async () => {
-      const [profileRes, projRes, projWithGravity] = await Promise.all([
+      const [profileRes, projRes, projData, gensByProject] = await Promise.all([
         supabase.from('profiles').select('total_generations').eq('user_id', user!.id).single(),
         supabase.from('projects').select('id', { count: 'exact', head: true }).eq('user_id', user!.id),
-        supabase.from('projects').select('canvas_state').eq('user_id', user!.id),
+        supabase.from('projects').select('id, canvas_state, created_at, updated_at').eq('user_id', user!.id),
+        supabase.from('generations').select('project_id').eq('user_id', user!.id).eq('status', 'completed'),
       ]);
-      const usedGravity = (projWithGravity.data ?? []).some((p: any) => {
+      const projects = (projData.data ?? []) as Array<{ id: string; canvas_state: any; created_at: string; updated_at: string }>;
+      const usedGravity = projects.some((p) => {
         const cs = p.canvas_state as any;
         return cs?.nodes?.some((n: any) => n.type === 'gravity');
       });
+
+      // Count generations per project
+      const genCounts: Record<string, number> = {};
+      for (const g of (gensByProject.data ?? []) as Array<{ project_id: string | null }>) {
+        if (g.project_id) {
+          genCounts[g.project_id] = (genCounts[g.project_id] || 0) + 1;
+        }
+      }
+
       return {
         generations: (profileRes.data as any)?.total_generations ?? 0,
         projects: projRes.count ?? 0,
         usedGravity,
+        projectsData: projects,
+        generationsByProject: genCounts,
       };
     },
     enabled: !!user,
@@ -197,6 +210,23 @@ export function useGamification() {
     queryClient.invalidateQueries({ queryKey: ['gamification-level-stats', user.id] });
   }, [user, queryClient]);
 
+  // Mission completion status (client-side check)
+  const missionCompletionStatus = useMemo<Record<number, boolean>>(() => {
+    if (!levelStats || !journey) return {};
+    const checkData: MissionCheckData = {
+      totalGenerations: levelStats.generations,
+      projectCount: levelStats.projects,
+      projects: levelStats.projectsData ?? [],
+      generationsByProject: levelStats.generationsByProject ?? {},
+      journeyStartDate: journey?.journey_start_date ?? null,
+    };
+    const status: Record<number, boolean> = {};
+    for (let day = 1; day <= 10; day++) {
+      status[day] = checkMissionCompletion(day, checkData);
+    }
+    return status;
+  }, [levelStats, journey]);
+
   return {
     streak: streak ?? { current_streak: 0, longest_streak: 0, last_login_date: null },
     streakJustIncreased,
@@ -206,6 +236,7 @@ export function useGamification() {
     unlockedDay,
     currentLevel,
     levelStats: levelStats ?? { generations: 0, projects: 0, usedGravity: false },
+    missionCompletionStatus,
     refreshAll,
   };
 }

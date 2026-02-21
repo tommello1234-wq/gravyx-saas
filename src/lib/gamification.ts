@@ -93,3 +93,71 @@ export function getLevelProgress(
   const projProg = Math.min(projects / next.minProjects, 1);
   return Math.round(((genProg + projProg) / 2) * 100);
 }
+
+// ---- Mission completion verification (client-side mirror of claim-reward edge function) ----
+
+export interface MissionCheckData {
+  totalGenerations: number;
+  projectCount: number;
+  projects: Array<{
+    id: string;
+    canvas_state: any;
+    created_at: string;
+    updated_at: string;
+  }>;
+  generationsByProject: Record<string, number>; // projectId -> count of completed generations
+  journeyStartDate: string | null;
+}
+
+export function checkMissionCompletion(day: number, data: MissionCheckData): boolean {
+  switch (day) {
+    case 1:
+      return data.totalGenerations >= 1;
+    case 2:
+      return data.projectCount >= 2;
+    case 3:
+      return data.projectCount >= 1;
+    case 4:
+      return data.projects.some(p => {
+        const cs = p.canvas_state;
+        return cs?.nodes?.some((n: any) => n.type === 'gravity');
+      });
+    case 5:
+      return data.projects.some(p => {
+        const cs = p.canvas_state;
+        const resultNodes = (cs?.nodes ?? []).filter((n: any) => n.type === 'result');
+        return resultNodes.length >= 2;
+      });
+    case 6:
+      return data.projects.some(p => {
+        const created = new Date(p.created_at).getTime();
+        const updated = new Date(p.updated_at).getTime();
+        return (updated - created) > 60000;
+      });
+    case 7:
+      return data.projects.some(p => {
+        const cs = p.canvas_state;
+        const types = new Set((cs?.nodes ?? []).map((n: any) => n.type));
+        return types.has('prompt') && types.has('media') && types.has('result');
+      });
+    case 8:
+      return data.projects.some(p => {
+        const cs = p.canvas_state;
+        const resultNodes = (cs?.nodes ?? []).filter((n: any) => n.type === 'result');
+        if (resultNodes.length < 2) return false;
+        const resultIds = new Set(resultNodes.map((n: any) => n.id));
+        return (cs?.edges ?? []).some((e: any) => resultIds.has(e.target) || resultIds.has(e.source));
+      });
+    case 9:
+      return Object.values(data.generationsByProject).some(count => count >= 2);
+    case 10: {
+      if (!data.journeyStartDate) return false;
+      const start = new Date(data.journeyStartDate);
+      const now = new Date();
+      const diffDays = Math.floor((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      return diffDays >= 10;
+    }
+    default:
+      return false;
+  }
+}

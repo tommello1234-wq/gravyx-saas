@@ -73,7 +73,7 @@ export default function Home() {
   const [createOpen, setCreateOpen] = useState(false);
   const [showBuyCredits, setShowBuyCredits] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const { unlockedDay, missions, refreshAll } = useGamification();
+  const { unlockedDay, missions, missionCompletionStatus, refreshAll } = useGamification();
 
   // Show onboarding modal for first-time users
   useEffect(() => {
@@ -311,6 +311,7 @@ export default function Home() {
           <JourneySection
             unlockedDay={unlockedDay}
             missions={missions}
+            missionCompletionStatus={missionCompletionStatus}
             onRefresh={refreshAll}
           />
         )}
