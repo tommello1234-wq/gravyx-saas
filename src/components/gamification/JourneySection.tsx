@@ -83,11 +83,11 @@ export function JourneySection({ unlockedDay, missions, missionCompletionStatus,
       <div className="glass-card p-6 rounded-2xl">
         {/* Journey line */}
         <div className="relative flex items-center justify-between">
-          {/* Connecting line */}
-          <div className="absolute top-5 left-5 right-5 h-0.5 bg-border/50" />
+          {/* Connecting line - centered with circles, behind them */}
+          <div className="absolute top-1/2 -translate-y-1/2 left-[1.25rem] right-[1.25rem] h-[2px] bg-border/30 -z-0" />
           <div
-            className="absolute top-5 left-5 h-0.5 bg-primary/60 transition-all duration-700"
-            style={{ width: `${Math.max(0, ((Math.min(unlockedDay, 10) - 1) / 9) * 100)}%` }}
+            className="absolute top-1/2 -translate-y-1/2 left-[1.25rem] h-[2px] bg-primary/60 transition-all duration-700 -z-0"
+            style={{ width: `calc(${Math.max(0, ((Math.min(unlockedDay, 10) - 1) / 9) * 100)}% - 2.5rem)` }}
           />
 
           {Array.from({ length: 10 }, (_, i) => i + 1).map((day) => {
@@ -98,7 +98,7 @@ export function JourneySection({ unlockedDay, missions, missionCompletionStatus,
             return (
               <Popover key={day}>
                 <PopoverTrigger asChild>
-                  <div className="relative flex flex-col items-center z-10 cursor-pointer" style={{ minWidth: '2.5rem' }}>
+                  <div className="relative flex flex-col items-center z-[1] cursor-pointer" style={{ minWidth: '2.5rem' }}>
                     {/* Reward animation */}
                     {rewardAnim?.day === day && (
                       <RewardAnimation
