@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Lock, Check, Gift } from 'lucide-react';
+import { Lock, Check, Gift, Circle, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -20,10 +20,13 @@ interface MissionData {
 interface JourneySectionProps {
   unlockedDay: number;
   missions: MissionData[];
+  missionCompletionStatus: Record<number, boolean>;
   onRefresh: () => void;
 }
 
-export function JourneySection({ unlockedDay, missions, onRefresh }: JourneySectionProps) {
+type MissionState = 'locked' | 'todo' | 'reward-pending' | 'claimed';
+
+export function JourneySection({ unlockedDay, missions, missionCompletionStatus, onRefresh }: JourneySectionProps) {
   const { t } = useLanguage();
   const { user, refreshProfile } = useAuth();
   const { toast } = useToast();
@@ -31,12 +34,13 @@ export function JourneySection({ unlockedDay, missions, onRefresh }: JourneySect
   const [rewardAnim, setRewardAnim] = useState<{ day: number; text: string } | null>(null);
   const [showComplete, setShowComplete] = useState(false);
 
-  const getMissionState = (day: number) => {
-    const mission = missions.find(m => m.day_number === day);
+  const getMissionState = (day: number): MissionState => {
     if (day > unlockedDay) return 'locked';
-    if (mission?.reward_claimed) return 'completed';
-    // Any unlocked day that hasn't been claimed is claimable
-    return 'reward-pending';
+    const mission = missions.find(m => m.day_number === day);
+    if (mission?.reward_claimed) return 'claimed';
+    const isCompleted = missionCompletionStatus[day] ?? false;
+    if (isCompleted) return 'reward-pending';
+    return 'todo';
   };
 
   const handleClaimReward = async (day: number) => {
@@ -67,10 +71,6 @@ export function JourneySection({ unlockedDay, missions, onRefresh }: JourneySect
     } finally {
       setClaiming(null);
     }
-  };
-
-  const dayLabel = (day: number) => {
-    return day === 10 ? '🎁' : `Dia ${String(day).padStart(2, '0')}`;
   };
 
   return (
@@ -109,64 +109,108 @@ export function JourneySection({ unlockedDay, missions, onRefresh }: JourneySect
                     )}
 
                     {/* Circle */}
-                    <motion.button
-                      disabled={state === 'locked' || state === 'completed' || claiming !== null}
-                      onClick={(e) => {
-                        if (state === 'reward-pending') {
-                          e.stopPropagation();
-                          handleClaimReward(day);
-                        }
-                      }}
-                      whileHover={state === 'reward-pending' ? { scale: 1.1 } : {}}
-                      whileTap={state === 'reward-pending' ? { scale: 0.95 } : {}}
+                    <motion.div
+                      whileHover={state !== 'locked' ? { scale: 1.1 } : {}}
                       className={`relative w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all ${
                         state === 'locked'
                           ? 'border-border/40 bg-muted/30 text-muted-foreground'
-                          : state === 'completed'
+                          : state === 'claimed'
                           ? 'border-primary/60 bg-primary/20 text-primary'
                           : state === 'reward-pending'
-                          ? 'border-primary bg-primary/10 text-primary cursor-pointer shadow-[0_0_12px_hsl(var(--primary)/0.3)] animate-pulse'
+                          ? 'border-primary bg-primary/10 text-primary shadow-[0_0_12px_hsl(var(--primary)/0.3)] animate-pulse'
                           : 'border-border bg-background text-muted-foreground'
-                      } ${isDay10 && state !== 'locked' ? 'w-12 h-12 shadow-[0_0_16px_hsl(220_100%_50%/0.3)]' : ''}`}
+                      } ${isDay10 ? 'w-12 h-12' : ''} ${
+                        isDay10 && state !== 'locked'
+                          ? 'border-yellow-400/80 shadow-[0_0_20px_hsl(45_100%_50%/0.4)]'
+                          : ''
+                      }`}
                     >
                       {state === 'locked' && <Lock className="h-3.5 w-3.5" />}
-                      {state === 'completed' && <Check className="h-4 w-4" />}
-                      {state === 'reward-pending' && (claiming === day ? (
-                        <div className="h-3.5 w-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                      ) : (
-                        <Gift className="h-4 w-4" />
-                      ))}
-                    </motion.button>
+                      {state === 'claimed' && <Check className="h-4 w-4" />}
+                      {state === 'todo' && <Circle className="h-4 w-4" />}
+                      {state === 'reward-pending' && (
+                        isDay10
+                          ? <Sparkles className="h-4 w-4 text-yellow-400" />
+                          : <Gift className="h-4 w-4" />
+                      )}
+                    </motion.div>
 
                     {/* Day label */}
                     <span className={`mt-1.5 text-[10px] font-medium whitespace-nowrap ${
                       state === 'locked' ? 'text-muted-foreground/50' : 'text-muted-foreground'
                     }`}>
-                      {dayLabel(day)}
+                      {isDay10 ? '🎁' : `Dia ${String(day).padStart(2, '0')}`}
                     </span>
                   </div>
                 </PopoverTrigger>
 
-                {/* Popover with mission info */}
-                {state !== 'locked' && (
-                  <PopoverContent side="bottom" className="w-56 p-3" align="center">
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-semibold">
-                        {isDay10 ? '🎁 ' : ''}{t(`gamification.mission_${day}_title`)}
+                {/* Popover with mission info - shown for ALL days */}
+                <PopoverContent side="bottom" className={`w-64 p-3 ${isDay10 && state !== 'locked' ? 'border-yellow-400/50' : ''}`} align="center">
+                  <div className="space-y-2">
+                    {/* Title */}
+                    <p className="text-xs font-semibold">
+                      {isDay10 && state !== 'locked' ? t('gamification.day10_surprise') + ' ' : ''}
+                      {t(`gamification.mission_${day}_title`)}
+                    </p>
+
+                    {/* Status badge */}
+                    {state === 'locked' && (
+                      <p className="text-[10px] text-muted-foreground/70 flex items-center gap-1">
+                        <Lock className="h-3 w-3" /> {t('gamification.mission_locked')}
+                      </p>
+                    )}
+
+                    {/* Requirement description */}
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-medium text-muted-foreground">
+                        {t('gamification.mission_requirement')}
                       </p>
                       <p className="text-[11px] text-muted-foreground">
-                        {t(`gamification.mission_${day}_desc`)}
+                        {isDay10 && state !== 'locked'
+                          ? t('gamification.day10_desc')
+                          : t(`gamification.mission_${day}_desc`)}
                       </p>
-                      <div className="text-[11px] font-medium text-primary">
-                        {missionDef?.rewardCredits ? `+${missionDef.rewardCredits} ${t('header.credits')}` : ''}
-                        {missionDef?.badgeId ? `🏅 ${t(`gamification.badge_${missionDef.badgeId}`)}` : ''}
-                      </div>
-                      {state === 'completed' && (
-                        <p className="text-[10px] text-primary/70">✓ {t('gamification.mission_claimed')}</p>
-                      )}
                     </div>
-                  </PopoverContent>
-                )}
+
+                    {/* Reward info */}
+                    <div className="text-[11px] font-medium text-primary">
+                      {missionDef?.rewardCredits ? `🎯 +${missionDef.rewardCredits} ${t('header.credits')}` : ''}
+                      {missionDef?.badgeId ? `🏅 ${t(`gamification.badge_${missionDef.badgeId}`)}` : ''}
+                    </div>
+
+                    {/* Status + Action */}
+                    {state === 'claimed' && (
+                      <p className="text-[10px] text-primary/70">✓ {t('gamification.mission_claimed')}</p>
+                    )}
+
+                    {state === 'todo' && (
+                      <p className="text-[10px] text-muted-foreground/70">
+                        {t('gamification.mission_todo')}
+                      </p>
+                    )}
+
+                    {state === 'reward-pending' && (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] text-primary font-medium">
+                          {t('gamification.mission_completed')}
+                        </p>
+                        <Button
+                          size="sm"
+                          className="w-full h-7 text-xs"
+                          disabled={claiming !== null}
+                          onClick={() => handleClaimReward(day)}
+                        >
+                          {claiming === day ? (
+                            <div className="h-3.5 w-3.5 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin mr-1" />
+                          ) : (
+                            <Gift className="h-3 w-3 mr-1" />
+                          )}
+                          {t('gamification.claim_reward')}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </PopoverContent>
               </Popover>
             );
           })}

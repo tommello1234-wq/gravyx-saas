@@ -426,4 +426,11 @@ export const en = {
   'gamification.current': 'CURRENT',
   'gamification.images': 'images',
   'gamification.projects_label': 'projects',
+  'gamification.mission_locked': 'Day not yet available',
+  'gamification.mission_todo': 'Complete the task to unlock the reward',
+  'gamification.claim_reward': 'Claim reward',
+  'gamification.mission_requirement': 'What to do:',
+  'gamification.day10_surprise': '🎁 Special Gift',
+  'gamification.day10_desc': 'Complete your 10-day journey and unlock access to "Prompt Designer" training!',
+  'gamification.mission_completed': '✅ Mission completed!',
 };

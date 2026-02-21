@@ -426,4 +426,11 @@ export const es = {
   'gamification.current': 'ACTUAL',
   'gamification.images': 'imágenes',
   'gamification.projects_label': 'proyectos',
+  'gamification.mission_locked': 'Día aún no disponible',
+  'gamification.mission_todo': 'Completa la tarea para desbloquear la recompensa',
+  'gamification.claim_reward': 'Reclamar recompensa',
+  'gamification.mission_requirement': 'Qué hacer:',
+  'gamification.day10_surprise': '🎁 Regalo Especial',
+  'gamification.day10_desc': '¡Completa tu viaje de 10 días y desbloquea acceso al entrenamiento "Designer de Prompt"!',
+  'gamification.mission_completed': '✅ ¡Misión completada!',
 };
