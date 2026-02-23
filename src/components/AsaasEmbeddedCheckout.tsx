@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 
 interface Props {
-  checkoutId: string;
+  checkoutUrl: string;
 }
 
-export function AsaasEmbeddedCheckout({ checkoutId }: Props) {
+export function AsaasEmbeddedCheckout({ checkoutUrl }: Props) {
   const [loading, setLoading] = useState(true);
 
   return (
@@ -16,7 +16,7 @@ export function AsaasEmbeddedCheckout({ checkoutId }: Props) {
         </div>
       )}
       <iframe
-        src={`https://www.asaas.com/checkoutSession/show?id=${checkoutId}`}
+        src={checkoutUrl}
         className="w-full min-h-[500px] border-0 rounded-lg"
         onLoad={() => setLoading(false)}
         allow="payment"

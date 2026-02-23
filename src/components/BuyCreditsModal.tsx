@@ -53,7 +53,7 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
   const currentTier = (profile?.tier as TierKey) || 'free';
   const [cycle, setCycle] = useState<BillingCycle>('annual');
   const [checkoutPlan, setCheckoutPlan] = useState<{ priceId: string; tier: string } | null>(null);
-  const [asaasCheckoutId, setAsaasCheckoutId] = useState<string | null>(null);
+  const [asaasCheckoutUrl, setAsaasCheckoutUrl] = useState<string | null>(null);
   const [loadingAsaas, setLoadingAsaas] = useState(false);
 
   const handleSelectPlan = async (plan: PlanInfo) => {
@@ -65,8 +65,8 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
           body: { tier: plan.tier },
         });
         if (error) throw error;
-        if (!data?.checkout_id) throw new Error('No checkout_id returned');
-        setAsaasCheckoutId(data.checkout_id);
+        if (!data?.checkout_url) throw new Error('No checkout_url returned');
+        setAsaasCheckoutUrl(data.checkout_url);
       } catch (err) {
         console.error('Asaas checkout error:', err);
         toast.error('Erro ao iniciar checkout. Tente novamente.');
@@ -85,26 +85,26 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
   const handleClose = (value: boolean) => {
     if (!value) {
       setCheckoutPlan(null);
-      setAsaasCheckoutId(null);
+      setAsaasCheckoutUrl(null);
     }
     onOpenChange(value);
   };
 
   // If Asaas checkout is active, show embedded Asaas checkout
-  if (asaasCheckoutId) {
+  if (asaasCheckoutUrl) {
     return (
       <Dialog open={open} onOpenChange={handleClose}>
         <DialogContent className="max-w-2xl bg-[hsl(220,20%,8%)] border-border/50 p-0 overflow-hidden">
           <DialogHeader className="p-6 pb-2">
             <div className="flex items-center gap-3">
-              <Button variant="ghost" size="icon" onClick={() => setAsaasCheckoutId(null)} className="h-8 w-8">
+              <Button variant="ghost" size="icon" onClick={() => setAsaasCheckoutUrl(null)} className="h-8 w-8">
                 <ArrowLeft className="h-4 w-4" />
               </Button>
               <DialogTitle className="text-lg text-foreground">Finalizar assinatura anual</DialogTitle>
             </div>
           </DialogHeader>
           <div className="px-6 pb-6">
-            <AsaasEmbeddedCheckout checkoutId={asaasCheckoutId} />
+            <AsaasEmbeddedCheckout checkoutUrl={asaasCheckoutUrl} />
           </div>
         </DialogContent>
       </Dialog>
