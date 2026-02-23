@@ -76,7 +76,7 @@ serve(async (req) => {
     // Create Asaas Checkout session
     const checkoutPayload = {
       billingTypes: ["CREDIT_CARD"],
-      chargeTypes: ["INSTALLMENT"],
+      chargeTypes: ["DETACHED", "INSTALLMENT"],
       minutesToExpire: 60,
       externalReference: `gravyx_annual_${tier}_${userId}`,
       callback: {
