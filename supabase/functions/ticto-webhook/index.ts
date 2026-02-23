@@ -303,32 +303,22 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // 3. CANCELADA → verificar se é trial (downgrade imediato) ou paga (manter benefícios)
+  // 3. CANCELADA → downgrade imediato
   if (statusLower.includes('cancelada') || statusLower.includes('cancelled') || statusLower.includes('canceled')) {
     const profile = await findProfile(customerEmail);
 
     if (profile) {
-      // Verificar se está em trial - se sim, downgrade imediato (nunca pagou)
-      const { data: currentProfile } = await supabase
-        .from('profiles')
-        .select('subscription_status')
-        .eq('user_id', profile.user_id)
-        .single();
-
-      if (currentProfile?.subscription_status === 'trial_active') {
-        await downgradeToFree(profile.user_id, profile.credits, profile.credits);
-        console.log(`🔻 Trial cancelado - downgrade imediato: ${customerEmail}`);
-        await logWebhook(supabase, status, body, true, 'Trial cancelled - immediate downgrade to Free');
-        return new Response(JSON.stringify({ success: true, action: 'trial_cancelled_downgraded' }), {
-          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
+      await downgradeToFree(profile.user_id, profile.credits, 0);
+      console.log(`🔻 Assinatura cancelada - downgrade: ${customerEmail}`);
+      await logWebhook(supabase, status, body, true, 'Subscription cancelled - downgraded to Free');
+      return new Response(JSON.stringify({ success: true, action: 'cancelled_downgraded' }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    // Assinatura paga cancelada - manter benefícios até fim do ciclo
-    console.log(`⚠️ Assinatura cancelada (mantém benefícios): ${customerEmail}`);
-    await logWebhook(supabase, status, body, true, 'Subscription cancelled - benefits kept until cycle end');
-    return new Response(JSON.stringify({ success: true, action: 'cancelled_logged' }), {
+    console.log(`⚠️ Cancelamento para usuário não encontrado: ${customerEmail}`);
+    await logWebhook(supabase, status, body, false, `Cancel: user not found: ${customerEmail}`);
+    return new Response(JSON.stringify({ success: true, action: 'cancelled_user_not_found' }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
@@ -344,56 +334,13 @@ Deno.serve(async (req: Request) => {
 
   // 5-7. RETOMADA / PLANO ALTERADO / EXTENDIDA → cai no fluxo de aprovação abaixo
 
-  // 8. PERÍODO DE TESTES / TRIAL → ativar trial do usuário (auto-cria conta se não existir)
+  // 8. PERÍODO DE TESTES / TRIAL (legado) → tratar como ativação imediata do plano
   const trialStatuses = ['periodo de testes', 'trial'];
   const isTrial = trialStatuses.some(s => statusLower.includes(s));
   if (isTrial) {
-    const profile = await findOrCreateProfile(supabase, customerEmail, customerName, true);
-    if (!profile) {
-      await logWebhook(supabase, status, body, false, `Trial: failed to find or create user: ${customerEmail}`);
-      return new Response('User creation failed', { status: 200, headers: corsHeaders });
-    }
-
-    // Verificar se ja esta em trial ou ativo - ignorar duplicata
-    const { data: currentProfile } = await supabase
-      .from('profiles')
-      .select('subscription_status')
-      .eq('user_id', profile.user_id)
-      .single();
-
-    if (currentProfile?.subscription_status === 'trial_active' || 
-        currentProfile?.subscription_status === 'active') {
-      console.log(`Trial duplicado ignorado: ${customerEmail} ja esta ${currentProfile.subscription_status}`);
-      await logWebhook(supabase, status, body, true, `Trial duplicate ignored - already ${currentProfile.subscription_status}`);
-      return new Response(JSON.stringify({ success: true, action: 'trial_duplicate_ignored' }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Determine tier from offer code
-    const trialConfig = OFFER_CONFIG[offerCode];
-    const trialTier = trialConfig?.tier || 'starter';
-    const trialMaxProjects = trialConfig?.max_projects || 3;
-
-    const { error } = await supabase.from('profiles').update({
-      subscription_status: 'trial_active',
-      trial_start_date: new Date().toISOString(),
-      trial_credits_given: 5,
-      credits: 5,
-      tier: trialTier,
-      max_projects: trialMaxProjects,
-    }).eq('user_id', profile.user_id);
-
-    if (error) {
-      await logWebhook(supabase, status, body, false, `Trial activation failed: ${error.message}`);
-      return new Response('Failed', { status: 500, headers: corsHeaders });
-    }
-
-    console.log(`🎉 Trial ativado: ${customerEmail} → ${trialTier}`);
-    await logWebhook(supabase, status, body, true);
-    return new Response(JSON.stringify({ success: true, action: 'trial_activated' }), {
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    // Trial não existe mais - redirecionar para o fluxo de aprovação normal
+    console.log(`ℹ️ Evento de trial recebido, tratando como ativação imediata: ${customerEmail}`);
+    // Não retornamos aqui, deixamos cair no fluxo de aprovação abaixo
   }
 
   // 8b. CARTÃO ATUALIZADO → apenas loga
@@ -487,9 +434,7 @@ Deno.serve(async (req: Request) => {
       billing_cycle,
       max_projects,
       subscription_status: 'active',
-      trial_credits_given: 0,
-    })
-    .eq('user_id', profile.user_id);
+    }).eq('user_id', profile.user_id);
 
   if (updateError) {
     console.error('Erro ao atualizar créditos:', updateError);

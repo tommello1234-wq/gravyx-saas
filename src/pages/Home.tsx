@@ -31,7 +31,6 @@ import {
   Zap,
   Rocket,
   AlertTriangle,
-  Clock,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR, enUS, es as esLocale } from 'date-fns/locale';
@@ -86,11 +85,7 @@ export default function Home() {
   const tierConfig = getTierConfig(tier);
   const isFree = tier === 'free' && !isAdmin;
   const subscriptionStatus = (profile as any)?.subscription_status ?? 'inactive';
-  const isTrialActive = subscriptionStatus === 'trial_active';
   const isInactive = subscriptionStatus === 'inactive' || subscriptionStatus === 'cancelled';
-  const trialDaysRemaining = isTrialActive && (profile as any)?.trial_start_date
-    ? Math.max(0, 7 - Math.floor((Date.now() - new Date((profile as any).trial_start_date).getTime()) / (1000 * 60 * 60 * 24)))
-    : 0;
 
   // Recent generations
   const { data: recentImages } = useQuery({
@@ -241,19 +236,7 @@ export default function Home() {
       <Header />
 
       <main className="container py-8 space-y-12">
-        {/* ===== TRIAL / INACTIVE BANNER ===== */}
-        {!isAdmin && isTrialActive && (
-          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl border border-primary/30 bg-primary/5 p-4 flex items-center gap-4">
-            <div className="p-2 rounded-lg bg-primary/10">
-              <Clock className="h-5 w-5 text-primary" />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium">{t('home.trial_active')} — {trialDaysRemaining} {trialDaysRemaining === 1 ? t('home.day_remaining') : t('home.days_remaining')}</p>
-              <p className="text-xs text-muted-foreground">{t('home.trial_credits_info')} {profile?.credits ?? 0}</p>
-            </div>
-          </motion.div>
-        )}
-
+        {/* ===== INACTIVE BANNER ===== */}
         {!isAdmin && isInactive && (
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 flex items-center gap-4">
             <div className="p-2 rounded-lg bg-destructive/10">

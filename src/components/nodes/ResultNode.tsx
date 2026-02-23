@@ -245,7 +245,7 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
   const creditsNeeded = quantity * CREDITS_PER_IMAGE;
   const credits = profile?.credits || 0;
   const hasEnoughCredits = credits >= creditsNeeded;
-  const hasActiveSubscription = isAdmin || profile?.subscription_status === 'trial_active' || profile?.subscription_status === 'active';
+  const hasActiveSubscription = isAdmin || profile?.subscription_status === 'active';
   const isDisabled = !hasActiveSubscription || !hasEnoughCredits || isGenerating || jobQueueState.hasQueuedJobs || jobQueueState.hasProcessingJobs;
 
   return (
