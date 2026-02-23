@@ -86,7 +86,6 @@ serve(async (req) => {
       },
       items: [{ name: plan.name, quantity: 1, value: plan.value }],
       installment: { maxInstallmentCount: 12 },
-      customerData: { email: userEmail },
     };
 
     logStep("Creating Asaas checkout", checkoutPayload);
