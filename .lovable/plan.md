@@ -1,46 +1,49 @@
 
 
-## Checkout Standalone - Implementacao
+## Desativar E-mails do Asaas e Enviar via Resend
 
-### 1. Criar `src/pages/Checkout.tsx`
+### Objetivo
+Parar de pagar R$0,99 por e-mail do Asaas, desativando as notificacoes automaticas e enviando e-mails transacionais de pagamento pelo Resend (que voce ja usa para os e-mails de autenticacao).
 
-Nova pagina que le `plan` e `cycle` da URL e renderiza o checkout do Asaas diretamente.
+### O que muda
 
-- Le parametros via `useSearchParams()`
-- Valida se `plan` e `cycle` sao validos (senao mostra mensagem de erro com link para `/projects`)
-- Usa os mesmos precos/creditos do `BuyCreditsModal` (hardcoded no componente)
-- Renderiza `AsaasTransparentCheckout` com os dados do plano
-- Apos sucesso, redireciona para `/projects`
-- Visual limpo: fundo escuro, logo GravyX centralizada, card com o checkout
+1. **Desativar e-mails do Asaas** - Adicionar `notifications: { disabled: true }` nos payloads de cobranca e assinatura
+2. **Criar templates de e-mail** para eventos de pagamento (confirmacao, boleto/PIX pendente, atraso)
+3. **Enviar e-mails via Resend** no webhook quando o Asaas notificar os eventos
 
-### 2. Modificar `src/App.tsx`
+### Templates a criar
 
-- Importar `Checkout` de `./pages/Checkout`
-- Adicionar rota `/checkout` envolvida em `ProtectedRoute` (usuario precisa estar logado)
+| Template | Quando envia | Conteudo |
+|----------|-------------|----------|
+| Pagamento Confirmado | `PAYMENT_CONFIRMED` / `PAYMENT_RECEIVED` | "Seu plano foi ativado! X creditos adicionados" |
+| Pagamento Pendente (PIX) | Apos gerar QR code | "Escaneie o QR code para ativar seu plano" |
+| Pagamento Atrasado | `PAYMENT_OVERDUE` | "Seu pagamento esta pendente, regularize para manter o acesso" |
 
-### 3. Corrigir `src/pages/Auth.tsx` (linha 25)
+### Arquivos a modificar
 
-Atualmente o redirect apos login so preserva o `pathname`, perdendo os query params (`?plan=starter&cycle=monthly`). A correcao vai preservar tambem o `search` da location, garantindo que o usuario volte ao checkout com os parametros corretos.
+**1. `supabase/functions/process-asaas-payment/index.ts`**
+- Adicionar `notifications: { disabled: true }` no payload de cobranca avulsa (anual + cartao)
+- Adicionar `notifications: { disabled: true }` no payload de assinatura (mensal/anual)
 
-**De:**
-```
-const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/home';
-```
+**2. `supabase/functions/asaas-webhook/index.ts`**
+- Importar Resend e React Email
+- Apos ativar o plano em `PAYMENT_CONFIRMED`/`PAYMENT_RECEIVED`, enviar e-mail de confirmacao com detalhes do plano e creditos
+- Apos marcar `past_due` em `PAYMENT_OVERDUE`, enviar e-mail de lembrete de atraso
+- Usar o email do perfil do usuario (ja disponivel no webhook)
 
-**Para:**
-```
-const fromLocation = (location.state as { from?: { pathname: string; search?: string } })?.from;
-const from = fromLocation ? (fromLocation.pathname + (fromLocation.search || '')) : '/home';
-```
+**3. Criar templates de e-mail (novos arquivos)**
 
-### Links finais
+- `supabase/functions/asaas-webhook/_templates/base-layout.tsx` - Copiar o base-layout existente (mesmo visual)
+- `supabase/functions/asaas-webhook/_templates/payment-confirmed.tsx` - Template de pagamento confirmado com nome do plano, creditos e botao "Acessar Gravyx"
+- `supabase/functions/asaas-webhook/_templates/payment-overdue.tsx` - Template de pagamento atrasado com alerta e botao para regularizar
 
-| Plano | Ciclo | URL |
-|-------|-------|-----|
-| Starter Mensal | `app.gravyx.com.br/checkout?plan=starter&cycle=monthly` |
-| Starter Anual | `app.gravyx.com.br/checkout?plan=starter&cycle=annual` |
-| Premium Mensal | `app.gravyx.com.br/checkout?plan=premium&cycle=monthly` |
-| Premium Anual | `app.gravyx.com.br/checkout?plan=premium&cycle=annual` |
-| Enterprise Mensal | `app.gravyx.com.br/checkout?plan=enterprise&cycle=monthly` |
-| Enterprise Anual | `app.gravyx.com.br/checkout?plan=enterprise&cycle=annual` |
+### Detalhes tecnicos
+
+Os templates usarao a mesma estrutura visual (Blue Orbital) ja existente nos e-mails de autenticacao, reutilizando cores, estilos e layout do `BaseLayout`.
+
+O webhook ja tem acesso ao `profile.email` do usuario, entao nao precisa de nenhuma consulta adicional ao banco.
+
+O Resend ja esta configurado com a secret `RESEND_API_KEY` disponivel nas Edge Functions, enviando de `noreply@upwardacademy.com.br`.
+
+Nenhuma mudanca no banco de dados -- apenas codigo.
 
