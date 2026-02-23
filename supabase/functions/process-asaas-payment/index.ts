@@ -156,6 +156,7 @@ Deno.serve(async (req: Request) => {
         dueDate: nextDueDateStr(),
         description,
         externalReference,
+        notifications: { disabled: true },
         ...buildCreditCardFields(creditCard, creditCardHolderInfo, userEmail, remoteIp),
       };
 
@@ -208,6 +209,7 @@ Deno.serve(async (req: Request) => {
       nextDueDate: nextDueDateStr(),
       description,
       externalReference,
+      notifications: { disabled: true },
     };
 
     if (paymentMethod === "CREDIT_CARD") {
