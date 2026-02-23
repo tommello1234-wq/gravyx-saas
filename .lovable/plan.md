@@ -1,54 +1,46 @@
 
 
-## Criar Pagina de Checkout Standalone com Links Externos
+## Checkout Standalone - Implementacao
 
-### Objetivo
+### 1. Criar `src/pages/Checkout.tsx`
 
-Criar uma rota publica `/checkout` que pode ser acessada via link direto (ex: `app.gravyx.com.br/checkout?plan=starter&cycle=monthly`), permitindo usar esses links no Elementor ou qualquer landing page externa -- igual funcionava com os links da Ticto.
+Nova pagina que le `plan` e `cycle` da URL e renderiza o checkout do Asaas diretamente.
 
-### Como vai funcionar
+- Le parametros via `useSearchParams()`
+- Valida se `plan` e `cycle` sao validos (senao mostra mensagem de erro com link para `/projects`)
+- Usa os mesmos precos/creditos do `BuyCreditsModal` (hardcoded no componente)
+- Renderiza `AsaasTransparentCheckout` com os dados do plano
+- Apos sucesso, redireciona para `/projects`
+- Visual limpo: fundo escuro, logo GravyX centralizada, card com o checkout
 
-1. O usuario clica no link na pagina do Elementor
-2. Abre a pagina de checkout no `app.gravyx.com.br/checkout?plan=starter&cycle=monthly`
-3. Se nao estiver logado, redireciona para login e volta ao checkout apos autenticar
-4. Exibe o checkout transparente do Asaas (mesmo componente atual) com o plano ja selecionado
-5. Apos pagamento, redireciona para `/projects`
+### 2. Modificar `src/App.tsx`
 
-### Links que voce tera disponivel
+- Importar `Checkout` de `./pages/Checkout`
+- Adicionar rota `/checkout` envolvida em `ProtectedRoute` (usuario precisa estar logado)
+
+### 3. Corrigir `src/pages/Auth.tsx` (linha 25)
+
+Atualmente o redirect apos login so preserva o `pathname`, perdendo os query params (`?plan=starter&cycle=monthly`). A correcao vai preservar tambem o `search` da location, garantindo que o usuario volte ao checkout com os parametros corretos.
+
+**De:**
+```
+const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/home';
+```
+
+**Para:**
+```
+const fromLocation = (location.state as { from?: { pathname: string; search?: string } })?.from;
+const from = fromLocation ? (fromLocation.pathname + (fromLocation.search || '')) : '/home';
+```
+
+### Links finais
 
 | Plano | Ciclo | URL |
 |-------|-------|-----|
-| Starter | Mensal | `app.gravyx.com.br/checkout?plan=starter&cycle=monthly` |
-| Starter | Anual | `app.gravyx.com.br/checkout?plan=starter&cycle=annual` |
-| Premium | Mensal | `app.gravyx.com.br/checkout?plan=premium&cycle=monthly` |
-| Premium | Anual | `app.gravyx.com.br/checkout?plan=premium&cycle=annual` |
-| Enterprise | Mensal | `app.gravyx.com.br/checkout?plan=enterprise&cycle=monthly` |
-| Enterprise | Anual | `app.gravyx.com.br/checkout?plan=enterprise&cycle=annual` |
+| Starter Mensal | `app.gravyx.com.br/checkout?plan=starter&cycle=monthly` |
+| Starter Anual | `app.gravyx.com.br/checkout?plan=starter&cycle=annual` |
+| Premium Mensal | `app.gravyx.com.br/checkout?plan=premium&cycle=monthly` |
+| Premium Anual | `app.gravyx.com.br/checkout?plan=premium&cycle=annual` |
+| Enterprise Mensal | `app.gravyx.com.br/checkout?plan=enterprise&cycle=monthly` |
+| Enterprise Anual | `app.gravyx.com.br/checkout?plan=enterprise&cycle=annual` |
 
-### Arquivos a criar/modificar
-
-**1. Criar `src/pages/Checkout.tsx` (novo)**
-- Pagina publica que le `plan` e `cycle` da query string
-- Valida os parametros (redireciona para `/projects` se invalidos)
-- Exibe header minimo com logo do GravyX
-- Renderiza o `AsaasTransparentCheckout` com os dados do plano
-- Apos sucesso, redireciona para `/projects`
-
-**2. Modificar `src/App.tsx`**
-- Adicionar rota `/checkout` envolvida em `ProtectedRoute` (exige login)
-- Se o usuario nao estiver logado, o `ProtectedRoute` ja redireciona para `/auth`, e apos login ele volta ao checkout
-
-**3. Modificar `src/components/layout/ProtectedRoute.tsx`**
-- Garantir que apos login, o usuario retorne a URL original (incluindo query params do checkout)
-- Se ja tiver esse comportamento, nenhuma mudanca necessaria
-
-### Detalhes tecnicos
-
-A pagina `Checkout.tsx` vai:
-- Usar `useSearchParams()` para ler `plan` e `cycle`
-- Buscar preco/creditos do mesmo array de planos usado no `BuyCreditsModal`
-- Reutilizar o componente `AsaasTransparentCheckout` sem nenhuma modificacao
-- Ter visual limpo: fundo escuro, logo centralizada, card de checkout no centro
-- Ser responsiva (funcionar bem em mobile, ja que vem de landing page)
-
-Nenhuma mudanca em Edge Functions ou banco de dados -- apenas frontend.
