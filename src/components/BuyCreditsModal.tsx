@@ -2,23 +2,19 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Sparkles, Check, Crown, Zap, Rocket, ArrowLeft, Loader2 } from 'lucide-react';
+import { Sparkles, Check, Crown, Zap, Rocket, ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { PLAN_LIMITS, type TierKey } from '@/lib/plan-limits';
-import { STRIPE_PLANS } from '@/lib/stripe-plans';
-import { StripeEmbeddedCheckout } from '@/components/StripeEmbeddedCheckout';
-import { AsaasEmbeddedCheckout } from '@/components/AsaasEmbeddedCheckout';
-import { supabase } from '@/integrations/supabase/client';
-import { toast } from 'sonner';
+import { AsaasTransparentCheckout } from '@/components/AsaasTransparentCheckout';
 
 interface BuyCreditsModalProps { open: boolean; onOpenChange: (open: boolean) => void; }
 type BillingCycle = 'monthly' | 'annual';
 
 interface PlanInfo {
   tier: TierKey; icon: typeof Sparkles; description: string;
-  monthly: { price: string; credits: number; checkout: string; installment?: string };
-  annual: { price: string; installment: string; credits: number; checkout: string };
+  monthly: { price: string; priceNum: number; credits: number };
+  annual: { price: string; installment: string; priceNum: number; credits: number };
   highlight?: boolean; badge?: string; features: string[];
   costPerImageMonthly: string; costPerImageAnnual: string;
 }
@@ -26,22 +22,22 @@ interface PlanInfo {
 const plans: PlanInfo[] = [
   {
     tier: 'starter', icon: Zap, description: 'Para quem está começando a criar com IA',
-    monthly: { price: 'R$ 79', credits: 80, checkout: 'https://checkout.ticto.app/O7A4C2615' },
-    annual: { price: 'R$ 420/ano', installment: 'R$ 43,44', credits: 1000, checkout: 'https://checkout.ticto.app/OA871890B' },
+    monthly: { price: 'R$ 79', priceNum: 79, credits: 80 },
+    annual: { price: 'R$ 420/ano', installment: 'R$ 43,44', priceNum: 420, credits: 1000 },
     features: ['80 créditos/mês', 'Até 3 projetos ativos', 'Templates essenciais', 'Acesso completo à biblioteca de referências'],
     costPerImageMonthly: 'R$0,98', costPerImageAnnual: 'R$0,42',
   },
   {
     tier: 'premium', icon: Crown, highlight: true, badge: 'MAIS POPULAR', description: 'Para criativos que buscam uso ilimitado e flexível',
-    monthly: { price: 'R$ 167', credits: 250, checkout: 'https://checkout.ticto.app/O465B8044' },
-    annual: { price: 'R$ 1.097/ano', installment: 'R$ 91,42', credits: 3000, checkout: 'https://checkout.ticto.app/O06B270AF' },
+    monthly: { price: 'R$ 167', priceNum: 167, credits: 250 },
+    annual: { price: 'R$ 1.097/ano', installment: 'R$ 91,42', priceNum: 1097, credits: 3000 },
     features: ['250 créditos/mês', 'Projetos ilimitados', 'Acesso a todos os Templates de Fluxos', 'Acesso completo à biblioteca de referências'],
     costPerImageMonthly: 'R$0,67', costPerImageAnnual: 'R$0,37',
   },
   {
     tier: 'enterprise', icon: Rocket, badge: 'PROFISSIONAL', description: 'Para profissionais escalando sua produção de conteúdo',
-    monthly: { price: 'R$ 347', credits: 600, checkout: 'https://checkout.ticto.app/O8AA396EB' },
-    annual: { price: 'R$ 2.597/ano', installment: 'R$ 216,42', credits: 7200, checkout: 'https://checkout.ticto.app/OA8BDDA9B' },
+    monthly: { price: 'R$ 347', priceNum: 347, credits: 600 },
+    annual: { price: 'R$ 2.597/ano', installment: 'R$ 216,42', priceNum: 2597, credits: 7200 },
     features: ['600 créditos/mês', 'Projetos ilimitados', 'Acesso a todos os Templates de Fluxos', 'Acesso completo à biblioteca de referências', 'Acesso antecipado a novas ferramentas'],
     costPerImageMonthly: 'R$0,57', costPerImageAnnual: 'R$0,32',
   },
@@ -52,80 +48,43 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
   const { t } = useLanguage();
   const currentTier = (profile?.tier as TierKey) || 'free';
   const [cycle, setCycle] = useState<BillingCycle>('annual');
-  const [checkoutPlan, setCheckoutPlan] = useState<{ priceId: string; tier: string } | null>(null);
-  const [asaasCheckoutUrl, setAsaasCheckoutUrl] = useState<string | null>(null);
-  const [loadingAsaas, setLoadingAsaas] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<{ tier: TierKey; cycle: BillingCycle } | null>(null);
 
-  const handleSelectPlan = async (plan: PlanInfo) => {
-    if (cycle === 'annual') {
-      // Annual → Asaas embedded checkout
-      setLoadingAsaas(true);
-      try {
-        const { data, error } = await supabase.functions.invoke('create-asaas-checkout', {
-          body: { tier: plan.tier },
-        });
-        if (error) throw error;
-        if (!data?.checkout_url) throw new Error('No checkout_url returned');
-        setAsaasCheckoutUrl(data.checkout_url);
-      } catch (err) {
-        console.error('Asaas checkout error:', err);
-        toast.error('Erro ao iniciar checkout. Tente novamente.');
-      } finally {
-        setLoadingAsaas(false);
-      }
-      return;
-    }
-
-    // Monthly → embedded Stripe checkout
-    const stripePlan = STRIPE_PLANS[plan.tier as keyof typeof STRIPE_PLANS];
-    if (!stripePlan) return;
-    setCheckoutPlan({ priceId: stripePlan.price_id, tier: plan.tier });
+  const handleSelectPlan = (plan: PlanInfo) => {
+    setSelectedPlan({ tier: plan.tier, cycle });
   };
 
   const handleClose = (value: boolean) => {
-    if (!value) {
-      setCheckoutPlan(null);
-      setAsaasCheckoutUrl(null);
-    }
+    if (!value) setSelectedPlan(null);
     onOpenChange(value);
   };
 
-  // If Asaas checkout is active, show embedded Asaas checkout
-  if (asaasCheckoutUrl) {
-    return (
-      <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent className="max-w-2xl bg-[hsl(220,20%,8%)] border-border/50 p-0 overflow-hidden">
-          <DialogHeader className="p-6 pb-2">
-            <div className="flex items-center gap-3">
-              <Button variant="ghost" size="icon" onClick={() => setAsaasCheckoutUrl(null)} className="h-8 w-8">
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-              <DialogTitle className="text-lg text-foreground">Finalizar assinatura anual</DialogTitle>
-            </div>
-          </DialogHeader>
-          <div className="px-6 pb-6">
-            <AsaasEmbeddedCheckout checkoutUrl={asaasCheckoutUrl} />
-          </div>
-        </DialogContent>
-      </Dialog>
-    );
-  }
+  // Transparent checkout view
+  if (selectedPlan) {
+    const plan = plans.find(p => p.tier === selectedPlan.tier)!;
+    const data = selectedPlan.cycle === 'monthly' ? plan.monthly : plan.annual;
+    const config = PLAN_LIMITS[selectedPlan.tier];
 
-  // If Stripe checkout is active, show embedded Stripe checkout
-  if (checkoutPlan) {
     return (
       <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent className="max-w-2xl bg-[hsl(220,20%,8%)] border-border/50 p-0 overflow-hidden">
+        <DialogContent className="max-w-lg bg-[hsl(220,20%,8%)] border-border/50 p-0 overflow-hidden max-h-[90vh] overflow-y-auto">
           <DialogHeader className="p-6 pb-2">
             <div className="flex items-center gap-3">
-              <Button variant="ghost" size="icon" onClick={() => setCheckoutPlan(null)} className="h-8 w-8">
+              <Button variant="ghost" size="icon" onClick={() => setSelectedPlan(null)} className="h-8 w-8">
                 <ArrowLeft className="h-4 w-4" />
               </Button>
-              <DialogTitle className="text-lg text-foreground">Finalizar assinatura</DialogTitle>
+              <DialogTitle className="text-lg text-foreground">Assinar {config.label}</DialogTitle>
             </div>
           </DialogHeader>
           <div className="px-6 pb-6">
-            <StripeEmbeddedCheckout priceId={checkoutPlan.priceId} tier={checkoutPlan.tier} />
+            <AsaasTransparentCheckout
+              tier={selectedPlan.tier}
+              cycle={selectedPlan.cycle}
+              price={data.priceNum}
+              credits={data.credits}
+              planLabel={config.label}
+              onSuccess={() => handleClose(false)}
+            />
           </div>
         </DialogContent>
       </Dialog>
@@ -172,7 +131,7 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
                   {cycle === 'annual' ? (
                     <div className="flex items-baseline gap-2">
                       <span className="text-sm text-muted-foreground line-through">{plan.monthly.price}</span>
-                      <span className="text-3xl font-bold text-foreground">{data.installment}</span>
+                      <span className="text-3xl font-bold text-foreground">{plan.annual.installment}</span>
                       <span className="text-sm text-muted-foreground">/mês</span>
                     </div>
                   ) : (
@@ -184,8 +143,7 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
                 </div>
                 {cycle === 'annual' && <p className="text-xs text-muted-foreground mb-3">{t('modal.billed_annually')} {plan.annual.price}</p>}
                 {cycle === 'monthly' && <div className="mb-3" />}
-                <Button variant={isCurrent ? 'secondary' : plan.highlight ? 'default' : 'outline'} className={`w-full rounded-xl h-11 font-semibold mb-5 ${plan.highlight && !isCurrent ? 'bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20' : ''}`} disabled={isCurrent || loadingAsaas} onClick={() => handleSelectPlan(plan)}>
-                  {loadingAsaas && cycle === 'annual' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                <Button variant={isCurrent ? 'secondary' : plan.highlight ? 'default' : 'outline'} className={`w-full rounded-xl h-11 font-semibold mb-5 ${plan.highlight && !isCurrent ? 'bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20' : ''}`} disabled={isCurrent} onClick={() => handleSelectPlan(plan)}>
                   {isCurrent ? t('modal.current_plan') : `${t('modal.subscribe')} ${config.label}`}
                 </Button>
                 <div className={`rounded-xl p-3 mb-4 ${plan.highlight ? 'bg-primary/10 border border-primary/20' : 'bg-muted/30 border border-border/30'}`}>
