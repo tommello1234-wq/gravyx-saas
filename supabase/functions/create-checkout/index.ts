@@ -76,17 +76,17 @@ serve(async (req) => {
       customer_email: customerId ? undefined : userEmail,
       line_items: [{ price: price_id, quantity: 1 }],
       mode: "subscription",
+      ui_mode: "embedded",
       subscription_data: {
         metadata: { tier, user_id: userId },
       },
       metadata: { tier, user_id: userId },
-      success_url: `${origin}/projects?checkout=success`,
-      cancel_url: `${origin}/projects?checkout=cancel`,
+      return_url: `${origin}/projects?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
     });
 
-    logStep("Checkout session created", { sessionId: session.id, url: session.url });
+    logStep("Checkout session created", { sessionId: session.id });
 
-    return new Response(JSON.stringify({ url: session.url }), {
+    return new Response(JSON.stringify({ client_secret: session.client_secret }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
     });
