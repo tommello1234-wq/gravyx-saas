@@ -30,7 +30,7 @@ export const GravityNode = memo(({ data, id }: NodeProps) => {
   const { setNodes, setEdges, getNode, getEdges, getNodes } = useReactFlow();
   const { profile, isAdmin } = useAuth();
   const { t } = useLanguage();
-  const hasActiveSubscription = isAdmin || profile?.subscription_status === 'trial_active' || profile?.subscription_status === 'active';
+  const hasActiveSubscription = isAdmin || profile?.subscription_status === 'active';
 
   useEffect(() => { if (isEditing && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); } }, [isEditing]);
   useEffect(() => { const handler = (e: CustomEvent<GeneratingState>) => { if (e.detail.gravityId === id) setGeneratingState({ isGenerating: e.detail.isGenerating, totalResults: e.detail.totalResults, completedResults: e.detail.completedResults }); }; window.addEventListener(GRAVITY_GENERATING_STATE_EVENT, handler as EventListener); return () => window.removeEventListener(GRAVITY_GENERATING_STATE_EVENT, handler as EventListener); }, [id]);
