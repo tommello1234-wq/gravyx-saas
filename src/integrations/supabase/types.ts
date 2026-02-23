@@ -225,6 +225,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          asaas_subscription_id: string | null
           avatar_url: string | null
           billing_cycle: string
           created_at: string
@@ -244,6 +245,7 @@ export type Database = {
           user_level: string
         }
         Insert: {
+          asaas_subscription_id?: string | null
           avatar_url?: string | null
           billing_cycle?: string
           created_at?: string
@@ -263,6 +265,7 @@ export type Database = {
           user_level?: string
         }
         Update: {
+          asaas_subscription_id?: string | null
           avatar_url?: string | null
           billing_cycle?: string
           created_at?: string

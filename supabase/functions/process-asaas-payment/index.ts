@@ -121,8 +121,9 @@ Deno.serve(async (req: Request) => {
     const totalValue = cycle === "monthly" ? pricing.monthly : pricing.annual;
     const credits = cycle === "monthly" ? pricing.monthlyCredits : pricing.annualCredits;
     const externalReference = `gravyx_${cycle}_${tier}_${userId}`;
+    const asaasCycle = cycle === "monthly" ? "MONTHLY" : "YEARLY";
 
-    log("Processing", { userId, tier, cycle, paymentMethod, totalValue });
+    log("Processing subscription", { userId, tier, cycle, paymentMethod, totalValue });
 
     const cpfCnpj = creditCardHolderInfo?.cpfCnpj || body.cpfCnpj || "";
     const holderName = creditCardHolderInfo?.name || creditCard?.holderName || userEmail.split("@")[0];
@@ -130,17 +131,18 @@ Deno.serve(async (req: Request) => {
     // Ensure Asaas customer
     const customerId = await ensureCustomer(userEmail, holderName, cpfCnpj);
 
-    // Build payment payload
-    const dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + 1);
-    const dueDateStr = dueDate.toISOString().split("T")[0];
+    // Build subscription payload
+    const nextDueDate = new Date();
+    nextDueDate.setDate(nextDueDate.getDate() + 1);
+    const nextDueDateStr = nextDueDate.toISOString().split("T")[0];
 
-    const paymentPayload: Record<string, unknown> = {
+    const subscriptionPayload: Record<string, unknown> = {
       customer: customerId,
-      billingType: paymentMethod,
+      billingType: paymentMethod === "PIX" ? "UNDEFINED" : "CREDIT_CARD",
+      cycle: asaasCycle,
       value: totalValue,
-      dueDate: dueDateStr,
-      description: `GravyX ${tier} - ${cycle === "monthly" ? "Mensal" : "Anual"}`,
+      nextDueDate: nextDueDateStr,
+      description: `GravyX ${tier.charAt(0).toUpperCase() + tier.slice(1)} - ${cycle === "monthly" ? "Mensal" : "Anual"}`,
       externalReference,
     };
 
@@ -152,7 +154,7 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      paymentPayload.creditCard = {
+      subscriptionPayload.creditCard = {
         holderName: creditCard.holderName,
         number: creditCard.number.replace(/\s/g, ""),
         expiryMonth: creditCard.expiryMonth,
@@ -160,7 +162,7 @@ Deno.serve(async (req: Request) => {
         ccv: creditCard.ccv,
       };
 
-      paymentPayload.creditCardHolderInfo = {
+      subscriptionPayload.creditCardHolderInfo = {
         name: creditCardHolderInfo.name,
         email: userEmail,
         cpfCnpj: creditCardHolderInfo.cpfCnpj.replace(/\D/g, ""),
@@ -170,18 +172,18 @@ Deno.serve(async (req: Request) => {
       };
 
       if (remoteIp) {
-        paymentPayload.remoteIp = remoteIp;
+        subscriptionPayload.remoteIp = remoteIp;
       }
 
-      if (installmentCount && installmentCount >= 2 && installmentCount <= 12) {
-        paymentPayload.installmentCount = installmentCount;
-        paymentPayload.installmentValue = Math.ceil((totalValue / installmentCount) * 100) / 100;
+      // Installments only for annual cycle (up to 12x)
+      if (cycle === "annual" && installmentCount && installmentCount >= 2 && installmentCount <= 12) {
+        subscriptionPayload.maxInstallmentCount = installmentCount;
       }
     }
 
-    // Create payment
-    const payment = await asaasRequest("/v3/payments", "POST", paymentPayload);
-    log("Payment created", { id: payment.id, status: payment.status });
+    // Create subscription
+    const subscription = await asaasRequest("/v3/subscriptions", "POST", subscriptionPayload);
+    log("Subscription created", { id: subscription.id, status: subscription.status });
 
     // Service role client for DB updates
     const supabaseAdmin = createClient(
@@ -189,16 +191,36 @@ Deno.serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // --- PIX: return QR code ---
+    // Save subscription ID to profile
+    await supabaseAdmin.from("profiles").update({
+      asaas_subscription_id: subscription.id,
+    }).eq("user_id", userId);
+
+    // --- PIX: fetch first payment and return QR code ---
     if (paymentMethod === "PIX") {
-      const pixData = await asaasRequest(`/v3/payments/${payment.id}/pixQrCode`, "GET");
-      log("PIX QR generated", { paymentId: payment.id });
+      // Wait a moment for Asaas to generate the first payment
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // List payments for this subscription
+      const payments = await asaasRequest(`/v3/subscriptions/${subscription.id}/payments`, "GET");
+      
+      if (!payments.data || payments.data.length === 0) {
+        throw new Error("Nenhuma cobrança gerada para a assinatura. Tente novamente.");
+      }
+
+      const firstPayment = payments.data[0];
+      log("First payment found", { id: firstPayment.id, status: firstPayment.status });
+
+      // Generate PIX QR Code for the first payment
+      const pixData = await asaasRequest(`/v3/payments/${firstPayment.id}/pixQrCode`, "GET");
+      log("PIX QR generated", { paymentId: firstPayment.id });
 
       return new Response(
         JSON.stringify({
           success: true,
           method: "PIX",
-          paymentId: payment.id,
+          paymentId: firstPayment.id,
+          subscriptionId: subscription.id,
           pixQrCode: pixData.encodedImage,
           pixCopyPaste: pixData.payload,
           expirationDate: pixData.expirationDate,
@@ -208,8 +230,14 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // --- CREDIT CARD: check if confirmed ---
-    if (payment.status === "CONFIRMED" || payment.status === "RECEIVED") {
+    // --- CREDIT CARD: fetch first payment status ---
+    // Wait briefly for the first charge to process
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    const payments = await asaasRequest(`/v3/subscriptions/${subscription.id}/payments`, "GET");
+    const firstPayment = payments.data?.[0];
+
+    if (firstPayment && (firstPayment.status === "CONFIRMED" || firstPayment.status === "RECEIVED")) {
       const { data: profile } = await supabaseAdmin
         .from("profiles")
         .select("credits")
@@ -228,21 +256,22 @@ Deno.serve(async (req: Request) => {
 
       await supabaseAdmin.from("credit_purchases").insert({
         user_id: userId,
-        transaction_id: payment.id,
+        transaction_id: firstPayment.id,
         product_id: `asaas_${cycle}_${tier}`,
         credits_added: credits,
         amount_paid: totalValue,
         customer_email: userEmail,
-        raw_payload: { payment_id: payment.id, tier, cycle, method: "CREDIT_CARD" },
+        raw_payload: { subscription_id: subscription.id, payment_id: firstPayment.id, tier, cycle, method: "CREDIT_CARD" },
       });
 
-      log("Plan activated via card", { userId, tier, credits });
+      log("Plan activated via card subscription", { userId, tier, credits, subscriptionId: subscription.id });
 
       return new Response(
         JSON.stringify({
           success: true,
           method: "CREDIT_CARD",
           status: "CONFIRMED",
+          subscriptionId: subscription.id,
           tier,
           credits,
         }),
@@ -251,12 +280,14 @@ Deno.serve(async (req: Request) => {
     }
 
     // Card payment pending/failed
+    const paymentStatus = firstPayment?.status || "UNKNOWN";
     return new Response(
       JSON.stringify({
         success: false,
         method: "CREDIT_CARD",
-        status: payment.status,
-        message: payment.status === "PENDING" ? "Pagamento pendente de confirmação" : "Pagamento não aprovado. Verifique os dados do cartão.",
+        status: paymentStatus,
+        subscriptionId: subscription.id,
+        message: paymentStatus === "PENDING" ? "Pagamento pendente de confirmação" : "Pagamento não aprovado. Verifique os dados do cartão.",
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

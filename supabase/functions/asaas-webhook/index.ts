@@ -142,15 +142,24 @@ Deno.serve(async (req: Request) => {
       return new Response("User not found", { status: 200, headers: corsHeaders });
     }
 
+    // Build update payload — save subscription_id if present
+    const updatePayload: Record<string, unknown> = {
+      credits: profile.credits + config.credits,
+      tier: config.tier,
+      billing_cycle: config.billing_cycle,
+      max_projects: config.max_projects,
+      subscription_status: "active",
+    };
+
+    // Try to extract subscription ID from payment payload
+    const subscriptionId = payment.subscription as string | undefined;
+    if (subscriptionId) {
+      updatePayload.asaas_subscription_id = subscriptionId;
+    }
+
     const { error: updateError } = await supabase
       .from("profiles")
-      .update({
-        credits: profile.credits + config.credits,
-        tier: config.tier,
-        billing_cycle: config.billing_cycle,
-        max_projects: config.max_projects,
-        subscription_status: "active",
-      })
+      .update(updatePayload)
       .eq("user_id", userId);
 
     if (updateError) {
@@ -169,7 +178,7 @@ Deno.serve(async (req: Request) => {
       raw_payload: body,
     });
 
-    logStep("Plan activated", { userId, tier, cycle, credits: config.credits });
+    logStep("Plan activated", { userId, tier, cycle, credits: config.credits, subscriptionId });
     await logWebhook(supabase, event, body, true);
     return new Response(JSON.stringify({ success: true, action: "plan_activated" }), {
       status: 200,
@@ -198,6 +207,7 @@ Deno.serve(async (req: Request) => {
         billing_cycle: "monthly",
         max_projects: 1,
         subscription_status: "inactive",
+        asaas_subscription_id: null,
       }).eq("user_id", userId);
       logStep("Downgraded to free", { userId });
     }
@@ -211,9 +221,15 @@ Deno.serve(async (req: Request) => {
 
   // --- PAYMENT_OVERDUE ---
   if (event === "PAYMENT_OVERDUE") {
-    logStep("Payment overdue", { externalReference });
-    await logWebhook(supabase, event, body, true, "Payment overdue - logged");
-    return new Response(JSON.stringify({ success: true, action: "overdue_logged" }), {
+    if (parsed) {
+      const { userId } = parsed;
+      await supabase.from("profiles").update({
+        subscription_status: "past_due",
+      }).eq("user_id", userId);
+      logStep("Marked as past_due", { userId });
+    }
+    await logWebhook(supabase, event, body, true, "Payment overdue - marked past_due");
+    return new Response(JSON.stringify({ success: true, action: "overdue_marked" }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
