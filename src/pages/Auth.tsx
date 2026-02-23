@@ -22,7 +22,8 @@ export default function Auth() {
   const location = useLocation();
   const { toast } = useToast();
 
-  const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/home';
+  const fromLocation = (location.state as { from?: { pathname: string; search?: string } })?.from;
+  const from = fromLocation ? (fromLocation.pathname + (fromLocation.search || '')) : '/home';
 
   const authSchema = z.object({
     email: z.string().email(t('auth.invalid_email')),

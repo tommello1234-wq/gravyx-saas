@@ -16,6 +16,7 @@ import Library from "./pages/Library";
 import Admin from "./pages/Admin";
 import TemplateEditor from "./pages/TemplateEditor";
 import Home from "./pages/Home";
+import Checkout from "./pages/Checkout";
 import NotFound from "./pages/NotFound";
 import { WhatsAppButton } from "@/components/WhatsAppButton";
 
@@ -87,6 +88,14 @@ const App = () => (
                 element={
                   <ProtectedRoute requireAdmin>
                     <ErrorBoundary><TemplateEditor /></ErrorBoundary>
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/checkout" 
+                element={
+                  <ProtectedRoute>
+                    <ErrorBoundary><Checkout /></ErrorBoundary>
                   </ProtectedRoute>
                 } 
               />
