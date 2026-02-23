@@ -9,131 +9,73 @@ Substituir completamente o Stripe e o iframe do Asaas por um checkout transparen
 
 1. Seleciona o plano (Starter, Premium ou Enterprise) e o ciclo (mensal/anual)
 2. Clica em "Assinar"
-3. Aparece o formulario de checkout com duas abas: **PIX** e **Cartao de Credito**
-4. **PIX**: mostra QR Code + codigo copia-e-cola, valor a vista. Apos pagamento confirmado, plano ativa automaticamente via webhook
-5. **Cartao**: formulario com dados do cartao, CPF, CEP, telefone, seletor de parcelas. Pagamento processado na hora
+3. Aparece o formulario de checkout com duas abas: PIX e Cartao de Credito
+4. PIX: mostra QR Code + codigo copia-e-cola, valor a vista. Apos pagamento confirmado, plano ativa automaticamente via webhook
+5. Cartao: formulario com dados do cartao, CPF, CEP, telefone, seletor de parcelas. Pagamento processado na hora
 
-### Mudancas
+### Arquivos a criar
 
-#### 1. Nova Edge Function: `process-asaas-payment`
-Substitui `create-asaas-checkout`. Recebe o metodo de pagamento e processa:
+**1. `supabase/functions/process-asaas-payment/index.ts`** - Nova Edge Function
+- Autentica usuario via JWT
+- Cria/busca customer no Asaas via `/v3/customers`
+- Cria cobranca via `/v3/payments` com billingType PIX ou CREDIT_CARD
+- Para PIX: busca QR Code via `/v3/payments/{id}/pixQrCode` e retorna base64 + payload
+- Para cartao: processa na hora, se confirmado ativa plano diretamente no banco
+- Suporta parcelamento 2x-12x para cartao
+- Valores hardcoded: Starter R$79/R$420, Premium R$167/R$1.097, Enterprise R$347/R$2.597
+- externalReference: `gravyx_{cycle}_{tier}_{userId}`
 
-**Fluxo interno:**
+**2. `src/components/AsaasTransparentCheckout.tsx`** - Novo componente de checkout
+- Duas abas: PIX e Cartao de Credito com animacao framer-motion
+- Aba PIX: valor a vista, QR Code (imagem base64), payload copia-e-cola, timer 15min, polling 5s para confirmar pagamento
+- Aba Cartao: formulario completo (nome, numero, validade, CVV, CPF/CNPJ, CEP, numero endereco, telefone, seletor parcelas)
+- Visual Blue Orbital: glassmorphism, bg-muted/30 nos inputs, bordas primary/20, botao gradiente azul
+- Validacao com mascaras (cartao, CPF, CEP, telefone)
+- Estados: loading, sucesso (checkmark animado), erro
+- Captura remoteIp via API externa para requisito do Asaas
 
-```text
-Frontend                     Edge Function                      Asaas API
-   |                              |                                 |
-   |-- POST (tier, cycle,         |                                 |
-   |   paymentMethod, cardData?)  |                                 |
-   |                              |-- POST /v3/customers ---------->|
-   |                              |<-- customer_id -----------------|
-   |                              |                                 |
-   |  [Se CREDIT_CARD]            |                                 |
-   |                              |-- POST /v3/payments ----------->|
-   |                              |   (billingType: CREDIT_CARD,    |
-   |                              |    creditCard, creditCardHolder) |
-   |                              |<-- payment result --------------|
-   |                              |                                 |
-   |  [Se PIX]                    |                                 |
-   |                              |-- POST /v3/payments ----------->|
-   |                              |   (billingType: PIX)            |
-   |                              |<-- payment_id ------------------|
-   |                              |-- GET /v3/payments/{id}/pixQrCode ->|
-   |                              |<-- QR code + payload ------------|
-   |                              |                                 |
-   |<-- result (success/pixData) -|                                 |
-```
+### Arquivos a modificar
 
-**Payload recebido do frontend:**
+**3. `src/components/BuyCreditsModal.tsx`**
+- Remover imports de StripeEmbeddedCheckout e AsaasEmbeddedCheckout
+- Remover estados checkoutPlan e asaasCheckoutUrl
+- Novo estado: `selectedPlan: { tier: TierKey, cycle: BillingCycle } | null`
+- Corrigir bug: loadingAsaas boolean vira loadingTier string|null
+- Ao clicar "Assinar": seta selectedPlan e mostra AsaasTransparentCheckout
+- Passa tier, cycle, preco e creditos para o componente
 
+**4. `supabase/functions/asaas-webhook/index.ts`**
+- Expandir parseTierFromReference para novo formato: `gravyx_(monthly|annual)_{tier}_{userId}`
+- Adicionar creditos mensais ao TIER_FROM_REF (starter:80, premium:250, enterprise:600)
+- Suportar billing_cycle dinamico baseado no ciclo do externalReference
+
+**5. `supabase/config.toml`**
+- Adicionar secao `[functions.process-asaas-payment]` com verify_jwt = false
+
+### Arquivos a remover
+
+**6. `src/components/AsaasEmbeddedCheckout.tsx`** - Substituido pelo checkout transparente
+**7. `src/components/StripeEmbeddedCheckout.tsx`** - Nao sera mais usado
+
+### Detalhes tecnicos
+
+Payload da Edge Function (frontend envia):
 ```text
 {
   tier: "starter" | "premium" | "enterprise"
   cycle: "monthly" | "annual"
   paymentMethod: "PIX" | "CREDIT_CARD"
-  installmentCount?: number (2-12, apenas cartao parcelado)
+  installmentCount?: 2-12
   creditCard?: { holderName, number, expiryMonth, expiryYear, ccv }
-  creditCardHolderInfo?: { name, email, cpfCnpj, postalCode, addressNumber, phone }
+  creditCardHolderInfo?: { name, cpfCnpj, postalCode, addressNumber, phone }
   remoteIp?: string
 }
 ```
 
-**Valores processados (configurados na Edge Function):**
-
-| Plano | Mensal | Anual |
-|-------|--------|-------|
-| Starter | R$ 79 | R$ 420 |
-| Premium | R$ 167 | R$ 1.097 |
-| Enterprise | R$ 347 | R$ 2.597 |
-
-- Para cartao: suporta parcelamento de 2x a 12x (calculo automatico do valor por parcela)
-- Para PIX: sempre a vista (valor cheio)
-
-**Ativacao do plano:**
-- Cartao de credito: o Asaas confirma na hora, a Edge Function ja atualiza o perfil do usuario (credits, tier, billing_cycle, subscription_status) diretamente, sem depender do webhook
-- PIX: ativacao acontece via webhook `PAYMENT_CONFIRMED` (ja implementado no `asaas-webhook`)
-
-**externalReference format:** `gravyx_{cycle}_{tier}_{userId}` (expandido para suportar mensal tambem)
-
-#### 2. Novo componente: `AsaasTransparentCheckout.tsx`
-Formulario de checkout bonito seguindo a identidade Blue Orbital:
-
-- **Abas PIX / Cartao** com animacao suave
-- **Aba PIX**: 
-  - Mostra valor total a vista
-  - QR Code renderizado como imagem (base64 retornado pela API)
-  - Campo de texto com payload copia-e-cola + botao copiar
-  - Timer de expiracao (15 minutos)
-  - Polling a cada 5s para verificar se pagamento foi confirmado
-- **Aba Cartao**:
-  - Nome no cartao
-  - Numero do cartao (mascara 0000 0000 0000 0000)
-  - Validade (MM/AA) e CVV lado a lado
-  - Nome completo do titular
-  - CPF/CNPJ (mascara automatica)
-  - CEP (mascara 00000-000) e Numero do endereco lado a lado
-  - Telefone (mascara)
-  - Seletor de parcelas (1x a 12x com valor calculado)
-  - Botao "Pagar R$ XX,XX"
-- **Visual**: glassmorphism, bordas primary/20, inputs com bg-muted/30, botao gradiente azul, icones Lucide
-- **Validacao**: zod no frontend
-- **Feedback**: estados de loading, sucesso (confetti/checkmark), e erro
-
-#### 3. Atualizar `BuyCreditsModal.tsx`
-- Remover imports do `StripeEmbeddedCheckout` e `AsaasEmbeddedCheckout`
-- Remover estado `asaasCheckoutUrl` e `checkoutPlan`
-- Novo estado: `selectedPlan: { tier, cycle } | null`
-- Corrigir bug: mudar `loadingAsaas` (boolean) para `loadingTier: string | null` (rastreia qual botao esta carregando)
-- Quando usuario clica em "Assinar", seta `selectedPlan` e mostra o `AsaasTransparentCheckout`
-- Passar `tier`, `cycle`, preco e creditos para o componente de checkout
-
-#### 4. Atualizar `asaas-webhook` Edge Function
-- Expandir `parseTierFromReference` para suportar novo formato `gravyx_monthly_{tier}_{userId}` alem do `gravyx_annual_{tier}_{userId}`
-- Adicionar config de creditos mensais no `TIER_FROM_REF`
-- PIX mensal: ativacao via webhook com creditos mensais
-- PIX anual: ativacao via webhook com creditos anuais (ja funciona)
-
-#### 5. Remover componentes/funcoes obsoletos
-- `src/components/AsaasEmbeddedCheckout.tsx` - deletar
-- `src/components/StripeEmbeddedCheckout.tsx` - deletar
-- `supabase/functions/create-asaas-checkout/index.ts` - substituido por `process-asaas-payment`
-- `supabase/functions/create-checkout/index.ts` (Stripe) - manter para legado mas nao sera mais chamado pelo modal
-
-#### 6. Adicionar config no `supabase/config.toml`
-```text
-[functions.process-asaas-payment]
-verify_jwt = false
-```
-
-### Seguranca
-- Dados do cartao transitam via HTTPS do frontend para a Edge Function, e da Edge Function para a API do Asaas - nunca sao armazenados
-- `remoteIp` capturado no frontend (requisito do Asaas para checkout transparente com cartao)
-- Validacao com zod no frontend e sanitizacao no backend
-- Webhook continua protegido por token (`ASAAS_WEBHOOK_TOKEN`)
-- Protecao contra duplicatas via `credit_purchases.transaction_id`
-
-### Notas importantes
-- A API do Asaas nao permite criar uma cobranca com dois billingTypes diferentes. Por isso, o frontend envia o metodo escolhido e a Edge Function cria a cobranca com o tipo correto
-- Para parcelamento com cartao: usa-se `installmentCount` e `totalValue` no payload do Asaas (o calculo por parcela e automatico)
-- Para PIX: o QR Code e obtido via endpoint separado `GET /v3/payments/{id}/pixQrCode` apos criar a cobranca
+Seguranca:
+- Dados do cartao via HTTPS, nunca armazenados
+- remoteIp capturado no frontend (requisito Asaas)
+- Validacao zod no frontend, sanitizacao no backend
+- Webhook protegido por ASAAS_WEBHOOK_TOKEN
+- Duplicatas prevenidas via credit_purchases.transaction_id
 
