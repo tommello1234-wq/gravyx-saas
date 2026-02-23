@@ -2,12 +2,15 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Sparkles, Check, Crown, Zap, Rocket, ArrowLeft } from 'lucide-react';
+import { Sparkles, Check, Crown, Zap, Rocket, ArrowLeft, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { PLAN_LIMITS, type TierKey } from '@/lib/plan-limits';
 import { STRIPE_PLANS } from '@/lib/stripe-plans';
 import { StripeEmbeddedCheckout } from '@/components/StripeEmbeddedCheckout';
+import { AsaasEmbeddedCheckout } from '@/components/AsaasEmbeddedCheckout';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 interface BuyCreditsModalProps { open: boolean; onOpenChange: (open: boolean) => void; }
 type BillingCycle = 'monthly' | 'annual';
@@ -50,11 +53,26 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
   const currentTier = (profile?.tier as TierKey) || 'free';
   const [cycle, setCycle] = useState<BillingCycle>('annual');
   const [checkoutPlan, setCheckoutPlan] = useState<{ priceId: string; tier: string } | null>(null);
+  const [asaasCheckoutId, setAsaasCheckoutId] = useState<string | null>(null);
+  const [loadingAsaas, setLoadingAsaas] = useState(false);
 
-  const handleSelectPlan = (plan: PlanInfo) => {
+  const handleSelectPlan = async (plan: PlanInfo) => {
     if (cycle === 'annual') {
-      const url = plan.annual.checkout;
-      if (url) window.open(url, '_blank');
+      // Annual → Asaas embedded checkout
+      setLoadingAsaas(true);
+      try {
+        const { data, error } = await supabase.functions.invoke('create-asaas-checkout', {
+          body: { tier: plan.tier },
+        });
+        if (error) throw error;
+        if (!data?.checkout_id) throw new Error('No checkout_id returned');
+        setAsaasCheckoutId(data.checkout_id);
+      } catch (err) {
+        console.error('Asaas checkout error:', err);
+        toast.error('Erro ao iniciar checkout. Tente novamente.');
+      } finally {
+        setLoadingAsaas(false);
+      }
       return;
     }
 
@@ -65,11 +83,35 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
   };
 
   const handleClose = (value: boolean) => {
-    if (!value) setCheckoutPlan(null);
+    if (!value) {
+      setCheckoutPlan(null);
+      setAsaasCheckoutId(null);
+    }
     onOpenChange(value);
   };
 
-  // If checkout is active, show embedded checkout
+  // If Asaas checkout is active, show embedded Asaas checkout
+  if (asaasCheckoutId) {
+    return (
+      <Dialog open={open} onOpenChange={handleClose}>
+        <DialogContent className="max-w-2xl bg-[hsl(220,20%,8%)] border-border/50 p-0 overflow-hidden">
+          <DialogHeader className="p-6 pb-2">
+            <div className="flex items-center gap-3">
+              <Button variant="ghost" size="icon" onClick={() => setAsaasCheckoutId(null)} className="h-8 w-8">
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+              <DialogTitle className="text-lg text-foreground">Finalizar assinatura anual</DialogTitle>
+            </div>
+          </DialogHeader>
+          <div className="px-6 pb-6">
+            <AsaasEmbeddedCheckout checkoutId={asaasCheckoutId} />
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  // If Stripe checkout is active, show embedded Stripe checkout
   if (checkoutPlan) {
     return (
       <Dialog open={open} onOpenChange={handleClose}>
@@ -142,7 +184,8 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
                 </div>
                 {cycle === 'annual' && <p className="text-xs text-muted-foreground mb-3">{t('modal.billed_annually')} {plan.annual.price}</p>}
                 {cycle === 'monthly' && <div className="mb-3" />}
-                <Button variant={isCurrent ? 'secondary' : plan.highlight ? 'default' : 'outline'} className={`w-full rounded-xl h-11 font-semibold mb-5 ${plan.highlight && !isCurrent ? 'bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20' : ''}`} disabled={isCurrent} onClick={() => handleSelectPlan(plan)}>
+                <Button variant={isCurrent ? 'secondary' : plan.highlight ? 'default' : 'outline'} className={`w-full rounded-xl h-11 font-semibold mb-5 ${plan.highlight && !isCurrent ? 'bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20' : ''}`} disabled={isCurrent || loadingAsaas} onClick={() => handleSelectPlan(plan)}>
+                  {loadingAsaas && cycle === 'annual' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                   {isCurrent ? t('modal.current_plan') : `${t('modal.subscribe')} ${config.label}`}
                 </Button>
                 <div className={`rounded-xl p-3 mb-4 ${plan.highlight ? 'bg-primary/10 border border-primary/20' : 'bg-muted/30 border border-border/30'}`}>
