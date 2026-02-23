@@ -8,6 +8,8 @@ import { RevenueChart } from './RevenueChart';
 import { CostsManager, useCostConfig, calculateTotalCosts } from './CostsManager';
 import { SubscriptionsBlock } from './SubscriptionsBlock';
 import { StrategicMetrics } from './StrategicMetrics';
+import { RecentTransactions } from './RecentTransactions';
+import { OperationalBlock } from './OperationalBlock';
 import { Button } from '@/components/ui/button';
 import { Download } from 'lucide-react';
 import { format } from 'date-fns';
@@ -31,14 +33,11 @@ export function FinancialDashboard() {
   // Recalculate revenueByDay with full costs
   const revenueByDayWithCosts = data.revenueByDay.map(d => {
     const dayCostBreakdown = calculateTotalCosts(costs, 0, d.revenue * 100);
-    // Image cost is already in d.cost, add platform fees and taxes proportionally
     const extraCosts = (dayCostBreakdown.paymentFee + dayCostBreakdown.tax) / 100;
     const totalDayCost = d.cost + extraCosts;
     return { ...d, cost: totalDayCost, profit: d.revenue - totalDayCost };
   });
 
-  // Churn revenue estimate
-  const planPrices: Record<string, number> = { starter: 7900, premium: 16700, enterprise: 34700 };
   const churnRevenue = data.cancelledPeriod * (data.arpu || 0);
 
   const exportCSV = () => {
@@ -55,7 +54,7 @@ export function FinancialDashboard() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `financeiro-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    a.download = `dashboard-${format(new Date(), 'yyyy-MM-dd')}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -63,14 +62,14 @@ export function FinancialDashboard() {
   if (data.isLoading) {
     return (
       <>
-        <AdminTopbar title="Financeiro" />
+        <AdminTopbar title="Dashboard" />
         <div className="p-6 space-y-6">
           <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
             {Array.from({ length: 6 }).map((_, i) => (
-              <Card key={i} className="glass-card"><CardContent className="p-5"><Skeleton className="h-20 w-full" /></CardContent></Card>
+              <Card key={i} className="glass-card"><CardContent className="p-4"><Skeleton className="h-16 w-full" /></CardContent></Card>
             ))}
           </div>
-          <Card className="glass-card"><CardContent className="p-5"><Skeleton className="h-[350px] w-full" /></CardContent></Card>
+          <Card className="glass-card"><CardContent className="p-4"><Skeleton className="h-[350px] w-full" /></CardContent></Card>
         </div>
       </>
     );
@@ -78,7 +77,7 @@ export function FinancialDashboard() {
 
   return (
     <>
-      <AdminTopbar title="Financeiro" showExport onExportCSV={exportCSV} />
+      <AdminTopbar title="Dashboard" showExport onExportCSV={exportCSV} />
       <div className="p-6 space-y-8 animate-in fade-in duration-500">
         {/* 1. KPIs Hero */}
         <FinancialKPIs
@@ -92,10 +91,7 @@ export function FinancialDashboard() {
           periodLabel={periodLabel}
         />
 
-        {/* 2. Main Chart */}
-        <RevenueChart revenueByDay={revenueByDayWithCosts} />
-
-        {/* 3. Costs Manager */}
+        {/* 2. Costs Manager (above chart) */}
         <CostsManager
           costs={costs}
           onCostsChange={updateCosts}
@@ -103,7 +99,13 @@ export function FinancialDashboard() {
           periodRevenue={data.periodRevenue}
         />
 
-        {/* 4. Subscriptions */}
+        {/* 3. Chart + Pie side by side */}
+        <RevenueChart revenueByDay={revenueByDayWithCosts} planDistribution={data.planDistribution} />
+
+        {/* 4. Recent Transactions */}
+        <RecentTransactions purchases={data.purchases} />
+
+        {/* 5. Subscriptions */}
         <SubscriptionsBlock
           paidActive={data.paidActive}
           newPaidSubscriptions={data.newPaidSubscriptions}
@@ -113,13 +115,26 @@ export function FinancialDashboard() {
           financialByPlan={data.financialByPlan}
         />
 
-        {/* 5. Strategic Metrics */}
+        {/* 6. Strategic Metrics */}
         <StrategicMetrics
           arpu={data.arpu}
           churnRate={data.churnRate}
           mrr={data.estimatedMRR}
           mrrGrowth={data.revenueGrowth}
           totalFixedCosts={costs.fixedCosts.reduce((s, f) => s + f.value * 100, 0)}
+        />
+
+        {/* 7. Operational Block */}
+        <OperationalBlock
+          totalUsers={data.totalUsers}
+          newUsers={data.newUsers}
+          paidActive={data.paidActive}
+          creditsConsumed={data.estimatedCreditsConsumed}
+          avgImagesPerActiveUser={data.avgImagesPerActiveUser}
+          zeroBalanceUsers={data.zeroBalanceUsers}
+          conversionRate={data.conversionRate}
+          conversionsPeriod={data.conversionsPeriod}
+          periodLabel={periodLabel}
         />
       </div>
     </>
