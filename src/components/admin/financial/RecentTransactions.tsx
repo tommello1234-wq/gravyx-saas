@@ -1,13 +1,10 @@
-import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { format } from 'date-fns';
-import { Receipt, MoreHorizontal, RotateCcw, Copy, Hash } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { Receipt, MoreHorizontal, Copy, Hash } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 interface Transaction {
@@ -17,7 +14,6 @@ interface Transaction {
   product_id: string;
   amount_paid: number;
   transaction_id: string;
-  user_id: string;
 }
 
 function detectGateway(transactionId: string): string {
@@ -49,9 +45,6 @@ interface RecentTransactionsProps {
 }
 
 export function RecentTransactions({ purchases }: RecentTransactionsProps) {
-  const [refundTx, setRefundTx] = useState<Transaction | null>(null);
-  const [isRefunding, setIsRefunding] = useState(false);
-
   const recent = [...purchases]
     .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
     .slice(0, 15);
@@ -59,37 +52,6 @@ export function RecentTransactions({ purchases }: RecentTransactionsProps) {
   const handleCopy = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     toast({ title: `${label} copiado!` });
-  };
-
-  const handleRefund = async () => {
-    if (!refundTx) return;
-    setIsRefunding(true);
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const { data, error } = await supabase.functions.invoke('admin-refund', {
-        body: { transactionId: refundTx.transaction_id, targetUserId: refundTx.user_id },
-        headers: { Authorization: `Bearer ${sessionData.session?.access_token}` },
-      });
-
-      if (error) {
-        const errorBody = error instanceof Object && 'context' in error ? await (error as any).context?.json?.() : null;
-        throw new Error(errorBody?.error || error.message || 'Erro ao processar reembolso');
-      }
-
-      toast({
-        title: 'Reembolso processado',
-        description: data?.message || 'Usuário rebaixado para Free.',
-      });
-    } catch (err: any) {
-      toast({
-        title: 'Erro no reembolso',
-        description: err.message,
-        variant: 'destructive',
-      });
-    } finally {
-      setIsRefunding(false);
-      setRefundTx(null);
-    }
   };
 
   return (
@@ -149,14 +111,6 @@ export function RecentTransactions({ purchases }: RecentTransactionsProps) {
                               <Hash className="h-3.5 w-3.5 mr-2" />
                               Copiar ID transação
                             </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onClick={() => setRefundTx(tx)}
-                            >
-                              <RotateCcw className="h-3.5 w-3.5 mr-2" />
-                              Reembolsar
-                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -168,44 +122,6 @@ export function RecentTransactions({ purchases }: RecentTransactionsProps) {
           )}
         </CardContent>
       </Card>
-
-      <AlertDialog open={!!refundTx} onOpenChange={(open) => !open && setRefundTx(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar Reembolso</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-2">
-                <p>Tem certeza que deseja reembolsar esta transação?</p>
-                {refundTx && (
-                  <div className="rounded-md bg-muted p-3 text-sm space-y-1">
-                    <p><strong>Usuário:</strong> {refundTx.customer_email}</p>
-                    <p><strong>Valor:</strong> {formatBRL(refundTx.amount_paid)}</p>
-                    <p><strong>Gateway:</strong> {detectGateway(refundTx.transaction_id)}</p>
-                    {!refundTx.transaction_id.startsWith('pay_') && (
-                      <p className="text-amber-500 font-medium mt-2">
-                        ⚠️ Transação Ticto: o estorno financeiro deve ser feito manualmente no painel da Ticto. Apenas o downgrade será aplicado.
-                      </p>
-                    )}
-                  </div>
-                )}
-                <p className="text-destructive font-medium">
-                  O usuário será rebaixado para o plano Free (créditos zerados).
-                </p>
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isRefunding}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleRefund}
-              disabled={isRefunding}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {isRefunding ? 'Processando...' : 'Confirmar Reembolso'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }
