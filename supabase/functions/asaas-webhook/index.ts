@@ -10,24 +10,34 @@ const logStep = (step: string, details?: unknown) => {
   console.log(`[ASAAS-WEBHOOK] ${step}${d}`);
 };
 
-// Annual plan config by tier
 interface TierConfig {
   credits: number;
   tier: string;
   max_projects: number;
+  billing_cycle: string;
 }
 
-const TIER_FROM_REF: Record<string, TierConfig> = {
-  starter:    { credits: 1000, tier: "starter",    max_projects: 3  },
-  premium:    { credits: 3000, tier: "premium",    max_projects: -1 },
-  enterprise: { credits: 7200, tier: "enterprise", max_projects: -1 },
+const TIER_CONFIG: Record<string, Record<string, TierConfig>> = {
+  monthly: {
+    starter:    { credits: 80,   tier: "starter",    max_projects: 3,  billing_cycle: "monthly" },
+    premium:    { credits: 250,  tier: "premium",    max_projects: -1, billing_cycle: "monthly" },
+    enterprise: { credits: 600,  tier: "enterprise", max_projects: -1, billing_cycle: "monthly" },
+  },
+  annual: {
+    starter:    { credits: 1000, tier: "starter",    max_projects: 3,  billing_cycle: "annual" },
+    premium:    { credits: 3000, tier: "premium",    max_projects: -1, billing_cycle: "annual" },
+    enterprise: { credits: 7200, tier: "enterprise", max_projects: -1, billing_cycle: "annual" },
+  },
 };
 
-function parseTierFromReference(externalReference: string): { tier: string; userId: string } | null {
-  // Format: gravyx_annual_{tier}_{userId}
-  const match = externalReference.match(/^gravyx_annual_(starter|premium|enterprise)_(.+)$/);
-  if (!match) return null;
-  return { tier: match[1], userId: match[2] };
+function parseTierFromReference(ref: string): { tier: string; userId: string; cycle: string } | null {
+  // New format: gravyx_{cycle}_{tier}_{userId}
+  const m = ref.match(/^gravyx_(monthly|annual)_(starter|premium|enterprise)_(.+)$/);
+  if (m) return { cycle: m[1], tier: m[2], userId: m[3] };
+  // Legacy: gravyx_annual_{tier}_{userId}
+  const legacy = ref.match(/^gravyx_annual_(starter|premium|enterprise)_(.+)$/);
+  if (legacy) return { cycle: "annual", tier: legacy[1], userId: legacy[2] };
+  return null;
 }
 
 async function logWebhook(
@@ -89,10 +99,9 @@ Deno.serve(async (req: Request) => {
 
   logStep("Processing event", { event, externalReference });
 
-  // Parse tier and userId from externalReference
   const parsed = parseTierFromReference(externalReference);
 
-  // --- PAYMENT_CONFIRMED / PAYMENT_RECEIVED → activate annual plan ---
+  // --- PAYMENT_CONFIRMED / PAYMENT_RECEIVED ---
   if (event === "PAYMENT_CONFIRMED" || event === "PAYMENT_RECEIVED") {
     if (!parsed) {
       logStep("Unknown externalReference, ignoring", { externalReference });
@@ -100,16 +109,15 @@ Deno.serve(async (req: Request) => {
       return new Response("OK", { status: 200, headers: corsHeaders });
     }
 
-    const { tier, userId } = parsed;
-    const config = TIER_FROM_REF[tier];
+    const { tier, userId, cycle } = parsed;
+    const config = TIER_CONFIG[cycle]?.[tier];
     if (!config) {
-      await logWebhook(supabase, event, body, false, `Unknown tier: ${tier}`);
+      await logWebhook(supabase, event, body, false, `Unknown tier/cycle: ${tier}/${cycle}`);
       return new Response("OK", { status: 200, headers: corsHeaders });
     }
 
     const paymentId = (payment.id as string) || `asaas_${Date.now()}`;
 
-    // Check for duplicate
     const { data: existing } = await supabase
       .from("credit_purchases")
       .select("id")
@@ -122,7 +130,6 @@ Deno.serve(async (req: Request) => {
       return new Response("Already processed", { status: 200, headers: corsHeaders });
     }
 
-    // Get current profile
     const { data: profile } = await supabase
       .from("profiles")
       .select("user_id, credits, email")
@@ -135,13 +142,12 @@ Deno.serve(async (req: Request) => {
       return new Response("User not found", { status: 200, headers: corsHeaders });
     }
 
-    // Update profile
     const { error: updateError } = await supabase
       .from("profiles")
       .update({
         credits: profile.credits + config.credits,
         tier: config.tier,
-        billing_cycle: "annual",
+        billing_cycle: config.billing_cycle,
         max_projects: config.max_projects,
         subscription_status: "active",
       })
@@ -153,18 +159,17 @@ Deno.serve(async (req: Request) => {
       return new Response("Processing failed", { status: 500, headers: corsHeaders });
     }
 
-    // Record purchase
     await supabase.from("credit_purchases").insert({
       user_id: userId,
       transaction_id: paymentId,
-      product_id: `asaas_annual_${tier}`,
+      product_id: `asaas_${cycle}_${tier}`,
       credits_added: config.credits,
       amount_paid: (payment.value as number) || 0,
       customer_email: profile.email,
       raw_payload: body,
     });
 
-    logStep("Plan activated", { userId, tier, credits: config.credits });
+    logStep("Plan activated", { userId, tier, cycle, credits: config.credits });
     await logWebhook(supabase, event, body, true);
     return new Response(JSON.stringify({ success: true, action: "plan_activated" }), {
       status: 200,
@@ -172,7 +177,7 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // --- PAYMENT_REFUNDED / PAYMENT_CHARGEBACK_REQUESTED → downgrade to Free ---
+  // --- PAYMENT_REFUNDED / PAYMENT_CHARGEBACK_REQUESTED ---
   if (event === "PAYMENT_REFUNDED" || event === "PAYMENT_CHARGEBACK_REQUESTED") {
     if (!parsed) {
       await logWebhook(supabase, event, body, false, `Unknown ref: ${externalReference}`);
@@ -204,7 +209,7 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // --- PAYMENT_OVERDUE → just log ---
+  // --- PAYMENT_OVERDUE ---
   if (event === "PAYMENT_OVERDUE") {
     logStep("Payment overdue", { externalReference });
     await logWebhook(supabase, event, body, true, "Payment overdue - logged");
@@ -214,7 +219,7 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // --- Other events → ignore ---
+  // --- Other events ---
   logStep("Event ignored", { event });
   await logWebhook(supabase, event, body, false, `Event not handled: ${event}`);
   return new Response("OK", { status: 200, headers: corsHeaders });
