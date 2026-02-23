@@ -53,6 +53,7 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: 'ASAAS_API_KEY not configured' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
 
+      console.log('Calling Asaas refund API for payment:', transactionId)
       const refundResponse = await fetch(`https://api.asaas.com/v3/payments/${transactionId}/refund`, {
         method: 'POST',
         headers: {
@@ -61,15 +62,23 @@ Deno.serve(async (req) => {
         },
       })
 
-      refundResult = await refundResponse.json()
+      const responseText = await refundResponse.text()
+      console.log('Asaas refund response status:', refundResponse.status)
+      console.log('Asaas refund response body:', responseText)
+
+      try {
+        refundResult = JSON.parse(responseText)
+      } catch {
+        refundResult = { raw: responseText }
+      }
 
       if (!refundResponse.ok) {
         // Log the error
         await supabaseAdmin.from('webhook_logs').insert({
           event_type: 'admin_refund_error',
-          payload: { transactionId, targetUserId, error: refundResult },
+          payload: { transactionId, targetUserId, status: refundResponse.status, error: refundResult },
           processed: false,
-          error_message: JSON.stringify(refundResult),
+          error_message: responseText,
         })
         return new Response(JSON.stringify({ error: 'Falha no reembolso via Asaas', details: refundResult }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
