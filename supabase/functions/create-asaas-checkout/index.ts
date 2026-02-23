@@ -106,9 +106,9 @@ serve(async (req) => {
     }
 
     const asaasData = await asaasResponse.json();
-    logStep("Asaas checkout created", { id: asaasData.id });
+    logStep("Asaas checkout created (full response)", asaasData);
 
-    return new Response(JSON.stringify({ checkout_id: asaasData.id }), {
+    return new Response(JSON.stringify({ checkout_id: asaasData.id, checkout_url: asaasData.url }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
     });
