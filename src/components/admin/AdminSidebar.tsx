@@ -6,8 +6,7 @@ import { Button } from '@/components/ui/button';
 import gravyxIcon from '@/assets/gravyx-icon.png';
 
 const navItems: { section: AdminSection; label: string; icon: React.ElementType }[] = [
-  { section: 'financial', label: 'Financeiro', icon: DollarSign },
-  { section: 'dashboard', label: 'Operacional', icon: LayoutDashboard },
+  { section: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { section: 'users', label: 'Usuários', icon: Users },
   { section: 'library', label: 'Biblioteca', icon: Images },
   { section: 'templates', label: 'Templates', icon: LayoutTemplate },

@@ -22,12 +22,12 @@ function KpiHeroCard({ title, value, icon, growth, subtitle, variant = 'default'
 
   return (
     <Card className={`glass-card transition-all duration-300 ${borderClass}`}>
-      <CardContent className="p-5">
-        <div className="flex items-center justify-between mb-3">
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider leading-tight">{title}</span>
-          <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">{icon}</div>
+          <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">{icon}</div>
         </div>
-        <p className="text-2xl lg:text-3xl font-bold tracking-tight">{value}</p>
+        <p className="text-xl lg:text-2xl font-bold tracking-tight">{value}</p>
         <div className="flex items-center gap-1.5 mt-1.5">
           {hasGrowth && (
             <span className={`text-xs font-semibold ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
