@@ -1,4 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import React from "npm:react@18.3.1";
+import { Resend } from "npm:resend@4.0.0";
+import { renderAsync } from "https://esm.sh/@react-email/components@0.0.22";
+import { PaymentConfirmedEmail } from "./_templates/payment-confirmed.tsx";
+import { PaymentOverdueEmail } from "./_templates/payment-overdue.tsx";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,6 +15,7 @@ const logStep = (step: string, details?: unknown) => {
   console.log(`[ASAAS-WEBHOOK] ${step}${d}`);
 };
 
+// --- Tier config ---
 interface TierConfig {
   credits: number;
   tier: string;
@@ -30,16 +36,42 @@ const TIER_CONFIG: Record<string, Record<string, TierConfig>> = {
   },
 };
 
+const TIER_DISPLAY_NAMES: Record<string, string> = {
+  starter: "Starter",
+  premium: "Premium",
+  enterprise: "Enterprise",
+};
+
 function parseTierFromReference(ref: string): { tier: string; userId: string; cycle: string } | null {
-  // New format: gravyx_{cycle}_{tier}_{userId}
   const m = ref.match(/^gravyx_(monthly|annual)_(starter|premium|enterprise)_(.+)$/);
   if (m) return { cycle: m[1], tier: m[2], userId: m[3] };
-  // Legacy: gravyx_annual_{tier}_{userId}
   const legacy = ref.match(/^gravyx_annual_(starter|premium|enterprise)_(.+)$/);
   if (legacy) return { cycle: "annual", tier: legacy[1], userId: legacy[2] };
   return null;
 }
 
+// --- Email helper ---
+async function sendEmail(to: string, subject: string, component: React.ReactElement) {
+  try {
+    const resend = new Resend(Deno.env.get("RESEND_API_KEY") as string);
+    const html = await renderAsync(component);
+    const { error } = await resend.emails.send({
+      from: "Gravyx <noreply@upwardacademy.com.br>",
+      to: [to],
+      subject,
+      html,
+    });
+    if (error) {
+      logStep("Resend error", error);
+    } else {
+      logStep("Email sent", { to, subject });
+    }
+  } catch (e) {
+    logStep("Email send failed", { error: (e as Error).message });
+  }
+}
+
+// --- Webhook log ---
 async function logWebhook(
   supabase: ReturnType<typeof createClient>,
   eventType: string,
@@ -59,6 +91,7 @@ async function logWebhook(
   }
 }
 
+// ===================== MAIN =====================
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -142,7 +175,6 @@ Deno.serve(async (req: Request) => {
       return new Response("User not found", { status: 200, headers: corsHeaders });
     }
 
-    // Build update payload — save subscription_id if present
     const updatePayload: Record<string, unknown> = {
       credits: profile.credits + config.credits,
       tier: config.tier,
@@ -151,7 +183,6 @@ Deno.serve(async (req: Request) => {
       subscription_status: "active",
     };
 
-    // Try to extract subscription ID from payment payload
     const subscriptionId = payment.subscription as string | undefined;
     if (subscriptionId) {
       updatePayload.asaas_subscription_id = subscriptionId;
@@ -177,6 +208,17 @@ Deno.serve(async (req: Request) => {
       customer_email: profile.email,
       raw_payload: body,
     });
+
+    // Send confirmation email
+    await sendEmail(
+      profile.email,
+      `Pagamento confirmado! Plano ${TIER_DISPLAY_NAMES[tier]} ativado ✅`,
+      React.createElement(PaymentConfirmedEmail, {
+        tierName: TIER_DISPLAY_NAMES[tier] || tier,
+        credits: config.credits,
+        cycle,
+      })
+    );
 
     logStep("Plan activated", { userId, tier, cycle, credits: config.credits, subscriptionId });
     await logWebhook(supabase, event, body, true);
@@ -222,10 +264,28 @@ Deno.serve(async (req: Request) => {
   // --- PAYMENT_OVERDUE ---
   if (event === "PAYMENT_OVERDUE") {
     if (parsed) {
-      const { userId } = parsed;
+      const { userId, tier } = parsed;
       await supabase.from("profiles").update({
         subscription_status: "past_due",
       }).eq("user_id", userId);
+
+      // Send overdue email
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("email")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (profile?.email) {
+        await sendEmail(
+          profile.email,
+          `Pagamento pendente - Plano ${TIER_DISPLAY_NAMES[tier] || tier} ⚠️`,
+          React.createElement(PaymentOverdueEmail, {
+            tierName: TIER_DISPLAY_NAMES[tier] || tier,
+          })
+        );
+      }
+
       logStep("Marked as past_due", { userId });
     }
     await logWebhook(supabase, event, body, true, "Payment overdue - marked past_due");
