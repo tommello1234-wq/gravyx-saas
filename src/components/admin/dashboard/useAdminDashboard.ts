@@ -261,12 +261,17 @@ export function useAdminDashboard(
     const grossProfit = periodRevenue - periodCost;
     const margin = periodRevenue > 0 ? (grossProfit / periodRevenue) * 100 : 0;
 
-    // MRR/ARR estimation
-    const planPrices: Record<string, number> = { free: 0, starter: 7900, premium: 16700, enterprise: 34700 };
-    const estimatedMRR = filteredProfiles.reduce((s, p) => {
-      const price = planPrices[p.tier] || 0;
-      return s + (p.billing_cycle === 'annual' ? price * 0.8 : price); // 20% discount annual
-    }, 0);
+    // MRR/ARR estimation - only active paid subscribers
+    const planMonthlyPrices: Record<string, number> = { free: 0, starter: 7900, premium: 16700, enterprise: 34700 };
+    const planAnnualPrices: Record<string, number> = { free: 0, starter: 42000, premium: 109700, enterprise: 259700 };
+    const estimatedMRR = filteredProfiles
+      .filter(p => p.tier !== 'free' && p.subscription_status === 'active')
+      .reduce((s, p) => {
+        if (p.billing_cycle === 'annual') {
+          return s + Math.round((planAnnualPrices[p.tier] || 0) / 12);
+        }
+        return s + (planMonthlyPrices[p.tier] || 0);
+      }, 0);
     const estimatedARR = estimatedMRR * 12;
 
     const estimatedOperationalCostUSD = totalImages * ESTIMATED_COST_PER_IMAGE_USD;
