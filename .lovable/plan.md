@@ -1,81 +1,111 @@
 
 
-# Redesign da Trilha de Conquistas - Missoes com Verificacao Real
+# Integrar Stripe para Planos Mensais (Ticto para Anuais)
 
-## Problema Atual
-- Qualquer dia desbloqueado aparece como "pronto para resgatar" (icone de presente pulsando), mesmo sem a pessoa ter feito nada.
-- O clique no circulo resgata direto os creditos sem mostrar o que precisa ser feito.
-- O popover so aparece em dias desbloqueados e nao explica claramente a tarefa.
-- Dia 10 nao tem destaque especial.
+## Resumo
 
-## Solucao
+Os planos **mensais** passam a usar Stripe Checkout. Os planos **anuais** continuam com os links da Ticto. Serao criadas duas Edge Functions e o modal de compra sera atualizado.
 
-### 1. Novo fluxo de interacao
+## Produtos Stripe ja criados
 
-Ao clicar em qualquer dia (incluindo bloqueados), abre um popover detalhado com:
-- Titulo da missao
-- Descricao do que precisa fazer
-- Recompensa (creditos ou badge)
-- Status: bloqueado / a fazer / concluido / resgatado
-- Botao "Resgatar" apenas quando a missao foi concluida
+| Plano | Product ID | Price ID | Valor |
+|---|---|---|---|
+| Starter Mensal | prod_U0eazTPI46cBd4 | price_1T2dH9QaS2QCKPVAO3z0v3as | R$ 79/mes |
+| Premium Mensal | prod_U0eg3wu7ck4oGW | price_1T2dNOQaS2QCKPVAPcfLgTg6 | R$ 167/mes |
+| Enterprise Mensal | prod_U0emfKast87JEJ | price_1T2dSeQaS2QCKPVAboY5jaQF | R$ 347/mes |
 
-O resgate NAO acontece mais ao clicar no circulo. O circulo apenas abre o popover. O botao de resgate fica DENTRO do popover.
+## O que sera feito
 
-### 2. Verificacao de conclusao no cliente
+### 1. Criar arquivo de mapeamento Stripe (`src/lib/stripe-plans.ts`)
 
-Criar uma funcao que verifica localmente se cada missao foi concluida (espelhando a logica do `claim-reward`), usando dados ja disponiveis no app (projetos, geracoes, canvas_state). Isso permite mostrar visualmente "Missao concluida - resgatar!" vs "Voce ainda precisa fazer X".
+Arquivo com os `price_id` e `product_id` de cada tier mensal, para ser usado pelo frontend ao chamar o checkout.
 
-### 3. Estados visuais dos circulos (4 estados)
+### 2. Criar Edge Function `create-checkout` 
 
-- **Bloqueado** (cadeado cinza): dia ainda nao chegou
-- **A fazer** (circulo vazio com borda): dia desbloqueado, missao nao concluida
-- **Pronto para resgatar** (presente pulsando): missao concluida, recompensa disponivel
-- **Resgatado** (check verde): ja resgatou
+- Autentica o usuario via JWT (getClaims)
+- Busca/cria customer no Stripe pelo email
+- Cria Checkout Session no modo `subscription` com o `price_id` recebido
+- Inclui metadata com o `tier` para o webhook saber qual plano ativar
+- Retorna a URL do checkout
 
-### 4. Dia 10 com destaque especial
+### 3. Criar Edge Function `stripe-webhook`
 
-- Circulo maior com brilho dourado
-- Icone de presente especial
-- No popover: banner destacado com "Presente Surpresa" e descricao do treinamento
-- Animacao de confete ao resgatar
+- Valida a assinatura do webhook com `STRIPE_WEBHOOK_SECRET`
+- Eventos tratados:
+  - `checkout.session.completed` -- ativa assinatura, credita creditos, atualiza tier/billing_cycle/max_projects/subscription_status
+  - `invoice.paid` -- renovacao mensal, adiciona creditos do ciclo (com protecao contra duplicata via transaction_id)
+  - `customer.subscription.deleted` -- downgrade para Free
+  - `invoice.payment_failed` -- loga como alerta
+- Mesma logica de auto-criacao de conta do Ticto webhook (reutiliza o padrao de findOrCreateProfile)
+- Protecao contra duplicatas via `transaction_id` na tabela `credit_purchases`
+
+### 4. Atualizar `BuyCreditsModal.tsx`
+
+- Para ciclo **mensal**: chamar `supabase.functions.invoke('create-checkout', { body: { price_id, tier } })` e redirecionar para a URL retornada pelo Stripe
+- Para ciclo **anual**: manter o `window.open(tictoUrl)` atual (sem mudancas)
+- Adicionar estado de loading no botao durante a criacao do checkout
+
+### 5. Registrar novas functions no `supabase/config.toml`
+
+```text
+[functions.create-checkout]
+verify_jwt = false
+
+[functions.stripe-webhook]
+verify_jwt = false
+```
 
 ## Detalhes Tecnicos
 
-### Arquivos a modificar
+### Mapeamento Stripe
 
-**`src/components/gamification/JourneySection.tsx`**
-- Remover o `onClick` do `motion.button` que faz resgate direto
-- Adicionar hook de verificacao de missoes
-- Mover botao de resgate para dentro do `PopoverContent`
-- Mostrar popover para TODOS os dias (inclusive bloqueados)
-- Adicionar 4 estados visuais
-- Estilizar Dia 10 com classes especiais (borda dourada, glow maior, escala)
+```text
+STRIPE_PLANS = {
+  starter:    { price_id: 'price_1T2dH9QaS2QCKPVAO3z0v3as', product_id: 'prod_U0eazTPI46cBd4' },
+  premium:    { price_id: 'price_1T2dNOQaS2QCKPVAPcfLgTg6', product_id: 'prod_U0eg3wu7ck4oGW' },
+  enterprise: { price_id: 'price_1T2dSeQaS2QCKPVAboY5jaQF', product_id: 'prod_U0emfKast87JEJ' },
+}
+```
 
-**`src/lib/gamification.ts`** (novo export)
-- Adicionar funcao `checkMissionCompletion(day, userData)` que verifica no cliente se cada missao esta concluida, usando os mesmos criterios do edge function:
-  - Dia 1: total_generations >= 1
-  - Dia 2: projetos >= 2
-  - Dia 3: projetos >= 1 (uso de template)
-  - Dia 4: algum projeto com node gravity
-  - Dia 5: algum projeto com 2+ result nodes
-  - Dia 6: algum projeto editado (updated > created + 1min)
-  - Dia 7: projeto com prompt + media + result
-  - Dia 8: pipeline com 2+ results conectados
-  - Dia 9: 2+ geracoes em um projeto
-  - Dia 10: 10+ dias desde inicio da jornada
+### Mapeamento de creditos no webhook Stripe
 
-**`src/hooks/useGamification.ts`**
-- Adicionar query para buscar dados necessarios para verificacao (projetos com canvas_state, geracoes por projeto)
-- Exportar `missionCompletionStatus: Record<number, boolean>`
+O webhook usara o mesmo mapeamento de beneficios do Ticto:
 
-**`src/i18n/pt.ts`**, **`src/i18n/en.ts`**, **`src/i18n/es.ts`**
-- Adicionar traducoes para novos textos:
-  - `gamification.mission_locked` ("Dia ainda nao disponivel")
-  - `gamification.mission_todo` ("Complete a tarefa para desbloquear")
-  - `gamification.claim_reward` ("Resgatar recompensa")
-  - `gamification.mission_requirement` ("O que fazer:")
-  - `gamification.day10_highlight` (texto especial pro dia 10)
+| Tier | Creditos/mes | Max Projetos |
+|---|---|---|
+| starter | 80 | 3 |
+| premium | 250 | -1 |
+| enterprise | 600 | -1 |
 
-### Edge function `claim-reward`
-- Sem mudancas - ja faz a verificacao correta no servidor. O cliente agora tambem verificara antes de habilitar o botao, mas a validacao final continua no servidor.
+### Fluxo do checkout mensal
+
+```text
+1. Usuario clica "Assinar Starter" (mensal)
+2. Frontend chama create-checkout com price_id e tier
+3. Edge Function cria Stripe Checkout Session
+4. Usuario e redirecionado para pagina do Stripe
+5. Stripe processa pagamento
+6. Webhook stripe-webhook recebe checkout.session.completed
+7. Atualiza profiles: tier, credits, subscription_status='active', billing_cycle='monthly', max_projects
+8. Registra em credit_purchases para protecao contra duplicata
+```
+
+### Arquivos criados/modificados
+
+- **Novo**: `src/lib/stripe-plans.ts`
+- **Novo**: `supabase/functions/create-checkout/index.ts`
+- **Novo**: `supabase/functions/stripe-webhook/index.ts`
+- **Modificado**: `src/components/BuyCreditsModal.tsx`
+- **Modificado**: `supabase/config.toml`
+
+### Secrets
+
+Ja configuradas: `STRIPE_SECRET_KEY` e `STRIPE_WEBHOOK_SECRET`. Nenhuma nova secret necessaria.
+
+### Pos-deploy
+
+Apos o deploy, sera necessario cadastrar a URL do webhook no painel do Stripe:
+`https://oruslrvpmdhtnrsgoght.supabase.co/functions/v1/stripe-webhook`
+
+Eventos para escutar: `checkout.session.completed`, `invoice.paid`, `customer.subscription.deleted`, `invoice.payment_failed`.
 
