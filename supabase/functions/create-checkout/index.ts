@@ -78,7 +78,6 @@ serve(async (req) => {
       mode: "subscription",
       subscription_data: {
         metadata: { tier, user_id: userId },
-        trial_period_days: 7,
       },
       metadata: { tier, user_id: userId },
       success_url: `${origin}/projects?checkout=success`,
