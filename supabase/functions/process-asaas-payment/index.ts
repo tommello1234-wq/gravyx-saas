@@ -180,7 +180,7 @@ Deno.serve(async (req: Request) => {
         await supabaseAdmin.from("credit_purchases").insert({
           user_id: userId, transaction_id: payment.id,
           product_id: `asaas_${cycle}_${tier}`, credits_added: credits,
-          amount_paid: totalValue, customer_email: userEmail,
+          amount_paid: totalValue * 100, customer_email: userEmail,
           raw_payload: { payment_id: payment.id, tier, cycle, method: "CREDIT_CARD", installments: installmentCount || 1 },
         });
 
@@ -257,8 +257,8 @@ Deno.serve(async (req: Request) => {
       await supabaseAdmin.from("credit_purchases").insert({
         user_id: userId, transaction_id: firstPayment.id,
         product_id: `asaas_${cycle}_${tier}`, credits_added: credits,
-        amount_paid: totalValue, customer_email: userEmail,
-        raw_payload: { subscription_id: subscription.id, payment_id: firstPayment.id, tier, cycle, method: "CREDIT_CARD" },
+          amount_paid: totalValue * 100, customer_email: userEmail,
+          raw_payload: { subscription_id: subscription.id, payment_id: firstPayment.id, tier, cycle, method: "CREDIT_CARD" },
       });
 
       log("Plan activated via subscription card", { userId, tier, credits, subscriptionId: subscription.id });

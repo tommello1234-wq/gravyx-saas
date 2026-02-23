@@ -204,7 +204,7 @@ Deno.serve(async (req: Request) => {
       transaction_id: paymentId,
       product_id: `asaas_${cycle}_${tier}`,
       credits_added: config.credits,
-      amount_paid: (payment.value as number) || 0,
+      amount_paid: Math.round(((payment.value as number) || 0) * 100),
       customer_email: profile.email,
       raw_payload: body,
     });
