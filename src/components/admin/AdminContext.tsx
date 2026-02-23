@@ -2,7 +2,7 @@ import { createContext, useContext, useState, type ReactNode } from 'react';
 
 export type AdminPeriod = 'today' | '7d' | '30d' | '90d' | 'custom';
 export type AdminTierFilter = 'all' | 'free' | 'starter' | 'premium' | 'enterprise';
-export type AdminSection = 'dashboard' | 'users' | 'library' | 'templates' | 'settings';
+export type AdminSection = 'financial' | 'dashboard' | 'users' | 'library' | 'templates' | 'settings';
 
 interface AdminContextValue {
   period: AdminPeriod;
@@ -30,7 +30,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   const [customRange, setCustomRange] = useState({ start: new Date(), end: new Date() });
   const [tierFilter, setTierFilter] = useState<AdminTierFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeSection, setActiveSection] = useState<AdminSection>('dashboard');
+  const [activeSection, setActiveSection] = useState<AdminSection>('financial');
 
   return (
     <AdminContext.Provider value={{
