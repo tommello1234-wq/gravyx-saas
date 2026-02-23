@@ -1,0 +1,1 @@
+UPDATE credit_purchases SET amount_paid = 42000 WHERE transaction_id = 'pay_9d2e6cz6uzkg1q1h';
