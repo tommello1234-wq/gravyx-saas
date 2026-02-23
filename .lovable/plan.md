@@ -1,36 +1,73 @@
 
 
-## Corrigir Calculo do MRR
+## Adicionar Menu de Acoes nas Transacoes Recentes (com Reembolso)
 
-### Problema
-O MRR atual tem dois bugs:
+### Visao Geral
+Adicionar um menu de 3 pontinhos (kebab) em cada linha da tabela de transacoes recentes com opcoes de acao, sendo a principal o **Reembolso** via API do Asaas.
 
-1. **Soma TODOS os perfis** - incluindo usuarios free e inativos. Deveria somar apenas quem tem `tier != 'free'` E `subscription_status = 'active'`
-2. **Formula errada para planos anuais** - usa `preco_mensal * 0.8` ao inves do preco anual real dividido por 12
+---
 
-Exemplo do erro com formula atual para um Starter anual:
-- Atual: R$ 79 x 0.8 = R$ 63,20/mes (ERRADO)
-- Correto: R$ 420 / 12 = R$ 35,00/mes
+### Fluxo do Reembolso
 
-### Precos reais (confirmados no BuyCreditsModal)
+1. Admin clica nos 3 pontinhos de uma transacao
+2. Seleciona "Reembolsar"
+3. Aparece um dialogo de confirmacao com os dados da transacao
+4. Ao confirmar, chama uma nova Edge Function `admin-refund`
+5. A Edge Function:
+   - Valida que o usuario e admin
+   - Chama a API do Asaas para estornar o pagamento (`POST /v3/payments/{id}/refund`)
+   - Faz downgrade do usuario para free (creditos = 0, tier = free, status = inactive)
+   - Registra no webhook_logs
+6. UI mostra toast de sucesso/erro
 
-| Plano | Mensal | Anual | MRR se anual (anual/12) |
-|-------|--------|-------|------------------------|
-| Starter | R$ 79 | R$ 420 | R$ 35,00 |
-| Premium | R$ 167 | R$ 1.097 | R$ 91,42 |
-| Enterprise | R$ 347 | R$ 2.597 | R$ 216,42 |
+---
 
-### Correcao
+### Mudancas
 
-**Arquivo: `src/components/admin/dashboard/useAdminDashboard.ts`** (linhas 264-270)
+**1. Nova Edge Function: `supabase/functions/admin-refund/index.ts`**
+- Recebe `{ transactionId, userId }` no body
+- Valida JWT do admin via `getClaims()`
+- Verifica role admin no banco
+- Extrai o payment ID do Asaas (transacoes com `pay_` prefix)
+- Chama `POST /v3/payments/{paymentId}/refund` na API do Asaas
+- Faz downgrade do perfil: tier=free, credits=0, subscription_status=inactive, asaas_subscription_id=null
+- Para transacoes Ticto (sem prefixo `pay_`): apenas faz o downgrade manual (sem chamada de API)
 
-Substituir o bloco do MRR por:
-- Tabela de precos mensais em centavos: starter=7900, premium=16700, enterprise=34700
-- Tabela de precos anuais em centavos: starter=42000, premium=109700, enterprise=259700
-- Filtrar apenas perfis com `tier !== 'free'` e `subscription_status === 'active'`
-- Se `billing_cycle === 'annual'`: somar `preco_anual / 12` (arredondado)
-- Se mensal: somar `preco_mensal`
-- ARR = MRR x 12
+**2. Atualizar `supabase/config.toml`**
+- Adicionar configuracao da nova function com `verify_jwt = false`
 
-Nenhuma mudanca visual no KPI card - continua exibindo MRR total e ARR no subtitulo. Sem separacao garantido/estimado.
+**3. Atualizar `src/components/admin/financial/RecentTransactions.tsx`**
+- Adicionar coluna "Acoes" na tabela
+- Cada linha tera um `DropdownMenu` com icone `MoreHorizontal`
+- Opcoes do menu:
+  - "Reembolsar" (com icone e cor vermelha de alerta)
+  - "Copiar e-mail" (copia o email completo para o clipboard)
+  - "Copiar ID transacao" (copia o transaction_id)
+- Ao clicar em "Reembolsar", abre um `AlertDialog` de confirmacao
+- Ao confirmar, chama a Edge Function e exibe toast de resultado
+- A interface `Transaction` precisa incluir `user_id` (ja existe na tabela `credit_purchases`)
+
+**4. Atualizar `src/components/admin/dashboard/useAdminDashboard.ts`**
+- Incluir `user_id` no select de `credit_purchases` para que o componente tenha acesso ao user_id na hora de chamar o reembolso
+
+---
+
+### Detalhes Tecnicos
+
+**API do Asaas para reembolso:**
+```
+POST https://api.asaas.com/v3/payments/{id}/refund
+Headers: { access_token: ASAAS_API_KEY }
+```
+
+**Dados necessarios por transacao:**
+- `transaction_id`: para identificar o pagamento no Asaas (ex: `pay_abc123`)
+- `user_id`: para fazer o downgrade no perfil
+- `customer_email`: para exibir no dialogo de confirmacao
+- `amount_paid`: para mostrar o valor a ser reembolsado
+
+**Seguranca:**
+- Edge Function valida JWT e verifica role `admin` no banco
+- Usa `ASAAS_API_KEY` (ja configurada como secret)
+- Transacoes Ticto nao tem API de reembolso automatico, entao so faz o downgrade e avisa o admin para estornar manualmente no painel da Ticto
 
