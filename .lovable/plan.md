@@ -1,111 +1,117 @@
 
 
-# Integrar Stripe para Planos Mensais (Ticto para Anuais)
+# Integrar Asaas Checkout para Planos Anuais (12x no cartao)
 
 ## Resumo
 
-Os planos **mensais** passam a usar Stripe Checkout. Os planos **anuais** continuam com os links da Ticto. Serao criadas duas Edge Functions e o modal de compra sera atualizado.
-
-## Produtos Stripe ja criados
-
-| Plano | Product ID | Price ID | Valor |
-|---|---|---|---|
-| Starter Mensal | prod_U0eazTPI46cBd4 | price_1T2dH9QaS2QCKPVAO3z0v3as | R$ 79/mes |
-| Premium Mensal | prod_U0eg3wu7ck4oGW | price_1T2dNOQaS2QCKPVAPcfLgTg6 | R$ 167/mes |
-| Enterprise Mensal | prod_U0emfKast87JEJ | price_1T2dSeQaS2QCKPVAboY5jaQF | R$ 347/mes |
+Os planos **anuais** passarao a usar o **Asaas Checkout** embutido em iframe dentro do modal, substituindo os links da Ticto. Os planos **mensais** continuam com Stripe. O Asaas Checkout API cria uma sessao de checkout que retorna um ID, e a pagina de pagamento e exibida via `https://asaas.com/checkoutSession/show?id={ID}` em um iframe.
 
 ## O que sera feito
 
-### 1. Criar arquivo de mapeamento Stripe (`src/lib/stripe-plans.ts`)
+### 1. Adicionar secret `ASAAS_API_KEY` no Supabase
 
-Arquivo com os `price_id` e `product_id` de cada tier mensal, para ser usado pelo frontend ao chamar o checkout.
+A API Key do Asaas sera armazenada como secret no Supabase para uso exclusivo nas Edge Functions.
 
-### 2. Criar Edge Function `create-checkout` 
+### 2. Criar Edge Function `create-asaas-checkout`
 
-- Autentica o usuario via JWT (getClaims)
-- Busca/cria customer no Stripe pelo email
-- Cria Checkout Session no modo `subscription` com o `price_id` recebido
-- Inclui metadata com o `tier` para o webhook saber qual plano ativar
-- Retorna a URL do checkout
+- Autentica o usuario via JWT
+- Chama `POST https://api.asaas.com/v3/checkouts` com:
+  - `billingTypes: ["CREDIT_CARD"]`
+  - `chargeTypes: ["INSTALLMENT"]`
+  - `installment: { maxInstallmentCount: 12 }`
+  - `items` com nome do plano e valor total anual
+  - `callback` com URLs de sucesso/cancelamento
+  - `externalReference` com `user_id` e `tier` para o webhook identificar
+  - `customerData` com email do usuario
+- Retorna o `checkout_id` para o frontend montar a URL do iframe
 
-### 3. Criar Edge Function `stripe-webhook`
+### 3. Criar Edge Function `asaas-webhook`
 
-- Valida a assinatura do webhook com `STRIPE_WEBHOOK_SECRET`
+- Valida o token de autenticacao do webhook (header `asaas-access-token`)
 - Eventos tratados:
-  - `checkout.session.completed` -- ativa assinatura, credita creditos, atualiza tier/billing_cycle/max_projects/subscription_status
-  - `invoice.paid` -- renovacao mensal, adiciona creditos do ciclo (com protecao contra duplicata via transaction_id)
-  - `customer.subscription.deleted` -- downgrade para Free
-  - `invoice.payment_failed` -- loga como alerta
-- Mesma logica de auto-criacao de conta do Ticto webhook (reutiliza o padrao de findOrCreateProfile)
-- Protecao contra duplicatas via `transaction_id` na tabela `credit_purchases`
+  - `PAYMENT_CONFIRMED` / `PAYMENT_RECEIVED` -- primeira parcela paga, ativa o plano anual (creditos totais do ano, tier, billing_cycle='annual', subscription_status='active')
+  - `PAYMENT_REFUNDED` / `PAYMENT_CHARGEBACK_REQUESTED` -- downgrade para Free
+  - `PAYMENT_OVERDUE` -- loga como alerta
+- Reutiliza o padrao de `findOrCreateProfile` e `credit_purchases` para protecao contra duplicatas
+- Creditos anuais aplicados de uma vez (mesmo padrao da Ticto): Starter 1000, Premium 3000, Enterprise 7200
 
-### 4. Atualizar `BuyCreditsModal.tsx`
+### 4. Criar componente `AsaasEmbeddedCheckout.tsx`
 
-- Para ciclo **mensal**: chamar `supabase.functions.invoke('create-checkout', { body: { price_id, tier } })` e redirecionar para a URL retornada pelo Stripe
-- Para ciclo **anual**: manter o `window.open(tictoUrl)` atual (sem mudancas)
-- Adicionar estado de loading no botao durante a criacao do checkout
+- Recebe `checkoutId` como prop
+- Renderiza um iframe apontando para `https://www.asaas.com/checkoutSession/show?id={checkoutId}`
+- Exibe loading enquanto o iframe carrega
 
-### 5. Registrar novas functions no `supabase/config.toml`
+### 5. Atualizar `BuyCreditsModal.tsx`
 
-```text
-[functions.create-checkout]
-verify_jwt = false
+- Para ciclo **anual**: chamar `supabase.functions.invoke('create-asaas-checkout')` com tier e email, receber o `checkout_id`, e exibir o `AsaasEmbeddedCheckout` dentro do modal (mesmo padrao visual do Stripe mensal)
+- Para ciclo **mensal**: manter Stripe (sem mudancas)
+- Remover os links da Ticto dos planos anuais
 
-[functions.stripe-webhook]
-verify_jwt = false
-```
+### 6. Registrar webhook no painel do Asaas
+
+Apos o deploy, configurar a URL do webhook no painel do Asaas:
+`https://oruslrvpmdhtnrsgoght.supabase.co/functions/v1/asaas-webhook`
+
+Eventos: `PAYMENT_CONFIRMED`, `PAYMENT_RECEIVED`, `PAYMENT_REFUNDED`, `PAYMENT_CHARGEBACK_REQUESTED`, `PAYMENT_OVERDUE`
 
 ## Detalhes Tecnicos
 
-### Mapeamento Stripe
+### Mapeamento de planos anuais no Asaas
+
+| Plano | Valor Total | 12x de | Creditos |
+|---|---|---|---|
+| Starter | R$ 420 | R$ 35 | 1.000 |
+| Premium | R$ 1.097 | R$ 91,42 | 3.000 |
+| Enterprise | R$ 2.597 | R$ 216,42 | 7.200 |
+
+### Payload do checkout (exemplo Starter)
 
 ```text
-STRIPE_PLANS = {
-  starter:    { price_id: 'price_1T2dH9QaS2QCKPVAO3z0v3as', product_id: 'prod_U0eazTPI46cBd4' },
-  premium:    { price_id: 'price_1T2dNOQaS2QCKPVAPcfLgTg6', product_id: 'prod_U0eg3wu7ck4oGW' },
-  enterprise: { price_id: 'price_1T2dSeQaS2QCKPVAboY5jaQF', product_id: 'prod_U0emfKast87JEJ' },
+POST https://api.asaas.com/v3/checkouts
+{
+  "billingTypes": ["CREDIT_CARD"],
+  "chargeTypes": ["INSTALLMENT"],
+  "minutesToExpire": 60,
+  "externalReference": "gravyx_annual_starter_{user_id}",
+  "callback": {
+    "successUrl": "https://app.gravyx.com.br/projects?checkout=success",
+    "cancelUrl": "https://app.gravyx.com.br/projects",
+    "expiredUrl": "https://app.gravyx.com.br/projects"
+  },
+  "items": [{ "name": "Gravyx Starter Anual", "quantity": 1, "value": 420.00 }],
+  "installment": { "maxInstallmentCount": 12 },
+  "customerData": { "email": "user@email.com" }
 }
 ```
 
-### Mapeamento de creditos no webhook Stripe
-
-O webhook usara o mesmo mapeamento de beneficios do Ticto:
-
-| Tier | Creditos/mes | Max Projetos |
-|---|---|---|
-| starter | 80 | 3 |
-| premium | 250 | -1 |
-| enterprise | 600 | -1 |
-
-### Fluxo do checkout mensal
+### Fluxo do checkout anual
 
 ```text
-1. Usuario clica "Assinar Starter" (mensal)
-2. Frontend chama create-checkout com price_id e tier
-3. Edge Function cria Stripe Checkout Session
-4. Usuario e redirecionado para pagina do Stripe
-5. Stripe processa pagamento
-6. Webhook stripe-webhook recebe checkout.session.completed
-7. Atualiza profiles: tier, credits, subscription_status='active', billing_cycle='monthly', max_projects
-8. Registra em credit_purchases para protecao contra duplicata
+1. Usuario clica "Assinar Starter" (anual)
+2. Frontend chama create-asaas-checkout com tier
+3. Edge Function cria Checkout no Asaas
+4. Frontend exibe iframe com a pagina de checkout do Asaas
+5. Usuario preenche dados do cartao e confirma 12x
+6. Asaas processa primeira parcela
+7. Webhook asaas-webhook recebe PAYMENT_CONFIRMED
+8. Atualiza profiles: tier, credits (total anual), billing_cycle='annual', subscription_status='active'
+9. Registra em credit_purchases com transaction_id para evitar duplicata
 ```
 
 ### Arquivos criados/modificados
 
-- **Novo**: `src/lib/stripe-plans.ts`
-- **Novo**: `supabase/functions/create-checkout/index.ts`
-- **Novo**: `supabase/functions/stripe-webhook/index.ts`
-- **Modificado**: `src/components/BuyCreditsModal.tsx`
-- **Modificado**: `supabase/config.toml`
+- **Novo**: `supabase/functions/create-asaas-checkout/index.ts`
+- **Novo**: `supabase/functions/asaas-webhook/index.ts`
+- **Novo**: `src/components/AsaasEmbeddedCheckout.tsx`
+- **Modificado**: `src/components/BuyCreditsModal.tsx` (anual usa Asaas em vez de Ticto)
+- **Modificado**: `supabase/config.toml` (registrar novas functions)
 
-### Secrets
+### Secrets necessarias
 
-Ja configuradas: `STRIPE_SECRET_KEY` e `STRIPE_WEBHOOK_SECRET`. Nenhuma nova secret necessaria.
+- `ASAAS_API_KEY` -- a chave que voce acabou de enviar (sera adicionada via ferramenta de secrets)
 
 ### Pos-deploy
 
-Apos o deploy, sera necessario cadastrar a URL do webhook no painel do Stripe:
-`https://oruslrvpmdhtnrsgoght.supabase.co/functions/v1/stripe-webhook`
-
-Eventos para escutar: `checkout.session.completed`, `invoice.paid`, `customer.subscription.deleted`, `invoice.payment_failed`.
+1. Cadastrar URL do webhook no painel do Asaas (Configuracoes > Integracoes > Webhooks)
+2. Configurar o token de autenticacao do webhook no Asaas e salvar como `ASAAS_WEBHOOK_TOKEN` no Supabase
 
