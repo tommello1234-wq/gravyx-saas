@@ -2,15 +2,12 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Sparkles, Check, Crown, Zap, Rocket, HelpCircle, Loader2 } from 'lucide-react';
+import { Sparkles, Check, Crown, Zap, Rocket, ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { PLAN_LIMITS, type TierKey } from '@/lib/plan-limits';
 import { STRIPE_PLANS } from '@/lib/stripe-plans';
-import { supabase } from '@/integrations/supabase/client';
-import { toast } from 'sonner';
+import { StripeEmbeddedCheckout } from '@/components/StripeEmbeddedCheckout';
 
 interface BuyCreditsModalProps { open: boolean; onOpenChange: (open: boolean) => void; }
 type BillingCycle = 'monthly' | 'annual';
@@ -52,42 +49,49 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
   const { t } = useLanguage();
   const currentTier = (profile?.tier as TierKey) || 'free';
   const [cycle, setCycle] = useState<BillingCycle>('annual');
-  const [loadingTier, setLoadingTier] = useState<string | null>(null);
+  const [checkoutPlan, setCheckoutPlan] = useState<{ priceId: string; tier: string } | null>(null);
 
-  const handleSelectPlan = async (plan: PlanInfo) => {
+  const handleSelectPlan = (plan: PlanInfo) => {
     if (cycle === 'annual') {
-      // Annual plans → Ticto (legacy)
       const url = plan.annual.checkout;
       if (url) window.open(url, '_blank');
       return;
     }
 
-    // Monthly plans → Stripe Checkout
+    // Monthly → embedded Stripe checkout
     const stripePlan = STRIPE_PLANS[plan.tier as keyof typeof STRIPE_PLANS];
     if (!stripePlan) return;
-
-    setLoadingTier(plan.tier);
-    try {
-      const { data, error } = await supabase.functions.invoke('create-checkout', {
-        body: { price_id: stripePlan.price_id, tier: plan.tier },
-      });
-
-      if (error) throw error;
-      if (data?.url) {
-        window.location.href = data.url;
-      } else {
-        throw new Error('No checkout URL returned');
-      }
-    } catch (err) {
-      console.error('Checkout error:', err);
-      toast.error('Erro ao iniciar checkout. Tente novamente.');
-    } finally {
-      setLoadingTier(null);
-    }
+    setCheckoutPlan({ priceId: stripePlan.price_id, tier: plan.tier });
   };
 
+  const handleClose = (value: boolean) => {
+    if (!value) setCheckoutPlan(null);
+    onOpenChange(value);
+  };
+
+  // If checkout is active, show embedded checkout
+  if (checkoutPlan) {
+    return (
+      <Dialog open={open} onOpenChange={handleClose}>
+        <DialogContent className="max-w-2xl bg-[hsl(220,20%,8%)] border-border/50 p-0 overflow-hidden">
+          <DialogHeader className="p-6 pb-2">
+            <div className="flex items-center gap-3">
+              <Button variant="ghost" size="icon" onClick={() => setCheckoutPlan(null)} className="h-8 w-8">
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+              <DialogTitle className="text-lg text-foreground">Finalizar assinatura</DialogTitle>
+            </div>
+          </DialogHeader>
+          <div className="px-6 pb-6">
+            <StripeEmbeddedCheckout priceId={checkoutPlan.priceId} tier={checkoutPlan.tier} />
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-4xl bg-[hsl(220,20%,8%)] border-border/50 p-0 overflow-hidden">
         <DialogHeader className="p-6 pb-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -138,8 +142,8 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
                 </div>
                 {cycle === 'annual' && <p className="text-xs text-muted-foreground mb-3">{t('modal.billed_annually')} {plan.annual.price}</p>}
                 {cycle === 'monthly' && <div className="mb-3" />}
-                <Button variant={isCurrent ? 'secondary' : plan.highlight ? 'default' : 'outline'} className={`w-full rounded-xl h-11 font-semibold mb-5 ${plan.highlight && !isCurrent ? 'bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20' : ''}`} disabled={isCurrent || loadingTier === plan.tier} onClick={() => handleSelectPlan(plan)}>
-                  {loadingTier === plan.tier ? <Loader2 className="h-4 w-4 animate-spin" /> : isCurrent ? t('modal.current_plan') : `${t('modal.subscribe')} ${config.label}`}
+                <Button variant={isCurrent ? 'secondary' : plan.highlight ? 'default' : 'outline'} className={`w-full rounded-xl h-11 font-semibold mb-5 ${plan.highlight && !isCurrent ? 'bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20' : ''}`} disabled={isCurrent} onClick={() => handleSelectPlan(plan)}>
+                  {isCurrent ? t('modal.current_plan') : `${t('modal.subscribe')} ${config.label}`}
                 </Button>
                 <div className={`rounded-xl p-3 mb-4 ${plan.highlight ? 'bg-primary/10 border border-primary/20' : 'bg-muted/30 border border-border/30'}`}>
                   <div className="flex items-center gap-2">
