@@ -206,11 +206,15 @@ export function AsaasTransparentCheckout({ tier, cycle, price, credits, planLabe
 
   const formatTimer = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
 
-  const installmentOptions = Array.from({ length: 12 }, (_, i) => {
-    const n = i + 1;
-    const v = (price / n).toFixed(2).replace('.', ',');
-    return { value: String(n), label: n === 1 ? `1x de R$ ${v} (à vista)` : `${n}x de R$ ${v}` };
-  });
+  // Installments only available for annual plans
+  const showInstallments = cycle === 'annual';
+  const installmentOptions = showInstallments
+    ? Array.from({ length: 12 }, (_, i) => {
+        const n = i + 1;
+        const v = (price / n).toFixed(2).replace('.', ',');
+        return { value: String(n), label: n === 1 ? `1x de R$ ${v} (à vista)` : `${n}x de R$ ${v}` };
+      })
+    : [{ value: '1', label: `1x de R$ ${price.toFixed(2).replace('.', ',')}` }];
 
   // --- SUCCESS ---
   if (state === 'success') {
@@ -386,19 +390,21 @@ export function AsaasTransparentCheckout({ tier, cycle, price, credits, planLabe
             </div>
           </div>
 
-          <div className="border-t border-border/30 pt-3 space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Parcelas</Label>
-            <Select value={installments} onValueChange={setInstallments}>
-              <SelectTrigger className="bg-muted/30 border-border/40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {installmentOptions.map(opt => (
-                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {showInstallments && (
+            <div className="border-t border-border/30 pt-3 space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Parcelas</Label>
+              <Select value={installments} onValueChange={setInstallments}>
+                <SelectTrigger className="bg-muted/30 border-border/40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {installmentOptions.map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <Button onClick={handleCardPayment}
             className="w-full h-12 rounded-xl font-semibold bg-gradient-to-r from-primary to-blue-400 hover:from-primary/90 hover:to-blue-400/90 text-white shadow-lg shadow-primary/20">
