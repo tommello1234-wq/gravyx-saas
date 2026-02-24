@@ -17,6 +17,7 @@ import Admin from "./pages/Admin";
 import TemplateEditor from "./pages/TemplateEditor";
 import Home from "./pages/Home";
 import Checkout from "./pages/Checkout";
+import Signup from "./pages/Signup";
 import NotFound from "./pages/NotFound";
 import { WhatsAppButton } from "@/components/WhatsAppButton";
 
@@ -34,6 +35,7 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Navigate to="/auth" replace />} />
               <Route path="/auth" element={<ErrorBoundary><Auth /></ErrorBoundary>} />
+              <Route path="/signup" element={<ErrorBoundary><Signup /></ErrorBoundary>} />
               <Route path="/reset-password" element={<ErrorBoundary><ResetPassword /></ErrorBoundary>} />
               <Route 
                 path="/home" 
