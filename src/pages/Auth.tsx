@@ -14,7 +14,6 @@ import gravyxLogo from '@/assets/gravyx-logo.webp';
 import { useToast } from '@/hooks/use-toast';
 
 export default function Auth() {
-  const [isLogin, setIsLogin] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const { signIn, signUp, user } = useAuth();
   const { t } = useLanguage();
@@ -22,8 +21,11 @@ export default function Auth() {
   const location = useLocation();
   const { toast } = useToast();
 
-  const searchParams = new URLSearchParams(location.search);
-  const redirectParam = searchParams.get('redirect');
+  const urlParams = new URLSearchParams(location.search);
+  const redirectParam = urlParams.get('redirect');
+  const defaultToSignup = urlParams.get('mode') === 'signup';
+  const [isLogin, setIsLogin] = useState(!defaultToSignup);
+
   const fromLocation = (location.state as { from?: { pathname: string; search?: string } })?.from;
   const from = redirectParam || (fromLocation ? (fromLocation.pathname + (fromLocation.search || '')) : '/home');
 
