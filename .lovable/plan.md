@@ -1,53 +1,41 @@
 
 
-## Fluxo: Criar Conta Primeiro, Depois Checkout
+## Adicionar Login com Google
 
-### Entendimento
-O link externo (ex: landing page) leva o usuario para uma tela de **criar conta** (email, senha, confirmar senha). Apos criar a conta, o usuario e redirecionado automaticamente para o **checkout** do plano correspondente.
+### O que muda
 
-```text
-[Landing Page] → /signup?plan=starter&cycle=monthly
-                        ↓
-              [Tela de Criar Conta]
-              (email, senha, confirmar senha)
-                        ↓ (conta criada)
-              /checkout?plan=starter&cycle=monthly
-                        ↓ (pagamento)
-              [Plano ativado → /projects]
-```
+**1. `src/pages/Auth.tsx`** — Adicionar botão "Entrar com Google" acima do formulário de email/senha, chamando `supabase.auth.signInWithOAuth({ provider: 'google' })` com `redirectTo` preservando os params de plan/cycle.
 
-### Fluxo atual (o que ja existe)
-O `/checkout` ja esta protegido por `ProtectedRoute`, que redireciona para `/auth` preservando a URL de retorno. Porem, a pagina `/auth` mostra login E signup juntos, o que nao e ideal para quem vem de uma landing page.
+**2. `src/pages/Signup.tsx`** — Mesmo botão "Criar conta com Google", também com redirect para o checkout após autenticação.
 
-### Mudancas
+**3. Nenhuma mudança no backend** — O Supabase já suporta OAuth nativamente.
 
-**1. Nova pagina `src/pages/Signup.tsx`**
-- Pagina publica dedicada apenas a **criar conta**
-- Campos: email, senha, confirmar senha (com validacao via zod)
-- Recebe `plan` e `cycle` como query params
-- Mostra o nome do plano selecionado no topo (ex: "Crie sua conta para assinar o plano Starter")
-- Apos signup bem-sucedido: redireciona para `/checkout?plan=xxx&cycle=xxx`
-- Link "Ja tem conta? Faça login" que leva para `/auth` preservando os params de retorno
-- Visual consistente com a pagina `/auth` existente (glass-card, logo, orbs)
+### Configuração necessária (feita por você no dashboard)
 
-**2. Atualizar `src/App.tsx`**
-- Adicionar rota publica `/signup` apontando para a nova pagina
-- Manter `/checkout` protegido (o usuario ja estara logado ao chegar la)
+Antes de funcionar, você precisa:
 
-**3. Atualizar `src/pages/Auth.tsx`**
-- Quando o usuario vem de `/signup` (via state ou query params com plan/cycle), apos login redirecionar para `/checkout?plan=xxx&cycle=xxx`
+1. **Google Cloud Console** → criar credenciais OAuth 2.0 (Web Application)
+   - Authorized JavaScript origins: `https://node-artistry-12.lovable.app`
+   - Authorized redirect URL: `https://oruslrvpmdhtnrsgoght.supabase.co/auth/v1/callback`
 
-### O que NAO muda
-- `AsaasTransparentCheckout.tsx` — continua igual, so funciona com usuario autenticado
-- `Checkout.tsx` — continua protegido, sem alteracoes
-- `process-asaas-payment` Edge Function — sem alteracoes
-- Banco de dados — nenhuma migracao necessaria
+2. **Supabase Dashboard** → Authentication → Providers → Google
+   - Colar Client ID e Client Secret
+   - Habilitar o provider
 
-### Resumo dos arquivos
+3. **Supabase Dashboard** → Authentication → URL Configuration
+   - Site URL: `https://node-artistry-12.lovable.app`
+   - Redirect URLs: adicionar `https://node-artistry-12.lovable.app/**`
 
-| Arquivo | Acao |
+### Visual
+
+Botão "Continuar com Google" com ícone, separado do form por um divisor "ou", seguindo o visual glass-card existente.
+
+### Arquivos
+
+| Arquivo | Ação |
 |---------|------|
-| `src/pages/Signup.tsx` | NOVO — tela de criar conta com redirecionamento |
-| `src/App.tsx` | Modificar — adicionar rota `/signup` |
-| `src/pages/Auth.tsx` | Pequeno ajuste — suportar redirecionamento com plan/cycle |
+| `src/pages/Auth.tsx` | Modificar — botão Google OAuth |
+| `src/pages/Signup.tsx` | Modificar — botão Google OAuth |
+
+Quer prosseguir? Você já tem as credenciais OAuth do Google configuradas?
 
