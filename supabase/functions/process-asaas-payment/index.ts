@@ -10,21 +10,6 @@ const log = (step: string, details?: unknown) => {
   console.log(`[PROCESS-ASAAS] ${step}${details ? ` - ${JSON.stringify(details)}` : ""}`);
 };
 
-// ---------- pricing ----------
-interface TierPricing {
-  monthly: number;
-  annual: number;
-  monthlyCredits: number;
-  annualCredits: number;
-  maxProjects: number;
-}
-
-const PRICING: Record<string, TierPricing> = {
-  starter:    { monthly: 79,  annual: 420,  monthlyCredits: 80,   annualCredits: 1000, maxProjects: 3  },
-  premium:    { monthly: 167, annual: 1097, monthlyCredits: 250,  annualCredits: 3000, maxProjects: -1 },
-  enterprise: { monthly: 347, annual: 2597, monthlyCredits: 600,  annualCredits: 7200, maxProjects: -1 },
-};
-
 const ASAAS_BASE = "https://api.asaas.com";
 
 async function asaasRequest(path: string, method: string, body?: unknown) {
@@ -57,7 +42,6 @@ async function ensureCustomer(email: string, name: string, cpfCnpj: string): Pro
   return created.id;
 }
 
-// ---------- helpers ----------
 function buildCreditCardFields(
   creditCard: Record<string, string>,
   creditCardHolderInfo: Record<string, string>,
@@ -91,6 +75,60 @@ function nextDueDateStr(): string {
   return d.toISOString().split("T")[0];
 }
 
+// ---------- Fetch pricing from DB ----------
+async function fetchPricing(supabaseAdmin: ReturnType<typeof createClient>, tier: string, cycle: string) {
+  const { data, error } = await supabaseAdmin
+    .from("plan_pricing")
+    .select("*")
+    .eq("tier", tier)
+    .eq("cycle", cycle)
+    .eq("active", true)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to fetch pricing: ${error.message}`);
+  if (!data) throw new Error(`No pricing found for ${tier}/${cycle}`);
+  return data as { price: number; credits: number; max_projects: number };
+}
+
+// ---------- Validate coupon ----------
+async function validateCoupon(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  code: string,
+  tier: string,
+  cycle: string,
+  userId: string
+): Promise<{ valid: true; couponId: string; discount_type: string; discount_value: number } | { valid: false; reason: string }> {
+  const { data: coupon, error } = await supabaseAdmin
+    .from("coupons")
+    .select("*")
+    .eq("code", code.toUpperCase().trim())
+    .eq("active", true)
+    .maybeSingle();
+  if (error || !coupon) return { valid: false, reason: "Cupom não encontrado" };
+  if (coupon.valid_until && new Date(coupon.valid_until) < new Date()) return { valid: false, reason: "Cupom expirado" };
+  if (coupon.max_uses != null && coupon.current_uses >= coupon.max_uses) return { valid: false, reason: "Cupom esgotado" };
+  if (coupon.allowed_tiers && !coupon.allowed_tiers.includes(tier)) return { valid: false, reason: "Cupom não válido para este plano" };
+  if (coupon.allowed_cycles && !coupon.allowed_cycles.includes(cycle)) return { valid: false, reason: "Cupom não válido para este ciclo" };
+
+  // Check if user already used this coupon
+  const { data: usage } = await supabaseAdmin
+    .from("coupon_usages")
+    .select("id")
+    .eq("coupon_id", coupon.id)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (usage) return { valid: false, reason: "Cupom já utilizado" };
+
+  return { valid: true, couponId: coupon.id, discount_type: coupon.discount_type, discount_value: coupon.discount_value };
+}
+
+function applyDiscount(priceReais: number, discountType: string, discountValue: number): number {
+  if (discountType === "percent") {
+    return Math.max(priceReais * (1 - discountValue / 100), 0);
+  }
+  // fixed: discount_value is in centavos
+  return Math.max(priceReais - discountValue / 100, 0);
+}
+
 // ===================== MAIN =====================
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -122,24 +160,57 @@ Deno.serve(async (req: Request) => {
 
     // --- Parse & validate ---
     const body = await req.json();
-    const { tier, cycle, paymentMethod, installmentCount, creditCard, creditCardHolderInfo, remoteIp } = body;
+    const { tier, cycle, paymentMethod, installmentCount, creditCard, creditCardHolderInfo, remoteIp, couponCode } = body;
 
-    const pricing = PRICING[tier];
-    if (!pricing) return new Response(JSON.stringify({ error: "Invalid tier" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     if (cycle !== "monthly" && cycle !== "annual") return new Response(JSON.stringify({ error: "Invalid cycle" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     if (paymentMethod !== "PIX" && paymentMethod !== "CREDIT_CARD") return new Response(JSON.stringify({ error: "Invalid paymentMethod" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-    const totalValue = cycle === "monthly" ? pricing.monthly : pricing.annual;
-    const credits = cycle === "monthly" ? pricing.monthlyCredits : pricing.annualCredits;
+    const supabaseAdmin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
+    // Fetch pricing from DB
+    const pricing = await fetchPricing(supabaseAdmin, tier, cycle);
+    const priceReais = pricing.price / 100; // centavos to reais
+    const credits = pricing.credits;
+    const maxProjects = pricing.max_projects;
+
+    // Validate coupon if provided
+    let finalValue = priceReais;
+    let couponId: string | null = null;
+    if (couponCode) {
+      const result = await validateCoupon(supabaseAdmin, couponCode, tier, cycle, userId);
+      if (!result.valid) {
+        return new Response(JSON.stringify({ error: result.reason }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      finalValue = applyDiscount(priceReais, result.discount_type, result.discount_value);
+      finalValue = Math.round(finalValue * 100) / 100;
+      couponId = result.couponId;
+      log("Coupon applied", { code: couponCode, original: priceReais, final: finalValue });
+    }
+
     const externalReference = `gravyx_${cycle}_${tier}_${userId}`;
     const cpfCnpj = creditCardHolderInfo?.cpfCnpj || body.cpfCnpj || "";
     const holderName = creditCardHolderInfo?.name || creditCard?.holderName || userEmail.split("@")[0];
 
     const customerId = await ensureCustomer(userEmail, holderName, cpfCnpj);
-    log("Processing", { userId, tier, cycle, paymentMethod, totalValue });
+    log("Processing", { userId, tier, cycle, paymentMethod, finalValue, originalValue: priceReais });
 
-    const supabaseAdmin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const description = `GravyX ${tier.charAt(0).toUpperCase() + tier.slice(1)} - ${cycle === "monthly" ? "Mensal" : "Anual"}`;
+
+    // Helper to record coupon usage
+    const recordCouponUsage = async () => {
+      if (couponId) {
+        await supabaseAdmin.from("coupon_usages").insert({ coupon_id: couponId, user_id: userId });
+        await supabaseAdmin.rpc("increment_coupon_uses" as never, { coupon_id: couponId } as never).then(() => {}).catch(() => {
+          // fallback: direct update
+          supabaseAdmin.from("coupons").update({ current_uses: undefined as never }).eq("id", couponId!);
+        });
+        // Direct increment
+        const { data: couponData } = await supabaseAdmin.from("coupons").select("current_uses").eq("id", couponId).maybeSingle();
+        if (couponData) {
+          await supabaseAdmin.from("coupons").update({ current_uses: couponData.current_uses + 1 }).eq("id", couponId);
+        }
+      }
+    };
 
     // ============================================================
     // CASE 1: Annual + Credit Card → one-off installable payment
@@ -152,7 +223,7 @@ Deno.serve(async (req: Request) => {
       const paymentPayload: Record<string, unknown> = {
         customer: customerId,
         billingType: "CREDIT_CARD",
-        value: totalValue,
+        value: finalValue,
         dueDate: nextDueDateStr(),
         description,
         externalReference,
@@ -160,10 +231,9 @@ Deno.serve(async (req: Request) => {
         ...buildCreditCardFields(creditCard, creditCardHolderInfo, userEmail, remoteIp),
       };
 
-      // Installments (2-12x) for annual card payments
       if (installmentCount && installmentCount >= 2 && installmentCount <= 12) {
         paymentPayload.installmentCount = installmentCount;
-        paymentPayload.installmentValue = Math.ceil((totalValue / installmentCount) * 100) / 100;
+        paymentPayload.installmentValue = Math.ceil((finalValue / installmentCount) * 100) / 100;
       }
 
       const payment = await asaasRequest("/v3/payments", "POST", paymentPayload);
@@ -173,16 +243,18 @@ Deno.serve(async (req: Request) => {
         const { data: profile } = await supabaseAdmin.from("profiles").select("credits").eq("user_id", userId).maybeSingle();
         await supabaseAdmin.from("profiles").update({
           credits: (profile?.credits || 0) + credits,
-          tier, billing_cycle: cycle, max_projects: pricing.maxProjects,
+          tier, billing_cycle: cycle, max_projects: maxProjects,
           subscription_status: "active", asaas_subscription_id: null,
         }).eq("user_id", userId);
 
         await supabaseAdmin.from("credit_purchases").insert({
           user_id: userId, transaction_id: payment.id,
           product_id: `asaas_${cycle}_${tier}`, credits_added: credits,
-          amount_paid: totalValue * 100, customer_email: userEmail,
-          raw_payload: { payment_id: payment.id, tier, cycle, method: "CREDIT_CARD", installments: installmentCount || 1 },
+          amount_paid: Math.round(finalValue * 100), customer_email: userEmail,
+          raw_payload: { payment_id: payment.id, tier, cycle, method: "CREDIT_CARD", installments: installmentCount || 1, coupon: couponCode || null },
         });
+
+        await recordCouponUsage();
 
         log("Annual plan activated via card", { userId, tier, credits });
         return new Response(JSON.stringify({ success: true, method: "CREDIT_CARD", status: "CONFIRMED", tier, credits }), {
@@ -205,7 +277,7 @@ Deno.serve(async (req: Request) => {
       customer: customerId,
       billingType: paymentMethod === "PIX" ? "UNDEFINED" : "CREDIT_CARD",
       cycle: asaasCycle,
-      value: totalValue,
+      value: finalValue,
       nextDueDate: nextDueDateStr(),
       description,
       externalReference,
@@ -222,7 +294,6 @@ Deno.serve(async (req: Request) => {
     const subscription = await asaasRequest("/v3/subscriptions", "POST", subscriptionPayload);
     log("Subscription created", { id: subscription.id });
 
-    // Save subscription ID
     await supabaseAdmin.from("profiles").update({ asaas_subscription_id: subscription.id }).eq("user_id", userId);
 
     // --- PIX: fetch first payment QR code ---
@@ -235,10 +306,13 @@ Deno.serve(async (req: Request) => {
       const pixData = await asaasRequest(`/v3/payments/${firstPayment.id}/pixQrCode`, "GET");
       log("PIX QR generated", { paymentId: firstPayment.id });
 
+      // Record coupon usage for PIX (will be confirmed via webhook)
+      await recordCouponUsage();
+
       return new Response(JSON.stringify({
         success: true, method: "PIX", paymentId: firstPayment.id,
         subscriptionId: subscription.id, pixQrCode: pixData.encodedImage,
-        pixCopyPaste: pixData.payload, expirationDate: pixData.expirationDate, totalValue,
+        pixCopyPaste: pixData.payload, expirationDate: pixData.expirationDate, totalValue: finalValue,
       }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -251,15 +325,17 @@ Deno.serve(async (req: Request) => {
       const { data: profile } = await supabaseAdmin.from("profiles").select("credits").eq("user_id", userId).maybeSingle();
       await supabaseAdmin.from("profiles").update({
         credits: (profile?.credits || 0) + credits,
-        tier, billing_cycle: cycle, max_projects: pricing.maxProjects, subscription_status: "active",
+        tier, billing_cycle: cycle, max_projects: maxProjects, subscription_status: "active",
       }).eq("user_id", userId);
 
       await supabaseAdmin.from("credit_purchases").insert({
         user_id: userId, transaction_id: firstPayment.id,
         product_id: `asaas_${cycle}_${tier}`, credits_added: credits,
-          amount_paid: totalValue * 100, customer_email: userEmail,
-          raw_payload: { subscription_id: subscription.id, payment_id: firstPayment.id, tier, cycle, method: "CREDIT_CARD" },
+        amount_paid: Math.round(finalValue * 100), customer_email: userEmail,
+        raw_payload: { subscription_id: subscription.id, payment_id: firstPayment.id, tier, cycle, method: "CREDIT_CARD", coupon: couponCode || null },
       });
+
+      await recordCouponUsage();
 
       log("Plan activated via subscription card", { userId, tier, credits, subscriptionId: subscription.id });
       return new Response(JSON.stringify({

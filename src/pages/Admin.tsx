@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { TemplatesTab } from '@/components/admin/TemplatesTab';
+import { PricingTab } from '@/components/admin/pricing/PricingTab';
 import { SubmissionsTab } from '@/components/admin/SubmissionsTab';
 import { UsersTable } from '@/components/admin/dashboard/UsersTable';
 import { useAdminDashboard } from '@/components/admin/dashboard/useAdminDashboard';
@@ -440,6 +441,8 @@ function AdminContent() {
             </div>
           </>
         );
+      case 'pricing':
+        return <PricingTab />;
       case 'settings':
         return (
           <>

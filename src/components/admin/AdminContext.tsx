@@ -2,7 +2,7 @@ import { createContext, useContext, useState, type ReactNode } from 'react';
 
 export type AdminPeriod = 'today' | '7d' | '30d' | '90d' | 'custom';
 export type AdminTierFilter = 'all' | 'free' | 'starter' | 'premium' | 'enterprise';
-export type AdminSection = 'dashboard' | 'users' | 'library' | 'templates' | 'settings';
+export type AdminSection = 'dashboard' | 'users' | 'library' | 'templates' | 'pricing' | 'settings';
 
 interface AdminContextValue {
   period: AdminPeriod;

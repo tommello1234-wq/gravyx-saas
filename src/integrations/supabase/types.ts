@@ -56,6 +56,77 @@ export type Database = {
         }
         Relationships: []
       }
+      coupon_usages: {
+        Row: {
+          coupon_id: string
+          id: string
+          used_at: string
+          user_id: string
+        }
+        Insert: {
+          coupon_id: string
+          id?: string
+          used_at?: string
+          user_id: string
+        }
+        Update: {
+          coupon_id?: string
+          id?: string
+          used_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coupon_usages_coupon_id_fkey"
+            columns: ["coupon_id"]
+            isOneToOne: false
+            referencedRelation: "coupons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coupons: {
+        Row: {
+          active: boolean
+          allowed_cycles: string[] | null
+          allowed_tiers: string[] | null
+          code: string
+          created_at: string
+          current_uses: number
+          discount_type: string
+          discount_value: number
+          id: string
+          max_uses: number | null
+          valid_until: string | null
+        }
+        Insert: {
+          active?: boolean
+          allowed_cycles?: string[] | null
+          allowed_tiers?: string[] | null
+          code: string
+          created_at?: string
+          current_uses?: number
+          discount_type?: string
+          discount_value?: number
+          id?: string
+          max_uses?: number | null
+          valid_until?: string | null
+        }
+        Update: {
+          active?: boolean
+          allowed_cycles?: string[] | null
+          allowed_tiers?: string[] | null
+          code?: string
+          created_at?: string
+          current_uses?: number
+          discount_type?: string
+          discount_value?: number
+          id?: string
+          max_uses?: number | null
+          valid_until?: string | null
+        }
+        Relationships: []
+      }
       credit_packages: {
         Row: {
           created_at: string
@@ -220,6 +291,39 @@ export type Database = {
           started_at?: string | null
           status?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      plan_pricing: {
+        Row: {
+          active: boolean
+          credits: number
+          cycle: string
+          id: string
+          max_projects: number
+          price: number
+          tier: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          credits: number
+          cycle: string
+          id?: string
+          max_projects?: number
+          price: number
+          tier: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          credits?: number
+          cycle?: string
+          id?: string
+          max_projects?: number
+          price?: number
+          tier?: string
+          updated_at?: string
         }
         Relationships: []
       }
