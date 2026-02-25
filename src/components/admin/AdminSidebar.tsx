@@ -10,6 +10,7 @@ const navItems: { section: AdminSection; label: string; icon: React.ElementType 
   { section: 'users', label: 'Usuários', icon: Users },
   { section: 'library', label: 'Biblioteca', icon: Images },
   { section: 'templates', label: 'Templates', icon: LayoutTemplate },
+  { section: 'pricing', label: 'Preços & Cupons', icon: DollarSign },
   { section: 'settings', label: 'Configurações', icon: Settings },
 ];
 
