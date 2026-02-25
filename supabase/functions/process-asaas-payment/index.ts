@@ -277,7 +277,7 @@ Deno.serve(async (req: Request) => {
       customer: customerId,
       billingType: paymentMethod === "PIX" ? "UNDEFINED" : "CREDIT_CARD",
       cycle: asaasCycle,
-      value: finalValue,
+      value: priceReais, // Always full price — coupon discount applied only to first payment
       nextDueDate: nextDueDateStr(),
       description,
       externalReference,
@@ -303,6 +303,13 @@ Deno.serve(async (req: Request) => {
       if (!payments.data?.length) throw new Error("Nenhuma cobrança gerada. Tente novamente.");
 
       const firstPayment = payments.data[0];
+
+      // Apply coupon discount only to the first payment
+      if (couponId && finalValue < priceReais) {
+        await asaasRequest(`/v3/payments/${firstPayment.id}`, "PUT", { value: finalValue });
+        log("Coupon discount applied to first PIX payment", { paymentId: firstPayment.id, original: priceReais, discounted: finalValue });
+      }
+
       const pixData = await asaasRequest(`/v3/payments/${firstPayment.id}/pixQrCode`, "GET");
       log("PIX QR generated", { paymentId: firstPayment.id });
 
@@ -320,6 +327,12 @@ Deno.serve(async (req: Request) => {
     await new Promise(resolve => setTimeout(resolve, 2000));
     const payments = await asaasRequest(`/v3/subscriptions/${subscription.id}/payments`, "GET");
     const firstPayment = payments.data?.[0];
+
+    // Apply coupon discount only to the first payment (card)
+    if (firstPayment && couponId && finalValue < priceReais) {
+      await asaasRequest(`/v3/payments/${firstPayment.id}`, "PUT", { value: finalValue });
+      log("Coupon discount applied to first card payment", { paymentId: firstPayment.id, original: priceReais, discounted: finalValue });
+    }
 
     if (firstPayment && (firstPayment.status === "CONFIRMED" || firstPayment.status === "RECEIVED")) {
       const { data: profile } = await supabaseAdmin.from("profiles").select("credits").eq("user_id", userId).maybeSingle();
