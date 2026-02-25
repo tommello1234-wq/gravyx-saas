@@ -1,37 +1,77 @@
 
 
-## Cupom Válido Apenas na Primeira Cobrança
+## Redesign do Node de Resultado
 
-### Problema
-Atualmente, quando um cupom é aplicado a uma assinatura recorrente (CASE 2), a subscription no Asaas é criada com `value: finalValue` (valor já com desconto). Isso faz com que **todas** as cobranças futuras usem o mesmo valor descontado. O cupom deveria valer apenas na primeira cobrança.
+### O que entendi do Figma
 
-### Solução
-Criar a assinatura no Asaas sempre com o **valor cheio** (`priceReais`), e aplicar o desconto apenas na primeira cobrança usando a API de update do pagamento individual. Após a subscription ser criada e a primeira cobrança gerada, atualizamos o valor dessa primeira cobrança via `PUT /v3/payments/{id}` com o `finalValue`.
+O novo design do OutputNode combina visualização de resultados com controles de geração em um único nó. Layout principal:
+
+```text
+┌──────────────────────────────┐  ┌──┐
+│ ✦ Resultados    12 Imagens ⋮ │  │  │ ← thumbnails
+├──────────────────────────────┤  │  │    verticais
+│                              │  │  │    na lateral
+│   Imagem principal grande    │  │  │    direita
+│   (última gerada)            │  │  │
+│                              │  │  │
+├──────────────────────────────┤  │  │
+│ Quantidade  [1] [2] [4]      │  │  │
+│ Qualidade   [1K] [2K] [4K]  │  └──┘
+│ Formato  [1:1][4:5][9:16][16:9] │
+├──────────────────────────────┤
+│  ▓▓ Gerar 4 Imagens  →  ▓▓  │
+│     4 Créditos | 105 Disp.   │
+└──────────────────────────────┘
+```
+
+Elementos-chave:
+- **Imagem principal** grande ocupando a largura toda do nó (a imagem selecionada ou a mais recente)
+- **Strip de thumbnails** vertical na lateral direita, fora do card principal, com scroll
+- **Controles de Quantidade** (1, 2, 4) e **Qualidade** (1K, 2K, 4K) na mesma linha
+- **Formato** (1:1, 4:5, 9:16, 16:9) com seletor pill-style, o selecionado com fundo verde
+- **Botão "Gerar"** com gradiente verde (emerald) e seta, estilo largo
+- **Info de créditos** abaixo do botão
 
 ### Mudanças
 
-**`supabase/functions/process-asaas-payment/index.ts`** — Modificar CASE 2 (subscriptions)
+**`src/components/nodes/OutputNode.tsx`** — Reescrever layout
 
-1. Criar a subscription com `value: priceReais` (valor cheio) em vez de `finalValue`
-2. Após buscar a primeira cobrança (`/v3/subscriptions/{id}/payments`), se houver cupom aplicado, atualizar o valor dessa cobrança individual via `PUT /v3/payments/{firstPayment.id}` com `value: finalValue`
-3. A partir da segunda cobrança, o Asaas cobra automaticamente o `value` da subscription (valor cheio)
+1. Adicionar estado para `selectedPreview` (imagem destacada no preview grande)
+2. Adicionar estados de `aspectRatio`, `quantity` e `quality` (absorvendo funcionalidade do SettingsNode)
+3. Layout principal: flex row com card principal + strip de thumbnails na direita
+4. Card principal:
+   - Header inalterado (ícone verde + label editável + menu)
+   - Imagem principal grande com rounded corners
+   - Linha de Quantidade (1, 2, 4) + Qualidade (1K, 2K, 4K) lado a lado
+   - Linha de Formato (1:1, 4:5, 9:16, 16:9) com pill buttons, selecionado em verde
+   - Botão "Gerar X Imagens →" com gradiente emerald
+   - Texto de créditos abaixo
+5. Strip lateral: coluna vertical de thumbnails pequenos, clicáveis para trocar o preview principal
+6. Manter Handle de entrada à esquerda
+7. Adicionar Handle de source à direita (para substituir o SettingsNode no fluxo)
+8. Manter `nowheel`/`nodrag` + `stopPropagation` nos elementos interativos
+9. Disparar `GENERATE_IMAGE_EVENT` no botão gerar (mesmo evento do SettingsNode)
+10. Sincronizar `aspectRatio`, `quantity` no node data via `setNodes`
 
-Fluxo resultante:
-```text
-Subscription criada: value = R$79 (cheio)
-1ª cobrança: PUT value = R$63,20 (com cupom 20%)
-2ª cobrança em diante: R$79 (automático pelo Asaas)
-```
+**`src/components/nodes/OutputNode.tsx`** — Dados do nó
 
-### Detalhes técnicos
+- Expandir `OutputNodeData` para incluir `aspectRatio`, `quantity`, `quality`
+- Importar `useAuth` para acessar créditos do perfil
+- Importar `GENERATE_IMAGE_EVENT` e eventos de estado de geração do SettingsNode
 
-A API do Asaas permite alterar o valor de um pagamento individual via `PUT /v3/payments/{id}` com `{ value: novoValor }`, desde que o pagamento ainda esteja pendente. Isso é seguro porque a primeira cobrança acaba de ser criada e ainda não foi paga.
+**Nota**: O SettingsNode continua existindo para quem já tem fluxos com ele. O OutputNode passa a ser autossuficiente — pode gerar sem precisar de um SettingsNode conectado.
 
-O CASE 1 (annual + credit card, cobrança avulsa) não precisa de alteração pois já é um pagamento único sem recorrência.
+### Estilo visual (baseado no Figma)
+
+- Borda do card: `border-emerald-500/30` (mantém)
+- Thumbnails laterais: ~70px de largura, rounded, com borda sutil
+- Botão gerar: gradiente emerald (`from-emerald-400 to-emerald-600`), texto escuro, rounded-full
+- Pills de formato: fundo escuro, selecionado com fundo emerald
+- Chips de quantidade/qualidade: compactos, inline
 
 ### Arquivos
 
-| Arquivo | Ação |
+| Arquivo | Acao |
 |---------|------|
-| `supabase/functions/process-asaas-payment/index.ts` | Modificar — subscription com valor cheio + desconto apenas na 1ª cobrança |
+| `src/components/nodes/OutputNode.tsx` | Reescrever — novo layout com preview + thumbnails + controles integrados |
 
