@@ -1,110 +1,37 @@
 
 
-## Gerenciamento de Preços e Cupons no Admin
+## Adicionar Receita e Consumo por Usuário na Tabela de Usuários
 
-### Problema atual
+### Problema
+A tabela de usuários no admin mostra apenas créditos atuais e total de imagens, mas não mostra quanto cada usuário já pagou (receita gerada) nem o custo estimado de consumo dele. Isso impede análise individual de rentabilidade.
 
-Os preços dos planos estão hardcoded em 4 lugares diferentes: `BuyCreditsModal.tsx`, `Checkout.tsx`, `process-asaas-payment/index.ts` e `plan-limits.ts`. Alterar preços exige editar código. Cupons de desconto não existem.
-
-### Arquitetura proposta
-
-```text
-[Admin: aba "Preços & Cupons"]
-    ├── Tabela editável de preços por tier/cycle
-    └── CRUD de cupons de desconto
-         │
-         ▼
-[Tabelas Supabase: plan_pricing + coupons + coupon_usages]
-         │
-         ▼
-[Frontend: BuyCreditsModal + Checkout] ← busca preços via query
-[Edge Function: process-asaas-payment] ← busca preços + valida cupom do DB
-```
+### Solução
+Adicionar duas colunas na tabela de usuários: **Recebido** (total pago pelo usuário) e **Custo** (custo estimado das imagens geradas). Os dados já existem no dashboard (`purchases` e `total_generations`), só precisam ser cruzados e exibidos.
 
 ### Mudanças
 
-**1. Migration SQL — 3 novas tabelas**
+**`src/components/admin/dashboard/UsersTable.tsx`** — Modificar
 
-**`plan_pricing`** — fonte única de verdade para preços
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | uuid PK | |
-| tier | text (unique combo com cycle) | starter, premium, enterprise |
-| cycle | text | monthly, annual |
-| price | integer | Preço em centavos (ex: 7900 = R$79) |
-| credits | integer | Créditos concedidos |
-| max_projects | integer | -1 = ilimitado |
-| active | boolean | default true |
-| updated_at | timestamptz | |
+- Criar um `Map<user_id, totalPaid>` a partir de `data.purchases`, somando `amount_paid` por `user_id`
+- Calcular custo estimado por usuário: `total_generations * costPerImage * 100` (em centavos)
+- Adicionar duas novas colunas sortáveis:
+  - **Recebido** — total pago pelo usuário em R$ (formatado como `R$ XX,XX`)
+  - **Custo** — custo estimado de consumo em R$ (baseado no custo por imagem)
+- Adicionar `received` e `cost` como opções de sort
+- Atualizar exportação CSV com as novas colunas
+- Receber `costPerImage` como prop (já disponível no hook `useAdminDashboard`)
 
-- RLS: SELECT público (frontend precisa ler), ALL para admins
-- Seed com os preços atuais
+**`src/components/admin/dashboard/DashboardTab.tsx`** — Modificar (se necessário)
 
-**`coupons`** — cupons de desconto
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | uuid PK | |
-| code | text UNIQUE | Código (ex: GRAVYX20) |
-| discount_type | text | percent ou fixed |
-| discount_value | numeric | 20 = 20% ou 5000 = R$50 (centavos) |
-| max_uses | integer nullable | null = ilimitado |
-| current_uses | integer default 0 | |
-| valid_until | timestamptz nullable | null = sem expiração |
-| allowed_tiers | text[] nullable | null = todos |
-| allowed_cycles | text[] nullable | null = todos |
-| active | boolean default true | |
-| created_at | timestamptz | |
+- Passar `purchases` e `costPerImage` para o `UsersTable` caso ainda não estejam acessíveis via `data`
 
-- RLS: SELECT público (validação no checkout), ALL para admins
+### Detalhes técnicos
 
-**`coupon_usages`** — controle de uso por usuário
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | uuid PK | |
-| coupon_id | uuid FK → coupons | |
-| user_id | uuid | |
-| used_at | timestamptz default now() | |
-
-- Unique constraint em (coupon_id, user_id)
-- RLS: INSERT/SELECT próprio, ALL para admins
-
-**2. Nova seção no Admin: "Preços & Cupons"**
-
-Adicionar `'pricing'` ao tipo `AdminSection` em `AdminContext.tsx` e ao `AdminSidebar.tsx` (ícone DollarSign, já importado).
-
-Novo componente `src/components/admin/pricing/PricingTab.tsx` com duas sub-abas:
-
-- **Preços dos Planos**: Tabela editável inline com os 6 registros (3 tiers x 2 cycles). Campos: tier, cycle, preço (R$), créditos, max projetos. Botão salvar por linha.
-- **Cupons de Desconto**: Tabela com CRUD completo. Criar cupom (modal com campos: código, tipo desconto, valor, limite de usos, validade, tiers/cycles permitidos). Editar, ativar/desativar, excluir.
-
-**3. Frontend — buscar preços do DB**
-
-- `src/components/BuyCreditsModal.tsx`: substituir o array `plans` hardcoded por uma query `useQuery` que busca `plan_pricing` e monta os dados dinamicamente.
-- `src/pages/Checkout.tsx`: substituir `PLAN_PRICING` hardcoded pela mesma query.
-- `src/components/AsaasTransparentCheckout.tsx`: adicionar campo de cupom opcional (input + botão "Aplicar"). Ao aplicar, faz query na tabela `coupons` para validar e mostrar preço com desconto. Envia `couponCode` no payload.
-
-**4. Edge Function — `process-asaas-payment`**
-
-- Substituir o objeto `PRICING` hardcoded por uma query ao `plan_pricing` usando `supabaseAdmin`.
-- Receber campo opcional `couponCode`, validar server-side (existe, ativo, validade, uso, tier/cycle), calcular `finalValue`, criar cobrança com valor reduzido.
-- Após pagamento confirmado, registrar uso em `coupon_usages` e incrementar `current_uses`.
-- Créditos não mudam com cupom (desconto é apenas no preço).
-
-**5. Atualizar `src/lib/plan-limits.ts`**
-
-- Manter como fallback/tipos, mas os valores reais vêm do DB.
+Os dados de `credit_purchases` já são carregados pelo hook `useAdminDashboard` e estão disponíveis em `data.purchases`. Cada purchase tem `user_id` e `amount_paid` (em centavos). O cruzamento é feito no frontend com um `useMemo` que agrupa por `user_id`.
 
 ### Arquivos
 
 | Arquivo | Ação |
 |---------|------|
-| Migration SQL (plan_pricing + coupons + coupon_usages + seed) | Criar |
-| `src/components/admin/AdminContext.tsx` | Modificar — adicionar 'pricing' ao AdminSection |
-| `src/components/admin/AdminSidebar.tsx` | Modificar — adicionar item "Preços & Cupons" |
-| `src/components/admin/pricing/PricingTab.tsx` | Criar — gestão de preços e cupons |
-| `src/pages/Admin.tsx` | Modificar — renderizar PricingTab |
-| `src/components/BuyCreditsModal.tsx` | Modificar — buscar preços do DB |
-| `src/pages/Checkout.tsx` | Modificar — buscar preços do DB |
-| `src/components/AsaasTransparentCheckout.tsx` | Modificar — campo de cupom |
-| `supabase/functions/process-asaas-payment/index.ts` | Modificar — preços do DB + validação de cupom |
+| `src/components/admin/dashboard/UsersTable.tsx` | Modificar — adicionar colunas Recebido e Custo |
 
