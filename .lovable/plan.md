@@ -1,37 +1,37 @@
 
 
-## Adicionar Receita e Consumo por Usuário na Tabela de Usuários
+## Cupom Válido Apenas na Primeira Cobrança
 
 ### Problema
-A tabela de usuários no admin mostra apenas créditos atuais e total de imagens, mas não mostra quanto cada usuário já pagou (receita gerada) nem o custo estimado de consumo dele. Isso impede análise individual de rentabilidade.
+Atualmente, quando um cupom é aplicado a uma assinatura recorrente (CASE 2), a subscription no Asaas é criada com `value: finalValue` (valor já com desconto). Isso faz com que **todas** as cobranças futuras usem o mesmo valor descontado. O cupom deveria valer apenas na primeira cobrança.
 
 ### Solução
-Adicionar duas colunas na tabela de usuários: **Recebido** (total pago pelo usuário) e **Custo** (custo estimado das imagens geradas). Os dados já existem no dashboard (`purchases` e `total_generations`), só precisam ser cruzados e exibidos.
+Criar a assinatura no Asaas sempre com o **valor cheio** (`priceReais`), e aplicar o desconto apenas na primeira cobrança usando a API de update do pagamento individual. Após a subscription ser criada e a primeira cobrança gerada, atualizamos o valor dessa primeira cobrança via `PUT /v3/payments/{id}` com o `finalValue`.
 
 ### Mudanças
 
-**`src/components/admin/dashboard/UsersTable.tsx`** — Modificar
+**`supabase/functions/process-asaas-payment/index.ts`** — Modificar CASE 2 (subscriptions)
 
-- Criar um `Map<user_id, totalPaid>` a partir de `data.purchases`, somando `amount_paid` por `user_id`
-- Calcular custo estimado por usuário: `total_generations * costPerImage * 100` (em centavos)
-- Adicionar duas novas colunas sortáveis:
-  - **Recebido** — total pago pelo usuário em R$ (formatado como `R$ XX,XX`)
-  - **Custo** — custo estimado de consumo em R$ (baseado no custo por imagem)
-- Adicionar `received` e `cost` como opções de sort
-- Atualizar exportação CSV com as novas colunas
-- Receber `costPerImage` como prop (já disponível no hook `useAdminDashboard`)
+1. Criar a subscription com `value: priceReais` (valor cheio) em vez de `finalValue`
+2. Após buscar a primeira cobrança (`/v3/subscriptions/{id}/payments`), se houver cupom aplicado, atualizar o valor dessa cobrança individual via `PUT /v3/payments/{firstPayment.id}` com `value: finalValue`
+3. A partir da segunda cobrança, o Asaas cobra automaticamente o `value` da subscription (valor cheio)
 
-**`src/components/admin/dashboard/DashboardTab.tsx`** — Modificar (se necessário)
-
-- Passar `purchases` e `costPerImage` para o `UsersTable` caso ainda não estejam acessíveis via `data`
+Fluxo resultante:
+```text
+Subscription criada: value = R$79 (cheio)
+1ª cobrança: PUT value = R$63,20 (com cupom 20%)
+2ª cobrança em diante: R$79 (automático pelo Asaas)
+```
 
 ### Detalhes técnicos
 
-Os dados de `credit_purchases` já são carregados pelo hook `useAdminDashboard` e estão disponíveis em `data.purchases`. Cada purchase tem `user_id` e `amount_paid` (em centavos). O cruzamento é feito no frontend com um `useMemo` que agrupa por `user_id`.
+A API do Asaas permite alterar o valor de um pagamento individual via `PUT /v3/payments/{id}` com `{ value: novoValor }`, desde que o pagamento ainda esteja pendente. Isso é seguro porque a primeira cobrança acaba de ser criada e ainda não foi paga.
+
+O CASE 1 (annual + credit card, cobrança avulsa) não precisa de alteração pois já é um pagamento único sem recorrência.
 
 ### Arquivos
 
 | Arquivo | Ação |
 |---------|------|
-| `src/components/admin/dashboard/UsersTable.tsx` | Modificar — adicionar colunas Recebido e Custo |
+| `supabase/functions/process-asaas-payment/index.ts` | Modificar — subscription com valor cheio + desconto apenas na 1ª cobrança |
 
