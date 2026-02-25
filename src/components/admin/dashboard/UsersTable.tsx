@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Coins, MoreHorizontal, Send, Trash2, UserPlus, Search, Download, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Coins, MoreHorizontal, Send, Trash2, UserPlus, Search, Download, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Loader2, TrendingUp, TrendingDown } from 'lucide-react';
 import type { DashboardData } from './useAdminDashboard';
 import { format } from 'date-fns';
 
@@ -17,24 +17,41 @@ interface UsersTableProps {
   onDeleteUser: (userId: string, email: string) => void;
   onCreateUser: () => void;
   isResending: boolean;
+  costPerImage?: number;
 }
 
-type SortKey = 'email' | 'tier' | 'credits' | 'images' | 'created_at';
+type SortKey = 'email' | 'tier' | 'credits' | 'images' | 'created_at' | 'received' | 'cost';
 type SortDir = 'asc' | 'desc';
 
 const PAGE_SIZE = 20;
 
-export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser, onCreateUser, isResending }: UsersTableProps) {
+const formatBRL = (centavos: number) => {
+  const value = centavos / 100;
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
+
+export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser, onCreateUser, isResending, costPerImage = 0.30 }: UsersTableProps) {
   const [search, setSearch] = useState('');
   const [tierFilter, setTierFilter] = useState<string>('all');
   const [sortKey, setSortKey] = useState<SortKey>('email');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [page, setPage] = useState(0);
 
+  // Build revenue map from purchases
+  const revenueByUser = useMemo(() => {
+    const map = new Map<string, number>();
+    (data.purchases || []).forEach(p => {
+      map.set(p.user_id, (map.get(p.user_id) || 0) + (p.amount_paid || 0));
+    });
+    return map;
+  }, [data.purchases]);
+
   const filteredUsers = useMemo(() => {
     let users = data.profiles.map(p => ({
       ...p,
       images: p.total_generations || 0,
+      received: revenueByUser.get(p.user_id) || 0,
+      cost: Math.round((p.total_generations || 0) * costPerImage * 100),
     }));
 
     if (search) {
@@ -54,12 +71,14 @@ export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser
         case 'credits': cmp = a.credits - b.credits; break;
         case 'images': cmp = a.images - b.images; break;
         case 'created_at': cmp = (a.created_at || '').localeCompare(b.created_at || ''); break;
+        case 'received': cmp = a.received - b.received; break;
+        case 'cost': cmp = a.cost - b.cost; break;
       }
       return sortDir === 'asc' ? cmp : -cmp;
     });
 
     return users;
-  }, [data.profiles, search, tierFilter, sortKey, sortDir, data.authUsers]);
+  }, [data.profiles, search, tierFilter, sortKey, sortDir, revenueByUser, costPerImage]);
 
   const totalPages = Math.ceil(filteredUsers.length / PAGE_SIZE);
   const paginatedUsers = filteredUsers.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -79,9 +98,9 @@ export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser
   };
 
   const exportCSV = () => {
-    const header = 'Email,Nome,Plano,Créditos,Imagens,Data de Cadastro\n';
+    const header = 'Email,Nome,Plano,Créditos,Imagens,Recebido,Custo,Data de Cadastro\n';
     const rows = filteredUsers.map(u =>
-      `"${u.email}","${u.display_name || ''}","${u.tier}",${u.credits},${u.images},"${u.created_at ? format(new Date(u.created_at), 'dd/MM/yyyy HH:mm') : 'N/A'}"`
+      `"${u.email}","${u.display_name || ''}","${u.tier}",${u.credits},${u.images},${(u.received / 100).toFixed(2)},${(u.cost / 100).toFixed(2)},"${u.created_at ? format(new Date(u.created_at), 'dd/MM/yyyy HH:mm') : 'N/A'}"`
     ).join('\n');
     const blob = new Blob([header + rows], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -156,6 +175,12 @@ export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser
                   <TableHead className="cursor-pointer select-none text-right" onClick={() => toggleSort('images')}>
                     Imagens <SortIcon col="images" />
                   </TableHead>
+                  <TableHead className="cursor-pointer select-none text-right" onClick={() => toggleSort('received')}>
+                    Recebido <SortIcon col="received" />
+                  </TableHead>
+                  <TableHead className="cursor-pointer select-none text-right" onClick={() => toggleSort('cost')}>
+                    Custo <SortIcon col="cost" />
+                  </TableHead>
                   <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('created_at')}>
                     Cadastro <SortIcon col="created_at" />
                   </TableHead>
@@ -163,67 +188,86 @@ export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedUsers.map(profile => (
-                  <TableRow key={profile.id}>
-                    <TableCell>
-                      <div>
-                        <p className="font-medium text-sm">{profile.display_name || profile.email}</p>
-                        {profile.display_name && <p className="text-xs text-muted-foreground">{profile.email}</p>}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary" className="capitalize text-xs">
-                        {profile.tier}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Coins className="h-3 w-3 text-primary" />
-                        {profile.credits}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">{profile.images}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {profile.created_at ? format(new Date(profile.created_at), 'dd/MM/yy') : '—'}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        <Input
-                          type="number"
-                          className="w-16 h-7 text-xs"
-                          defaultValue={profile.credits}
-                          onBlur={(e) => {
-                            const val = parseInt(e.target.value);
-                            if (val !== profile.credits) onUpdateCredits(profile.user_id, val);
-                          }}
-                        />
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-7 w-7">
-                              <MoreHorizontal className="h-3.5 w-3.5" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => onResendInvite(profile.user_id, profile.email)}
-                              disabled={isResending}
-                            >
-                              <Send className="h-4 w-4 mr-2" />
-                              Reenviar acesso
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onClick={() => onDeleteUser(profile.user_id, profile.email)}
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Remover acesso
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {paginatedUsers.map(profile => {
+                  const profit = profile.received - profile.cost;
+                  return (
+                    <TableRow key={profile.id}>
+                      <TableCell>
+                        <div>
+                          <p className="font-medium text-sm">{profile.display_name || profile.email}</p>
+                          {profile.display_name && <p className="text-xs text-muted-foreground">{profile.email}</p>}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className="capitalize text-xs">
+                          {profile.tier}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Coins className="h-3 w-3 text-primary" />
+                          {profile.credits}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">{profile.images}</TableCell>
+                      <TableCell className="text-right">
+                        <span className={profile.received > 0 ? 'text-emerald-500 font-medium' : 'text-muted-foreground'}>
+                          {formatBRL(profile.received)}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex flex-col items-end">
+                          <span className="text-muted-foreground">{formatBRL(profile.cost)}</span>
+                          {profile.received > 0 && (
+                            <span className={`text-xs flex items-center gap-0.5 ${profit >= 0 ? 'text-emerald-500' : 'text-destructive'}`}>
+                              {profit >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                              {formatBRL(Math.abs(profit))}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {profile.created_at ? format(new Date(profile.created_at), 'dd/MM/yy') : '—'}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="number"
+                            className="w-16 h-7 text-xs"
+                            defaultValue={profile.credits}
+                            onBlur={(e) => {
+                              const val = parseInt(e.target.value);
+                              if (val !== profile.credits) onUpdateCredits(profile.user_id, val);
+                            }}
+                          />
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-7 w-7">
+                                <MoreHorizontal className="h-3.5 w-3.5" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => onResendInvite(profile.user_id, profile.email)}
+                                disabled={isResending}
+                              >
+                                <Send className="h-4 w-4 mr-2" />
+                                Reenviar acesso
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => onDeleteUser(profile.user_id, profile.email)}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Remover acesso
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
             {totalPages > 1 && (
