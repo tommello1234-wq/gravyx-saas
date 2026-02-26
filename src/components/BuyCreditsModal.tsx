@@ -62,7 +62,7 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
   const [selectedPackage, setSelectedPackage] = useState<CreditPackage | null>(null);
   const { data: pricingRows, isLoading } = usePlanPricing();
   const { data: creditPackages } = useCreditPackages();
-  const showCreditPackages = !!profile;
+  const isActiveSubscriber = currentTier !== 'free' && profile?.subscription_status === 'active';
 
   const plans = pricingRows ? buildPlanData(pricingRows) : [];
 
@@ -223,7 +223,7 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
         )}
 
         {/* One-off credit packages for active subscribers */}
-        {showCreditPackages && creditPackages && creditPackages.length > 0 && (
+        {isActiveSubscriber && creditPackages && creditPackages.length > 0 && (
           <div className="px-6 pb-2">
             <div className="border-t border-border/30 pt-5">
               <div className="flex items-center gap-2 mb-3">
