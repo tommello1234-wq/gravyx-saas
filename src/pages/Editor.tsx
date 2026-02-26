@@ -636,9 +636,40 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     }
 
     const resultData = resultNode.data as unknown as ResultNodeData;
-    const quantity = resultData.quantity || 1;
-    const aspectRatio = resultData.aspectRatio || '1:1';
+    const quantity = Math.min(resultData.quantity || 1, 5);
+    let aspectRatio = resultData.aspectRatio || '1:1';
     const creditsNeeded = quantity;
+
+    // Resolve "auto" aspect ratio from connected media
+    if (aspectRatio === 'auto') {
+      const inputEdges = currentEdges.filter(e => e.target === resultId);
+      const connectedMedia = inputEdges
+        .map(e => currentNodes.find(n => n.id === e.source && n.type === 'media'))
+        .filter(Boolean);
+      
+      // Also check via gravity
+      const gravityIdForAuto = findConnectedGravity(resultId, currentNodes, currentEdges);
+      if (gravityIdForAuto) {
+        const gravityInputEdges = currentEdges.filter(e => e.target === gravityIdForAuto);
+        const gravityMedias = gravityInputEdges
+          .map(e => currentNodes.find(n => n.id === e.source && n.type === 'media'))
+          .filter(Boolean);
+        connectedMedia.push(...gravityMedias);
+      }
+
+      // Try to detect aspect ratio from first connected media with dimensions
+      const firstMedia = connectedMedia[0];
+      if (firstMedia) {
+        const mediaData = firstMedia.data as { aspectRatio?: string };
+        if (mediaData.aspectRatio && ['1:1', '4:5', '16:9', '9:16'].includes(mediaData.aspectRatio)) {
+          aspectRatio = mediaData.aspectRatio;
+        } else {
+          aspectRatio = '1:1'; // fallback
+        }
+      } else {
+        aspectRatio = '1:1'; // no media connected
+      }
+    }
 
     if (!profile || profile.credits < creditsNeeded) {
       setShowBuyCredits(true);
