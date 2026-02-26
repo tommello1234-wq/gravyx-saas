@@ -253,7 +253,7 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
 
   return (
     <>
-      <div className="bg-[#0a0a0a] border border-emerald-500/20 rounded-2xl w-[420px] shadow-2xl shadow-emerald-500/5 overflow-hidden">
+      <div className="bg-[#0a0a0a] border border-emerald-500/20 rounded-2xl w-[380px] shadow-2xl shadow-emerald-500/5 overflow-hidden">
         <Handle 
           type="target" 
           position={Position.Left} 
@@ -391,20 +391,20 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
         <div className="px-3 pb-3 pt-1">
           <div className="flex items-center gap-2">
             {/* Quantity Stepper */}
-            <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-lg h-10 px-1">
-              <span className="text-xs text-zinc-400 px-2 whitespace-nowrap">Quantidade</span>
+            <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-lg h-9 px-1">
+              <span className="text-[10px] text-zinc-400 px-1.5 whitespace-nowrap">Qtd</span>
               <button
                 onClick={() => handleQuantityChange(-1)}
                 disabled={quantity <= 1}
-                className="w-7 h-7 flex items-center justify-center text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                className="w-6 h-6 flex items-center justify-center text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
                 <Minus className="h-3 w-3" />
               </button>
-              <span className="w-6 text-center text-sm font-semibold text-white">{quantity}</span>
+              <span className="w-5 text-center text-sm font-semibold text-white">{quantity}</span>
               <button
                 onClick={() => handleQuantityChange(1)}
                 disabled={quantity >= MAX_QUANTITY}
-                className="w-7 h-7 flex items-center justify-center text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                className="w-6 h-6 flex items-center justify-center text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
                 <Plus className="h-3 w-3" />
               </button>
@@ -413,9 +413,8 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
             {/* Format Dropdown */}
             <Popover open={formatOpen} onOpenChange={setFormatOpen}>
               <PopoverTrigger asChild>
-                <button className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-lg h-10 px-3 text-sm text-zinc-300 hover:text-white hover:border-zinc-700 transition-colors">
-                  <span className="text-xs text-zinc-400">Formato</span>
-                  <span className="font-medium text-white">{currentFormatLabel}</span>
+                <button className="flex items-center gap-1 bg-zinc-900 border border-zinc-800 rounded-lg h-9 px-2.5 text-sm text-zinc-300 hover:text-white hover:border-zinc-700 transition-colors">
+                  <span className="font-medium text-white text-xs">{currentFormatLabel}</span>
                   <ChevronDown className="h-3 w-3 text-zinc-500" />
                 </button>
               </PopoverTrigger>
@@ -443,7 +442,7 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
 
             {/* Generate Button */}
             <Button
-              className="flex-1 h-10 rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-semibold shadow-lg shadow-emerald-500/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed gap-1.5"
+              className="flex-1 h-9 rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-semibold text-sm shadow-lg shadow-emerald-500/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed gap-1"
               onClick={handleGenerate}
               disabled={isDisabled}
             >
@@ -452,7 +451,7 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
               ) : (
                 <>
                   <span>Gerar</span>
-                  <Play className="h-3.5 w-3.5 fill-current" />
+                  <Play className="h-3 w-3 fill-current" />
                 </>
               )}
             </Button>
