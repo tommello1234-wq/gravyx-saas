@@ -1,44 +1,25 @@
 
 
-## Compra Avulsa de Créditos para Assinantes Ativos
+## Plan: Custom Aspect Ratio Input
 
-### Contexto
-Usuários com plano ativo querem comprar créditos extras sem assinar novamente. Hoje o modal só mostra planos. Vamos adicionar uma seção abaixo dos cards de planos para compra avulsa, visível apenas para quem já tem plano ativo (`tier !== 'free'` e `subscription_status === 'active'`).
+Allow users to type any custom aspect ratio (e.g. `3:2`, `21:9`, `7:5`) in addition to the existing presets.
 
-### Mudanças
+### Changes in `src/components/nodes/ResultNode.tsx`
 
-**1. Tabela `credit_packages` (já existe no banco)**
-- Usar os pacotes já cadastrados na tabela `credit_packages` para exibir as opções de compra avulsa.
-- Criar um hook `useCreditPackages` para buscar os pacotes ativos.
+1. **Add "Custom" option** to `formatOptions` array with value `'custom'`
+2. **Add state** `customRatio` (string, e.g. `"3:2"`) for the custom input
+3. **When "Custom" is selected** in the Popover, show an inline input field (e.g. `W:H` format) with a confirm button inside the popover
+4. **Validate input** — must match pattern `number:number`, both > 0
+5. **Store the custom value** in `aspectRatio` on the node data (e.g. `"3:2"`)
+6. **Update `AspectIcon`** to dynamically calculate rectangle proportions for any `W:H` string, not just the hardcoded presets
 
-**2. `src/hooks/useCreditPackages.ts` (novo)**
-- Query simples na tabela `credit_packages` ordenada por `credits`.
+### Changes in `src/pages/Editor.tsx`
 
-**3. `src/components/BuyCreditsModal.tsx`**
-- Após o grid de planos, se `currentTier !== 'free'`, renderizar seção "Créditos Extras":
-  - Título com ícone: "Precisa de mais créditos?"
-  - Cards horizontais com os pacotes da `credit_packages` (nome, créditos, preço)
-  - Botão "Comprar" em cada pacote que abre o checkout transparente
-- Adicionar estado `selectedPackage` para controlar quando um pacote avulso é selecionado
-- Ao selecionar pacote, abrir `AsaasTransparentCheckout` adaptado para compra avulsa
+7. **Parse custom ratios** in `generateForResult` — if `aspectRatio` is not one of the 4 presets or `'auto'`, parse `W:H` to compute the actual ratio and map it to the closest supported generation format, or pass it directly if the API supports arbitrary ratios
 
-**4. `src/components/AsaasTransparentCheckout.tsx`**
-- Adicionar prop opcional `isOneOff?: boolean` (default false)
-- Quando `isOneOff`, enviar flag `oneOff: true` no body para a edge function
+### UX Flow
 
-**5. `supabase/functions/process-asaas-payment/index.ts`**
-- Adicionar CASE 3: compra avulsa (`oneOff: true`)
-  - Criar cobrança única no Asaas (`/v3/payments`) sem subscription
-  - Bypass do guard de "já tem plano ativo" quando `oneOff` é true
-  - Registrar em `credit_purchases` igual aos outros cases
-  - Não alterar tier/subscription do usuário, apenas adicionar créditos
-
-### Arquivos
-
-| Arquivo | Ação |
-|---------|------|
-| `src/hooks/useCreditPackages.ts` | Criar |
-| `src/components/BuyCreditsModal.tsx` | Modificar — adicionar seção de pacotes avulsos |
-| `src/components/AsaasTransparentCheckout.tsx` | Modificar — suportar modo oneOff |
-| `supabase/functions/process-asaas-payment/index.ts` | Modificar — CASE 3 cobrança avulsa |
+- User opens format dropdown → sees presets (1:1, 4:5, 16:9, 9:16, Auto) + **Personalizado** at the bottom
+- Clicking "Personalizado" reveals a small `W` × `H` input row inside the popover
+- User types values and confirms → popover closes, trigger shows the custom ratio (e.g. "3:2" with a dynamically sized icon)
 
