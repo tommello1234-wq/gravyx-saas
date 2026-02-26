@@ -1,9 +1,9 @@
 import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react';
-import { Sparkles, Download, Pencil, RotateCcw, MoreVertical, Copy, Trash2, Square, RectangleVertical, Smartphone, Loader2 } from 'lucide-react';
+import { Sparkles, Download, Pencil, RotateCcw, MoreVertical, Copy, Trash2, Loader2, Plus, Minus, ChevronDown, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { OutputImageModal, NodeImage } from './OutputImageModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -14,6 +14,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 
 // Events
 export const GENERATE_FOR_RESULT_EVENT = 'editor:generate-for-result';
@@ -34,15 +39,15 @@ interface JobQueueState {
   totalPendingImages: number;
 }
 
-const aspectRatios = [
-  { value: '1:1', label: '1:1', icon: Square },
-  { value: '4:5', label: '4:5', icon: RectangleVertical },
-  { value: '9:16', label: '9:16', icon: Smartphone },
-  { value: '16:9', label: '16:9', icon: RectangleVertical },
+const formatOptions = [
+  { value: '1:1', label: '1:1' },
+  { value: '4:5', label: '4:5' },
+  { value: '16:9', label: '16:9' },
+  { value: '9:16', label: '9:16' },
+  { value: 'auto', label: 'Auto' },
 ];
 
-const quantities = [1, 2, 4];
-
+const MAX_QUANTITY = 5;
 const CREDITS_PER_IMAGE = 1;
 
 // Helper to normalize images to new format
@@ -64,12 +69,13 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
   const nodeData = data as unknown as ResultNodeData;
   const images = normalizeImages(nodeData.images).slice().reverse();
   
-  // Local state for configs
   const [aspectRatio, setAspectRatio] = useState(nodeData.aspectRatio || '1:1');
   const [quantity, setQuantity] = useState(nodeData.quantity || 1);
-  const [label, setLabel] = useState(nodeData.label || 'Resultado');
+  const [label, setLabel] = useState(nodeData.label || 'Resultados');
   const [isEditing, setIsEditing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [formatOpen, setFormatOpen] = useState(false);
   const [jobQueueState, setJobQueueState] = useState<Omit<JobQueueState, 'resultId'>>({
     hasQueuedJobs: false,
     hasProcessingJobs: false,
@@ -79,10 +85,16 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const { profile, isAdmin } = useAuth();
   const { setNodes, setEdges, getNode, getEdges } = useReactFlow();
-  const [selectedImage, setSelectedImage] = useState<NodeImage | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Focus input when editing starts
+  // Reset selectedIndex when images change
+  useEffect(() => {
+    if (images.length > 0 && selectedIndex >= images.length) {
+      setSelectedIndex(0);
+    }
+  }, [images.length, selectedIndex]);
+
+  // Focus input when editing
   useEffect(() => {
     if (isEditing && inputRef.current) {
       inputRef.current.focus();
@@ -90,18 +102,16 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
     }
   }, [isEditing]);
 
-  // Listen for generating state events specific to this node
+  // Listen for generating state
   useEffect(() => {
     const handler = (e: CustomEvent<{ resultId: string; isGenerating: boolean }>) => {
-      if (e.detail.resultId === id) {
-        setIsGenerating(e.detail.isGenerating);
-      }
+      if (e.detail.resultId === id) setIsGenerating(e.detail.isGenerating);
     };
     window.addEventListener(RESULT_GENERATING_STATE_EVENT, handler as EventListener);
     return () => window.removeEventListener(RESULT_GENERATING_STATE_EVENT, handler as EventListener);
   }, [id]);
 
-  // Listen for job queue state events specific to this node
+  // Listen for job queue state
   useEffect(() => {
     const handler = (e: CustomEvent<JobQueueState>) => {
       if (e.detail.resultId === id) {
@@ -116,27 +126,32 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
     return () => window.removeEventListener(RESULT_JOB_QUEUE_STATE_EVENT, handler as EventListener);
   }, [id]);
 
-  const handleAspectChange = useCallback((value: string) => {
-    setAspectRatio(value);
+  const updateNodeData = useCallback((patch: Partial<ResultNodeData>) => {
     setNodes((nodes) =>
       nodes.map((node) =>
-        node.id === id ? { ...node, data: { ...node.data, aspectRatio: value } } : node
+        node.id === id ? { ...node, data: { ...node.data, ...patch } } : node
       )
     );
   }, [id, setNodes]);
 
-  const handleQuantityChange = useCallback((value: number) => {
-    setQuantity(value);
-    setNodes((nodes) =>
-      nodes.map((node) =>
-        node.id === id ? { ...node, data: { ...node.data, quantity: value } } : node
-      )
-    );
-  }, [id, setNodes]);
+  const handleAspectChange = useCallback((value: string) => {
+    setAspectRatio(value);
+    updateNodeData({ aspectRatio: value });
+    setFormatOpen(false);
+  }, [updateNodeData]);
+
+  const handleQuantityChange = useCallback((delta: number) => {
+    setQuantity(prev => {
+      const next = Math.max(1, Math.min(MAX_QUANTITY, prev + delta));
+      updateNodeData({ quantity: next });
+      return next;
+    });
+  }, [updateNodeData]);
 
   const handleReset = useCallback(() => {
     setAspectRatio('1:1');
     setQuantity(1);
+    setSelectedIndex(0);
     setNodes(nodes => nodes.map(n =>
       n.id === id ? { ...n, data: { ...n.data, aspectRatio: '1:1', quantity: 1, images: [] } } : n
     ));
@@ -146,7 +161,6 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
   const handleDuplicate = useCallback(() => {
     const currentNode = getNode(id);
     if (!currentNode) return;
-    
     const currentEdges = getEdges();
     const newId = `${currentNode.type}-${Date.now()}`;
     const newNode = {
@@ -154,17 +168,14 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
       id: newId,
       position: { x: currentNode.position.x + 50, y: currentNode.position.y + 50 },
       selected: false,
-      data: { ...currentNode.data, images: [] } // Don't copy images
+      data: { ...currentNode.data, images: [] }
     };
-    
-    // Recreate input edges (keep connections to prompts/media/gravity)
     const connectedEdges = currentEdges.filter(e => e.target === id);
     const newEdges = connectedEdges.map((edge, i) => ({
       ...edge,
       id: `edge-dup-${Date.now()}-${i}`,
       target: newId,
     }));
-    
     setNodes(nds => [...nds, newNode]);
     setEdges(eds => [...eds, ...newEdges]);
   }, [id, getNode, getEdges, setNodes, setEdges]);
@@ -176,27 +187,26 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
 
   const handleLabelChange = useCallback((newLabel: string) => {
     setLabel(newLabel);
-    setNodes(nodes => nodes.map(n =>
-      n.id === id ? { ...n, data: { ...n.data, label: newLabel } } : n
-    ));
-  }, [id, setNodes]);
+    updateNodeData({ label: newLabel });
+  }, [updateNodeData]);
 
   const handleLabelKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      setIsEditing(false);
-    } else if (e.key === 'Escape') {
-      setLabel(nodeData.label || 'Resultado');
+    if (e.key === 'Enter') setIsEditing(false);
+    else if (e.key === 'Escape') {
+      setLabel(nodeData.label || 'Resultados');
       setIsEditing(false);
     }
   };
 
-  const handleImageClick = (image: NodeImage) => {
-    setSelectedImage(image);
+  const handleImageClick = (index: number) => {
+    setSelectedIndex(index);
+  };
+
+  const handleImageDoubleClick = () => {
     setIsModalOpen(true);
   };
 
   const handleDeleteImage = useCallback(async (imageToDelete: NodeImage) => {
-    // Optimistically remove from UI
     setNodes(nds => nds.map(n => n.id === id ? {
       ...n,
       data: {
@@ -204,14 +214,9 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
         images: normalizeImages((n.data as unknown as ResultNodeData).images).filter(img => img.url !== imageToDelete.url)
       }
     } : n));
-
-    // Persist deletion to database
     try {
       const { supabase } = await import('@/integrations/supabase/client');
-      await supabase
-        .from('generations')
-        .delete()
-        .eq('image_url', imageToDelete.url);
+      await supabase.from('generations').delete().eq('image_url', imageToDelete.url);
     } catch (err) {
       console.error('[ResultNode] Failed to delete image from DB:', err);
     }
@@ -230,12 +235,6 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
     window.URL.revokeObjectURL(downloadUrl);
   };
 
-  const downloadAll = async () => {
-    for (let i = 0; i < images.length; i++) {
-      await downloadImage(images[i].url, i);
-    }
-  };
-
   const handleGenerate = () => {
     window.dispatchEvent(new CustomEvent(GENERATE_FOR_RESULT_EVENT, { 
       detail: { resultId: id } 
@@ -246,22 +245,26 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
   const credits = profile?.credits || 0;
   const hasEnoughCredits = credits >= creditsNeeded;
   const hasActiveSubscription = isAdmin || profile?.subscription_status === 'active';
-  const isDisabled = !hasActiveSubscription || !hasEnoughCredits || isGenerating || jobQueueState.hasQueuedJobs || jobQueueState.hasProcessingJobs;
+  const isBusy = isGenerating || jobQueueState.hasQueuedJobs || jobQueueState.hasProcessingJobs;
+  const isDisabled = !hasActiveSubscription || !hasEnoughCredits || isBusy;
+
+  const selectedImage = images.length > 0 ? images[selectedIndex] || images[0] : null;
+  const currentFormatLabel = formatOptions.find(f => f.value === aspectRatio)?.label || aspectRatio;
 
   return (
     <>
-      <div className="bg-card border border-emerald-500/30 rounded-2xl min-w-[320px] shadow-2xl shadow-emerald-500/10">
+      <div className="bg-[#0a0a0a] border border-emerald-500/20 rounded-2xl w-[380px] shadow-2xl shadow-emerald-500/5 overflow-hidden">
         <Handle 
           type="target" 
           position={Position.Left} 
-          className="!w-4 !h-4 !bg-gradient-to-br !from-emerald-500 !to-teal-600 !border-4 !border-card !-left-2 !shadow-lg" 
+          className="!w-4 !h-4 !bg-gradient-to-br !from-emerald-500 !to-teal-600 !border-4 !border-[#0a0a0a] !-left-2 !shadow-lg" 
         />
 
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border/30 bg-gradient-to-r from-emerald-500/10 to-transparent rounded-t-2xl">
+        <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
-              <Sparkles className="h-5 w-5 text-white" />
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-400/20 to-emerald-600/10 border border-emerald-500/20 flex items-center justify-center">
+              <Sparkles className="h-6 w-6 text-emerald-400" />
             </div>
             <div>
               {isEditing ? (
@@ -276,184 +279,191 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
                   onPointerDown={e => e.stopPropagation()}
                 />
               ) : (
-                <h3 className="font-semibold text-primary-foreground">{label}</h3>
+                <h3 className="font-semibold text-white text-base">{label}</h3>
               )}
-              <p className="text-xs text-muted-foreground">
-                {images.length > 0 ? `${images.length} imagen${images.length > 1 ? 's' : ''}` : 'Configure e gere'}
+              <p className="text-xs text-emerald-400/70">
+                {images.length > 0 ? `${images.length} Imagen${images.length > 1 ? 's' : ''}` : 'Nenhuma imagem'}
               </p>
             </div>
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50">
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-500 hover:text-white hover:bg-white/5">
                 <MoreVertical className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">
               <DropdownMenuItem onClick={handleDuplicate}>
-                <Copy className="h-4 w-4 mr-2" />
-                Duplicar
+                <Copy className="h-4 w-4 mr-2" /> Duplicar
               </DropdownMenuItem>
               <DropdownMenuItem onClick={handleReset}>
-                <RotateCcw className="h-4 w-4 mr-2" />
-                Resetar
+                <RotateCcw className="h-4 w-4 mr-2" /> Resetar
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setIsEditing(true)}>
-                <Pencil className="h-4 w-4 mr-2" />
-                Renomear
+                <Pencil className="h-4 w-4 mr-2" /> Renomear
               </DropdownMenuItem>
+              {selectedImage && (
+                <DropdownMenuItem onClick={() => downloadImage(selectedImage.url, selectedIndex)}>
+                  <Download className="h-4 w-4 mr-2" /> Download
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleDelete} className="text-destructive focus:text-destructive">
-                <Trash2 className="h-4 w-4 mr-2" />
-                Excluir
+                <Trash2 className="h-4 w-4 mr-2" /> Excluir
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
 
-        {/* Content */}
-        <div className="p-4 space-y-4">
-          {/* Aspect Ratio */}
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-muted-foreground">Proporção</label>
-            <div className="grid grid-cols-4 gap-1.5">
-              {aspectRatios.map(ar => {
-                const Icon = ar.icon;
-                return (
+        {/* Separator */}
+        <div className="h-px bg-emerald-500/20 mx-2" />
+
+        {/* Preview Area */}
+        <div className="p-3">
+          <div 
+            className="relative rounded-xl overflow-hidden bg-zinc-900/80 border border-zinc-800/50 cursor-pointer"
+            onDoubleClick={handleImageDoubleClick}
+            onPointerDown={e => e.stopPropagation()}
+          >
+            {selectedImage ? (
+              <img 
+                src={selectedImage.url} 
+                alt="Preview" 
+                className="w-full h-auto object-contain"
+                draggable={false}
+              />
+            ) : (
+              <div className="aspect-square flex flex-col items-center justify-center gap-2">
+                <Sparkles className="h-8 w-8 text-emerald-500/20" />
+                <p className="text-xs text-zinc-600">Sua imagem aparecerá aqui</p>
+              </div>
+            )}
+
+            {/* Loading overlay */}
+            {isBusy && (
+              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center gap-2">
+                <Loader2 className="h-8 w-8 text-emerald-400 animate-spin" />
+                <p className="text-xs text-emerald-400 font-medium">
+                  {jobQueueState.hasProcessingJobs 
+                    ? `Gerando ${jobQueueState.totalPendingImages}...` 
+                    : jobQueueState.hasQueuedJobs 
+                      ? `Na fila (${jobQueueState.totalPendingImages})...` 
+                      : 'Enviando...'}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Thumbnails */}
+        {images.length > 1 && (
+          <div className="px-3 pb-2 nowheel nodrag" onWheel={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
+            <ScrollArea className="w-full nowheel" type="scroll">
+              <div className="flex gap-1.5 pb-1">
+                {images.map((image, index) => (
                   <button
-                    key={ar.value}
-                    onClick={() => handleAspectChange(ar.value)}
+                    key={`${image.url}-${index}`}
+                    onClick={() => handleImageClick(index)}
                     className={cn(
-                      'flex flex-col items-center gap-1 p-2 rounded-lg border transition-all text-xs',
-                      aspectRatio === ar.value
-                        ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 shadow-lg shadow-emerald-500/20'
-                        : 'bg-muted/20 border-border/50 text-muted-foreground hover:border-border hover:bg-muted/40'
+                      'flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all',
+                      selectedIndex === index
+                        ? 'border-emerald-500 shadow-lg shadow-emerald-500/30'
+                        : 'border-zinc-700/50 hover:border-zinc-600 opacity-70 hover:opacity-100'
                     )}
                   >
-                    <Icon className={cn('h-4 w-4', ar.value === '16:9' && 'rotate-90')} />
-                    <span className="font-medium">{ar.label}</span>
+                    <img 
+                      src={image.url} 
+                      alt={`Thumb ${index + 1}`} 
+                      className="w-full h-full object-cover"
+                      draggable={false}
+                    />
                   </button>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+              <ScrollBar orientation="horizontal" className="h-1" />
+            </ScrollArea>
           </div>
+        )}
 
-          {/* Quantity */}
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-muted-foreground">Quantidade</label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {quantities.map(q => (
-                <button
-                  key={q}
-                  onClick={() => handleQuantityChange(q)}
-                  className={cn(
-                    'flex flex-col items-center gap-0.5 p-2 rounded-lg border transition-all',
-                    quantity === q
-                      ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 shadow-lg shadow-emerald-500/20'
-                      : 'bg-muted/20 border-border/50 text-muted-foreground hover:border-border hover:bg-muted/40'
-                  )}
-                >
-                  <span className="text-lg font-bold">{q}</span>
-                  <span className="text-xs">{q === 1 ? 'imagem' : 'imagens'}</span>
+        {/* Controls Bar */}
+        <div className="px-3 pb-3 pt-1">
+          <div className="flex items-center gap-2">
+            {/* Quantity Stepper */}
+            <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-lg h-10 px-1">
+              <span className="text-xs text-zinc-400 px-2 whitespace-nowrap">Quantidade</span>
+              <button
+                onClick={() => handleQuantityChange(-1)}
+                disabled={quantity <= 1}
+                className="w-7 h-7 flex items-center justify-center text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <Minus className="h-3 w-3" />
+              </button>
+              <span className="w-6 text-center text-sm font-semibold text-white">{quantity}</span>
+              <button
+                onClick={() => handleQuantityChange(1)}
+                disabled={quantity >= MAX_QUANTITY}
+                className="w-7 h-7 flex items-center justify-center text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <Plus className="h-3 w-3" />
+              </button>
+            </div>
+
+            {/* Format Dropdown */}
+            <Popover open={formatOpen} onOpenChange={setFormatOpen}>
+              <PopoverTrigger asChild>
+                <button className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-lg h-10 px-3 text-sm text-zinc-300 hover:text-white hover:border-zinc-700 transition-colors">
+                  <span className="text-xs text-zinc-400">Formato</span>
+                  <span className="font-medium text-white">{currentFormatLabel}</span>
+                  <ChevronDown className="h-3 w-3 text-zinc-500" />
                 </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Images Grid */}
-          <div className="nowheel nodrag" onWheel={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
-            {images.length > 0 ? (
-              <div className="space-y-3">
-                {images.length > 6 ? (
-                  <ScrollArea className="h-[160px] nowheel nodrag" onWheel={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
-                    <div className="grid grid-cols-2 gap-2 pr-2">
-                      {images.map((image, index) => (
-                        <div
-                          key={`${image.url}-${index}`}
-                          className="relative group rounded-lg overflow-hidden cursor-pointer border border-border/30 hover:border-emerald-500/50 transition-all"
-                          onClick={() => handleImageClick(image)}
-                        >
-                          <img src={image.url} alt={`Generated ${index + 1}`} className="w-full h-20 object-cover" />
-                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <span className="text-xs text-white font-medium">Ver</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    {images.map((image, index) => (
-                      <div
-                        key={`${image.url}-${index}`}
-                        className="relative group rounded-lg overflow-hidden cursor-pointer border border-border/30 hover:border-emerald-500/50 transition-all"
-                        onClick={() => handleImageClick(image)}
-                      >
-                        <img src={image.url} alt={`Generated ${index + 1}`} className="w-full h-20 object-cover" />
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <span className="text-xs text-white font-medium">Ver</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {images.length > 1 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full rounded-lg border-border/50 bg-card text-foreground hover:bg-muted text-xs"
-                    onClick={downloadAll}
+              </PopoverTrigger>
+              <PopoverContent 
+                className="w-32 p-1 bg-zinc-900 border-zinc-700" 
+                align="start"
+                onPointerDown={e => e.stopPropagation()}
+              >
+                {formatOptions.map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => handleAspectChange(opt.value)}
+                    className={cn(
+                      'w-full text-left px-3 py-1.5 rounded text-sm transition-colors',
+                      aspectRatio === opt.value
+                        ? 'bg-emerald-500/20 text-emerald-400'
+                        : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
+                    )}
                   >
-                    <Download className="h-3 w-3 mr-1.5" />
-                    Baixar Todas ({images.length})
-                  </Button>
-                )}
-              </div>
-            ) : (
-              <div className="border border-dashed border-border/30 rounded-lg p-4 text-center bg-muted/5">
-                <Sparkles className="h-6 w-6 text-emerald-500/30 mx-auto mb-2" />
-                <p className="text-xs text-muted-foreground">As imagens aparecerão aqui</p>
-              </div>
-            )}
+                    {opt.label}
+                  </button>
+                ))}
+              </PopoverContent>
+            </Popover>
+
+            {/* Generate Button */}
+            <Button
+              className="flex-1 h-10 rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-semibold shadow-lg shadow-emerald-500/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed gap-1.5"
+              onClick={handleGenerate}
+              disabled={isDisabled}
+            >
+              {isBusy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <>
+                  <span>Gerar</span>
+                  <Play className="h-3.5 w-3.5 fill-current" />
+                </>
+              )}
+            </Button>
           </div>
 
-          {/* Generate Button */}
-          <Button
-            className="w-full h-11 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 hover:from-emerald-500 hover:via-teal-500 hover:to-emerald-500 text-white font-semibold shadow-lg shadow-emerald-500/30 transition-all hover:shadow-xl hover:shadow-emerald-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
-            onClick={handleGenerate}
-            disabled={isDisabled}
-          >
-            {jobQueueState.hasProcessingJobs ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Gerando {jobQueueState.totalPendingImages}...
-              </>
-            ) : jobQueueState.hasQueuedJobs ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Na fila ({jobQueueState.totalPendingImages})...
-              </>
-            ) : isGenerating ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Enviando...
-              </>
-            ) : (
-              <>
-                <Sparkles className="h-4 w-4 mr-2" />
-                Gerar {quantity} {quantity === 1 ? 'Imagem' : 'Imagens'}
-              </>
-            )}
-          </Button>
-
+          {/* Credits info */}
           <p className={cn(
-            "text-center text-xs",
-            !hasActiveSubscription ? "text-destructive" : hasEnoughCredits ? "text-muted-foreground" : "text-destructive"
+            "text-center text-[10px] mt-1.5",
+            !hasActiveSubscription ? "text-destructive" : hasEnoughCredits ? "text-zinc-600" : "text-destructive"
           )}>
             {!hasActiveSubscription 
-              ? 'Assine um plano para gerar imagens' 
-              : `${creditsNeeded} ${creditsNeeded === 1 ? 'crédito' : 'créditos'} • ${credits} disponíveis`}
+              ? 'Assine um plano para gerar' 
+              : `${creditsNeeded} crédito${creditsNeeded > 1 ? 's' : ''} • ${credits} disponíveis`}
           </p>
         </div>
       </div>
@@ -469,4 +479,3 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
 });
 
 ResultNode.displayName = 'ResultNode';
-
