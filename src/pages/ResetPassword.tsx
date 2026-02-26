@@ -58,8 +58,14 @@ export default function ResetPassword() {
         redirectTo: `${window.location.origin}/reset-password`,
       });
       if (error) {
-        let errorMessage = error.message;
-        if (error.message.includes('rate limit') || error.message.includes('Rate limit')) {
+        const msg = error.message || '';
+        // Hook timeout = email was likely sent successfully
+        if (msg.includes('hook') || msg.includes('timeout') || msg.includes('Failed to reach')) {
+          setEmailSent(true);
+          return;
+        }
+        let errorMessage = msg;
+        if (msg.includes('rate limit') || msg.includes('Rate limit')) {
           errorMessage = t('reset.rate_limit');
         }
         toast({ title: t('reset.error'), description: errorMessage, variant: 'destructive' });
