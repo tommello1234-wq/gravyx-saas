@@ -687,19 +687,10 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
       }
     }
 
-    // Map custom ratios to closest supported format
-    const knownRatios = ['1:1', '4:5', '16:9', '9:16'];
-    if (!knownRatios.includes(aspectRatio)) {
-      const parts = aspectRatio.split(':').map(Number);
-      if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) {
-        const r = parts[0] / parts[1];
-        if (r > 1.6) aspectRatio = '16:9';
-        else if (r < 0.7) aspectRatio = '9:16';
-        else if (r < 0.85) aspectRatio = '4:5';
-        else aspectRatio = '1:1';
-      } else {
-        aspectRatio = '1:1';
-      }
+    // Validate aspect ratio format (N:N with positive numbers), fallback to 1:1
+    const ratioParts = aspectRatio.split(':').map(Number);
+    if (ratioParts.length !== 2 || ratioParts[0] <= 0 || ratioParts[1] <= 0 || ratioParts.some(isNaN)) {
+      aspectRatio = '1:1';
     }
 
     if (!profile || profile.credits < creditsNeeded) {
