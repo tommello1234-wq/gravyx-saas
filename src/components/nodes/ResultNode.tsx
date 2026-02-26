@@ -39,6 +39,32 @@ interface JobQueueState {
   totalPendingImages: number;
 }
 
+// Aspect ratio icon component
+const AspectIcon = ({ ratio, className = '' }: { ratio: string; className?: string }) => {
+  const sizes: Record<string, { w: number; h: number }> = {
+    '1:1': { w: 10, h: 10 },
+    '4:5': { w: 9, h: 11 },
+    '16:9': { w: 14, h: 8 },
+    '9:16': { w: 7, h: 12 },
+    'auto': { w: 10, h: 10 },
+  };
+  const s = sizes[ratio] || sizes['1:1'];
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" className={className}>
+      <rect
+        x={(16 - s.w) / 2}
+        y={(16 - s.h) / 2}
+        width={s.w}
+        height={s.h}
+        rx="1.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
+};
+
 const formatOptions = [
   { value: '1:1', label: '1:1' },
   { value: '4:5', label: '4:5' },
@@ -413,10 +439,11 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
             {/* Format Dropdown */}
             <Popover open={formatOpen} onOpenChange={setFormatOpen}>
               <PopoverTrigger asChild>
-                <button className="flex items-center gap-1 bg-zinc-900 border border-zinc-800 rounded-lg h-9 px-2.5 text-sm text-zinc-300 hover:text-white hover:border-zinc-700 transition-colors">
-                  <span className="font-medium text-white text-xs">{currentFormatLabel}</span>
-                  <ChevronDown className="h-3 w-3 text-zinc-500" />
-                </button>
+                <button className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-lg h-9 px-2.5 text-sm text-zinc-300 hover:text-white hover:border-zinc-700 transition-colors">
+                   <AspectIcon ratio={aspectRatio} className="text-zinc-400" />
+                   <span className="font-medium text-white text-xs">{currentFormatLabel}</span>
+                   <ChevronDown className="h-3 w-3 text-zinc-500" />
+                 </button>
               </PopoverTrigger>
               <PopoverContent 
                 className="w-32 p-1 bg-zinc-900 border-zinc-700" 
@@ -428,12 +455,13 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
                     key={opt.value}
                     onClick={() => handleAspectChange(opt.value)}
                     className={cn(
-                      'w-full text-left px-3 py-1.5 rounded text-sm transition-colors',
+                      'w-full flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors',
                       aspectRatio === opt.value
                         ? 'bg-emerald-500/20 text-emerald-400'
                         : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
                     )}
                   >
+                    <AspectIcon ratio={opt.value} />
                     {opt.label}
                   </button>
                 ))}
