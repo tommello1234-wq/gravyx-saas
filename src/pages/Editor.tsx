@@ -657,14 +657,30 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
         connectedMedia.push(...gravityMedias);
       }
 
-      // Try to detect aspect ratio from first connected media with dimensions
+      // Try to detect aspect ratio from first connected media image
       const firstMedia = connectedMedia[0];
       if (firstMedia) {
-        const mediaData = firstMedia.data as { aspectRatio?: string };
-        if (mediaData.aspectRatio && ['1:1', '4:5', '16:9', '9:16'].includes(mediaData.aspectRatio)) {
-          aspectRatio = mediaData.aspectRatio;
+        const mediaUrl = (firstMedia.data as { url?: string }).url;
+        if (mediaUrl) {
+          try {
+            const detectedRatio = await new Promise<string>((resolve) => {
+              const img = new window.Image();
+              img.onload = () => {
+                const r = img.naturalWidth / img.naturalHeight;
+                if (r > 1.6) resolve('16:9');
+                else if (r < 0.7) resolve('9:16');
+                else if (r < 0.85) resolve('4:5');
+                else resolve('1:1');
+              };
+              img.onerror = () => resolve('1:1');
+              img.src = mediaUrl;
+            });
+            aspectRatio = detectedRatio;
+          } catch {
+            aspectRatio = '1:1';
+          }
         } else {
-          aspectRatio = '1:1'; // fallback
+          aspectRatio = '1:1';
         }
       } else {
         aspectRatio = '1:1'; // no media connected
