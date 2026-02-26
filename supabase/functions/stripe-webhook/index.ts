@@ -102,7 +102,7 @@ async function findOrCreateProfile(
   try {
     const resend = new Resend(Deno.env.get("RESEND_API_KEY") as string);
     await resend.emails.send({
-      from: "Gravyx <noreply@upwardacademy.com.br>",
+      from: "Gravyx <noreply@gravyx.com.br>",
       to: [normalizedEmail],
       subject: "Sua conta Gravyx foi criada! 🚀",
       html: `<p>Olá! Sua conta foi criada.<br>Email: ${normalizedEmail}<br>Senha: ${DEFAULT_PASSWORD}<br><a href="${LOGIN_URL}">Acessar</a></p>`,

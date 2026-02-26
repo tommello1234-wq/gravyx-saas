@@ -121,7 +121,7 @@ async function createAccountAndProfile(
     const html = buildWelcomeCredentialsHtml(normalizedEmail, DEFAULT_PASSWORD, LOGIN_URL);
 
     const { error: emailError } = await resend.emails.send({
-      from: 'Gravyx <noreply@upwardacademy.com.br>',
+      from: 'Gravyx <noreply@gravyx.com.br>',
       to: [normalizedEmail],
       subject: 'Sua conta Gravyx foi criada! 🚀',
       html,
