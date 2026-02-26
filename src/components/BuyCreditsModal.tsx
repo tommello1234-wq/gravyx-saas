@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Sparkles, Check, Crown, Zap, Rocket, ArrowLeft, Loader2 } from 'lucide-react';
+import { Sparkles, Check, Crown, Zap, Rocket, ArrowLeft, Loader2, Plus } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { PLAN_LIMITS, type TierKey } from '@/lib/plan-limits';
 import { AsaasTransparentCheckout } from '@/components/AsaasTransparentCheckout';
 import { usePlanPricing, type PlanPricingRow } from '@/hooks/usePlanPricing';
+import { useCreditPackages, type CreditPackage } from '@/hooks/useCreditPackages';
 
 interface BuyCreditsModalProps { open: boolean; onOpenChange: (open: boolean) => void; }
 type BillingCycle = 'monthly' | 'annual';
@@ -58,7 +59,10 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
   const currentTier = (profile?.tier as TierKey) || 'free';
   const [cycle, setCycle] = useState<BillingCycle>('annual');
   const [selectedPlan, setSelectedPlan] = useState<{ tier: TierKey; cycle: BillingCycle } | null>(null);
+  const [selectedPackage, setSelectedPackage] = useState<CreditPackage | null>(null);
   const { data: pricingRows, isLoading } = usePlanPricing();
+  const { data: creditPackages } = useCreditPackages();
+  const isActiveSubscriber = currentTier !== 'free' && profile?.subscription_status === 'active';
 
   const plans = pricingRows ? buildPlanData(pricingRows) : [];
 
@@ -67,11 +71,40 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
   };
 
   const handleClose = (value: boolean) => {
-    if (!value) setSelectedPlan(null);
+    if (!value) { setSelectedPlan(null); setSelectedPackage(null); }
     onOpenChange(value);
   };
 
-  // Transparent checkout view
+  // Transparent checkout view — one-off package
+  if (selectedPackage) {
+    return (
+      <Dialog open={open} onOpenChange={handleClose}>
+        <DialogContent className="max-w-lg bg-[hsl(220,20%,8%)] border-border/50 p-0 overflow-hidden max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="p-6 pb-2">
+            <div className="flex items-center gap-3">
+              <Button variant="ghost" size="icon" onClick={() => setSelectedPackage(null)} className="h-8 w-8">
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+              <DialogTitle className="text-lg text-foreground">Comprar {selectedPackage.name}</DialogTitle>
+            </div>
+          </DialogHeader>
+          <div className="px-6 pb-6">
+            <AsaasTransparentCheckout
+              tier={currentTier as TierKey}
+              cycle="monthly"
+              price={Number(selectedPackage.price_brl)}
+              credits={selectedPackage.credits}
+              planLabel={selectedPackage.name}
+              onSuccess={() => handleClose(false)}
+              isOneOff
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  // Transparent checkout view — plan subscription
   if (selectedPlan) {
     const plan = plans.find(p => p.tier === selectedPlan.tier);
     if (!plan) return null;
@@ -186,6 +219,32 @@ export function BuyCreditsModal({ open, onOpenChange }: BuyCreditsModalProps) {
                 </motion.div>
               );
             })}
+          </div>
+        )}
+
+        {/* One-off credit packages for active subscribers */}
+        {isActiveSubscriber && creditPackages && creditPackages.length > 0 && (
+          <div className="px-6 pb-2">
+            <div className="border-t border-border/30 pt-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Plus className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold text-foreground">Precisa de mais créditos?</h3>
+                <span className="text-xs text-muted-foreground ml-1">Compra avulsa</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {creditPackages.map((pkg) => (
+                  <motion.div key={pkg.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                    className="rounded-xl border border-border/40 bg-[hsl(220,15%,11%)] p-4 flex flex-col items-center gap-2 hover:border-primary/40 transition-colors">
+                    <span className="text-2xl font-bold text-foreground">{pkg.credits}</span>
+                    <span className="text-xs text-muted-foreground">créditos</span>
+                    <span className="text-lg font-semibold text-primary">R$ {Number(pkg.price_brl).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    <Button variant="outline" size="sm" className="w-full rounded-lg mt-1" onClick={() => setSelectedPackage(pkg)}>
+                      Comprar
+                    </Button>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 

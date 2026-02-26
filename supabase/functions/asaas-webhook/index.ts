@@ -50,6 +50,12 @@ function parseTierFromReference(ref: string): { tier: string; userId: string; cy
   return null;
 }
 
+function parseOneOffReference(ref: string): { userId: string } | null {
+  const m = ref.match(/^gravyx_oneoff_([^_]+)_\d+$/);
+  if (m) return { userId: m[1] };
+  return null;
+}
+
 // --- Email helper ---
 async function sendEmail(to: string, subject: string, component: React.ReactElement) {
   try {
@@ -133,9 +139,65 @@ Deno.serve(async (req: Request) => {
   logStep("Processing event", { event, externalReference });
 
   const parsed = parseTierFromReference(externalReference);
+  const parsedOneOff = parseOneOffReference(externalReference);
 
   // --- PAYMENT_CONFIRMED / PAYMENT_RECEIVED ---
   if (event === "PAYMENT_CONFIRMED" || event === "PAYMENT_RECEIVED") {
+    // Handle one-off credit purchases (PIX confirmed via webhook)
+    if (parsedOneOff) {
+      const { userId } = parsedOneOff;
+      const paymentId = (payment.id as string) || `asaas_oneoff_${Date.now()}`;
+
+      const { data: existing } = await supabase
+        .from("credit_purchases")
+        .select("id")
+        .eq("transaction_id", paymentId)
+        .maybeSingle();
+
+      if (existing) {
+        logStep("One-off already processed", { paymentId });
+        await logWebhook(supabase, event, body, true, "One-off already processed");
+        return new Response("Already processed", { status: 200, headers: corsHeaders });
+      }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("user_id, credits, email")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (!profile) {
+        await logWebhook(supabase, event, body, false, `User not found: ${userId}`);
+        return new Response("User not found", { status: 200, headers: corsHeaders });
+      }
+
+      // Determine credits from payment description (format: "Pacote avulso de X créditos")
+      const desc = (payment.description as string) || "";
+      const creditsMatch = desc.match(/(\d+)\s*créditos/);
+      const creditsToAdd = creditsMatch ? parseInt(creditsMatch[1]) : 0;
+
+      if (creditsToAdd > 0) {
+        await supabase.rpc("increment_credits", { uid: userId, amount: creditsToAdd });
+
+        await supabase.from("credit_purchases").insert({
+          user_id: userId,
+          transaction_id: paymentId,
+          product_id: `asaas_oneoff_${creditsToAdd}`,
+          credits_added: creditsToAdd,
+          amount_paid: Math.round(((payment.value as number) || 0) * 100),
+          customer_email: profile.email,
+          raw_payload: body,
+        });
+
+        logStep("One-off credits added via webhook", { userId, creditsToAdd });
+      }
+
+      await logWebhook(supabase, event, body, true);
+      return new Response(JSON.stringify({ success: true, action: "oneoff_credits_added" }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (!parsed) {
       logStep("Unknown externalReference, ignoring", { externalReference });
       await logWebhook(supabase, event, body, false, `Unknown externalReference: ${externalReference}`);

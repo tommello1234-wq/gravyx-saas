@@ -18,6 +18,7 @@ interface AsaasTransparentCheckoutProps {
   credits: number;
   planLabel: string;
   onSuccess: () => void;
+  isOneOff?: boolean;
 }
 
 type CheckoutState = 'form' | 'processing' | 'pix-waiting' | 'success' | 'error';
@@ -37,7 +38,7 @@ const maskPhone = (v: string) => {
 };
 const maskExpiry = (v: string) => v.replace(/\D/g, '').slice(0, 4).replace(/(\d{2})(\d{0,2})/, '$1/$2');
 
-export function AsaasTransparentCheckout({ tier, cycle, price, credits, planLabel, onSuccess }: AsaasTransparentCheckoutProps) {
+export function AsaasTransparentCheckout({ tier, cycle, price, credits, planLabel, onSuccess, isOneOff = false }: AsaasTransparentCheckoutProps) {
   const { refreshProfile } = useAuth();
   const [state, setState] = useState<CheckoutState>('form');
   const [tab, setTab] = useState<'pix' | 'card'>('pix');
@@ -176,7 +177,7 @@ export function AsaasTransparentCheckout({ tier, cycle, price, credits, planLabe
     setErrorMsg('');
     try {
       const { data, error } = await supabase.functions.invoke('process-asaas-payment', {
-        body: { tier, cycle, paymentMethod: 'PIX', cpfCnpj: cpfCnpj.replace(/\D/g, ''), couponCode: couponApplied?.code || undefined },
+        body: { tier, cycle, paymentMethod: 'PIX', cpfCnpj: cpfCnpj.replace(/\D/g, ''), couponCode: couponApplied?.code || undefined, ...(isOneOff ? { oneOff: true, price: effectivePrice, credits } : {}) },
       });
       if (error) throw new Error(error.message);
       if (!data?.success) throw new Error(data?.error || 'Erro ao gerar PIX');
@@ -215,6 +216,7 @@ export function AsaasTransparentCheckout({ tier, cycle, price, credits, planLabe
           tier, cycle, paymentMethod: 'CREDIT_CARD',
           installmentCount: parseInt(installments),
           couponCode: couponApplied?.code || undefined,
+          ...(isOneOff ? { oneOff: true, price: effectivePrice, credits } : {}),
           creditCard: {
             holderName: cardName,
             number: cardDigits,
