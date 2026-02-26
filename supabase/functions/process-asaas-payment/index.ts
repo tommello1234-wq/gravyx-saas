@@ -160,25 +160,104 @@ Deno.serve(async (req: Request) => {
 
     // --- Parse & validate ---
     const body = await req.json();
-    const { tier, cycle, paymentMethod, installmentCount, creditCard, creditCardHolderInfo, remoteIp, couponCode } = body;
+    const { tier, cycle, paymentMethod, installmentCount, creditCard, creditCardHolderInfo, remoteIp, couponCode, oneOff } = body;
 
     if (cycle !== "monthly" && cycle !== "annual") return new Response(JSON.stringify({ error: "Invalid cycle" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     if (paymentMethod !== "PIX" && paymentMethod !== "CREDIT_CARD") return new Response(JSON.stringify({ error: "Invalid paymentMethod" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
     const supabaseAdmin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-    // --- Guard: block if user already has an active paid subscription ---
-    const { data: currentProfile } = await supabaseAdmin
-      .from("profiles")
-      .select("tier, subscription_status, asaas_subscription_id")
-      .eq("user_id", userId)
-      .maybeSingle();
+    // --- Guard: block if user already has an active paid subscription (skip for one-off) ---
+    if (!oneOff) {
+      const { data: currentProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("tier, subscription_status, asaas_subscription_id")
+        .eq("user_id", userId)
+        .maybeSingle();
 
-    if (currentProfile && currentProfile.subscription_status === "active" && currentProfile.tier !== "free") {
-      log("Blocked duplicate subscription", { userId, currentTier: currentProfile.tier });
+      if (currentProfile && currentProfile.subscription_status === "active" && currentProfile.tier !== "free") {
+        log("Blocked duplicate subscription", { userId, currentTier: currentProfile.tier });
+        return new Response(JSON.stringify({
+          error: "Você já possui um plano ativo. Cancele o plano atual antes de assinar outro.",
+        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+    }
+
+    // ============================================================
+    // CASE 3: One-off credit package purchase
+    // ============================================================
+    if (oneOff) {
+      const priceReais = body.price || 0;
+      const creditsToAdd = body.credits || 0;
+      const cpfCnpj = creditCardHolderInfo?.cpfCnpj || body.cpfCnpj || "";
+      const holderName = creditCardHolderInfo?.name || creditCard?.holderName || userEmail.split("@")[0];
+      const customerId = await ensureCustomer(userEmail, holderName, cpfCnpj);
+
+      log("Processing one-off purchase", { userId, priceReais, creditsToAdd, paymentMethod });
+
+      const description = `GravyX - Pacote avulso de ${creditsToAdd} créditos`;
+      const externalReference = `gravyx_oneoff_${userId}_${Date.now()}`;
+
+      if (paymentMethod === "PIX") {
+        // Create single PIX payment
+        const payment = await asaasRequest("/v3/payments", "POST", {
+          customer: customerId,
+          billingType: "PIX",
+          value: priceReais,
+          dueDate: nextDueDateStr(),
+          description,
+          externalReference,
+          notifications: { disabled: true },
+        });
+        log("One-off PIX payment created", { id: payment.id });
+
+        const pixData = await asaasRequest(`/v3/payments/${payment.id}/pixQrCode`, "GET");
+
+        return new Response(JSON.stringify({
+          success: true, method: "PIX", paymentId: payment.id,
+          pixQrCode: pixData.encodedImage, pixCopyPaste: pixData.payload,
+          expirationDate: pixData.expirationDate, totalValue: priceReais,
+        }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // Credit card one-off
+      if (!creditCard || !creditCardHolderInfo) {
+        return new Response(JSON.stringify({ error: "Card data required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      const payment = await asaasRequest("/v3/payments", "POST", {
+        customer: customerId,
+        billingType: "CREDIT_CARD",
+        value: priceReais,
+        dueDate: nextDueDateStr(),
+        description,
+        externalReference,
+        notifications: { disabled: true },
+        ...buildCreditCardFields(creditCard, creditCardHolderInfo, userEmail, remoteIp),
+      });
+      log("One-off card payment created", { id: payment.id, status: payment.status });
+
+      if (payment.status === "CONFIRMED" || payment.status === "RECEIVED") {
+        // Add credits without changing tier/subscription
+        await supabaseAdmin.rpc("increment_credits", { uid: userId, amount: creditsToAdd });
+
+        await supabaseAdmin.from("credit_purchases").insert({
+          user_id: userId, transaction_id: payment.id,
+          product_id: `asaas_oneoff_${creditsToAdd}`, credits_added: creditsToAdd,
+          amount_paid: Math.round(priceReais * 100), customer_email: userEmail,
+          raw_payload: { payment_id: payment.id, oneOff: true, credits: creditsToAdd, method: "CREDIT_CARD" },
+        });
+
+        log("One-off credits added", { userId, creditsToAdd });
+        return new Response(JSON.stringify({ success: true, method: "CREDIT_CARD", status: "CONFIRMED", credits: creditsToAdd }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       return new Response(JSON.stringify({
-        error: "Você já possui um plano ativo. Cancele o plano atual antes de assinar outro.",
-      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        success: false, method: "CREDIT_CARD", status: payment.status,
+        message: "Pagamento não aprovado. Verifique os dados do cartão.",
+      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // Fetch pricing from DB
