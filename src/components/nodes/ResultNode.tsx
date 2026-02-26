@@ -336,16 +336,20 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
             {/* Main preview */}
             {previewImage ? (
               <div
-                className="relative rounded-xl overflow-hidden cursor-pointer border border-border/30 hover:border-emerald-500/50 transition-all mb-3"
+                className="relative rounded-xl overflow-hidden cursor-pointer border border-border/30 hover:border-emerald-500/50 transition-all mb-3 bg-black/40"
                 onClick={() => handleImageClick(previewImage)}
               >
-                <img src={previewImage.url} alt="Preview" className="w-full h-[200px] object-cover" />
+                <img 
+                  src={previewImage.url} 
+                  alt="Preview" 
+                  className="w-full h-auto object-contain max-h-[400px]" 
+                />
                 <div className="absolute inset-0 bg-black/30 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
                   <span className="text-xs text-white font-medium">Ver</span>
                 </div>
               </div>
             ) : (
-              <div className="border-2 border-dashed border-border/30 rounded-xl p-6 text-center bg-muted/10 mb-3">
+              <div className="border-2 border-dashed border-border/30 rounded-xl p-6 text-center bg-black/20 mb-3">
                 <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto mb-3">
                   <Sparkles className="h-6 w-6 text-emerald-500/50" />
                 </div>
