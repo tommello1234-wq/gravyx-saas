@@ -68,8 +68,8 @@ export function AsaasTransparentCheckout({ tier, cycle, price, credits, planLabe
   const [cardCvv, setCardCvv] = useState('');
   const [holderName, setHolderName] = useState('');
   const [cpfCnpj, setCpfCnpj] = useState('');
-  const [cep, setCep] = useState('');
-  const [addressNumber, setAddressNumber] = useState('');
+  const [cep] = useState('00000000');
+  const [addressNumber] = useState('S/N');
   const [phone, setPhone] = useState('');
   const [installments, setInstallments] = useState('1');
 
@@ -204,7 +204,7 @@ export function AsaasTransparentCheckout({ tier, cycle, price, credits, planLabe
     if (cardCvv.length < 3) { toast.error('CVV inválido'); return; }
     if (!cardName.trim()) { toast.error('Nome no cartão obrigatório'); return; }
     if (cpfDigits.length < 11) { toast.error('CPF/CNPJ inválido'); return; }
-    if (cep.replace(/\D/g, '').length < 8) { toast.error('CEP inválido'); return; }
+    
     if (!phone.replace(/\D/g, '')) { toast.error('Telefone obrigatório'); return; }
 
     setState('processing');
@@ -457,18 +457,6 @@ export function AsaasTransparentCheckout({ tier, cycle, price, credits, planLabe
               <Label className="text-xs text-muted-foreground">CPF/CNPJ</Label>
               <Input placeholder="000.000.000-00" value={cpfCnpj} onChange={e => setCpfCnpj(maskCpfCnpj(e.target.value))}
                 className="bg-muted/30 border-border/40" />
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-2 space-y-1.5">
-                <Label className="text-xs text-muted-foreground">CEP</Label>
-                <Input placeholder="00000-000" value={cep} onChange={e => setCep(maskCep(e.target.value))}
-                  className="bg-muted/30 border-border/40 font-mono" />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Nº</Label>
-                <Input placeholder="123" value={addressNumber} onChange={e => setAddressNumber(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  className="bg-muted/30 border-border/40" />
-              </div>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Telefone</Label>
