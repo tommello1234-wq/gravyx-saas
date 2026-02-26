@@ -200,7 +200,7 @@ Deno.serve(async (req) => {
     console.log('[send-auth-email] Sending email to:', user.email, 'subject:', subject)
 
     const { error } = await resend.emails.send({
-      from: 'Gravyx <noreply@upwardacademy.com.br>',
+      from: 'Gravyx <noreply@gravyx.com.br>',
       to: [user.email],
       subject,
       html,

@@ -164,7 +164,7 @@ serve(async (req) => {
             Authorization: `Bearer ${resendApiKey}`,
           },
           body: JSON.stringify({
-            from: "Gravyx <noreply@upwardacademy.com.br>",
+            from: "Gravyx <noreply@gravyx.com.br>",
             to: [email],
             subject: "Seu acesso à plataforma",
             html: `

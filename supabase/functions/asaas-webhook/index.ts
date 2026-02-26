@@ -62,7 +62,7 @@ async function sendEmail(to: string, subject: string, component: React.ReactElem
     const resend = new Resend(Deno.env.get("RESEND_API_KEY") as string);
     const html = await renderAsync(component);
     const { error } = await resend.emails.send({
-      from: "Gravyx <noreply@upwardacademy.com.br>",
+      from: "Gravyx <noreply@gravyx.com.br>",
       to: [to],
       subject,
       html,
