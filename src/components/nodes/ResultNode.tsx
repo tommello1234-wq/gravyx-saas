@@ -1,6 +1,6 @@
 import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react';
-import { Sparkles, Download, Pencil, RotateCcw, MoreVertical, Copy, Trash2, Loader2, Plus, Minus, ChevronDown, Play, Check } from 'lucide-react';
+import { Sparkles, Download, Pencil, RotateCcw, MoreVertical, Copy, Trash2, Loader2, Plus, Minus, ChevronDown, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
@@ -86,7 +86,6 @@ const formatOptions = [
   { value: '16:9', label: '16:9' },
   { value: '9:16', label: '9:16' },
   { value: 'auto', label: 'Auto' },
-  { value: 'custom', label: 'Personalizado' },
 ];
 
 const MAX_QUANTITY = 5;
@@ -118,9 +117,6 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [formatOpen, setFormatOpen] = useState(false);
-  const [customW, setCustomW] = useState('');
-  const [customH, setCustomH] = useState('');
-  const [showCustomInput, setShowCustomInput] = useState(false);
   const [jobQueueState, setJobQueueState] = useState<Omit<JobQueueState, 'resultId'>>({
     hasQueuedJobs: false,
     hasProcessingJobs: false,
@@ -180,27 +176,10 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
   }, [id, setNodes]);
 
   const handleAspectChange = useCallback((value: string) => {
-    if (value === 'custom') {
-      setShowCustomInput(true);
-      return;
-    }
-    setShowCustomInput(false);
     setAspectRatio(value);
     updateNodeData({ aspectRatio: value });
     setFormatOpen(false);
   }, [updateNodeData]);
-
-  const handleCustomConfirm = useCallback(() => {
-    const w = parseInt(customW, 10);
-    const h = parseInt(customH, 10);
-    if (w > 0 && h > 0) {
-      const value = `${w}:${h}`;
-      setAspectRatio(value);
-      updateNodeData({ aspectRatio: value });
-      setShowCustomInput(false);
-      setFormatOpen(false);
-    }
-  }, [customW, customH, updateNodeData]);
 
   const handleQuantityChange = useCallback((delta: number) => {
     setQuantity(prev => {
@@ -311,8 +290,7 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
   const isDisabled = !hasActiveSubscription || !hasEnoughCredits || isBusy;
 
   const selectedImage = images.length > 0 ? images[selectedIndex] || images[0] : null;
-  const isCustomRatio = !formatOptions.some(f => f.value === aspectRatio);
-  const currentFormatLabel = isCustomRatio ? aspectRatio : (formatOptions.find(f => f.value === aspectRatio)?.label || aspectRatio);
+  const currentFormatLabel = formatOptions.find(f => f.value === aspectRatio)?.label || aspectRatio;
 
   return (
     <>
@@ -488,21 +466,6 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
                 onPointerDown={e => e.stopPropagation()}
               >
                 {formatOptions.map(opt => (
-                  opt.value === 'custom' ? (
-                    <button
-                      key="custom"
-                      onClick={() => handleAspectChange('custom')}
-                      className={cn(
-                        'w-full flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors',
-                        (showCustomInput || isCustomRatio)
-                          ? 'bg-emerald-500/20 text-emerald-400'
-                          : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
-                      )}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                      {opt.label}
-                    </button>
-                  ) : (
                     <button
                       key={opt.value}
                       onClick={() => handleAspectChange(opt.value)}
@@ -516,43 +479,7 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
                       <AspectIcon ratio={opt.value} />
                       {opt.label}
                     </button>
-                  )
                 ))}
-                {showCustomInput && (
-                  <div className="flex items-center gap-1 px-2 py-2 border-t border-zinc-800 mt-1">
-                    <input
-                      type="number"
-                      min="1"
-                      max="99"
-                      value={customW}
-                      onChange={e => setCustomW(e.target.value)}
-                      placeholder="W"
-                      className="w-10 h-7 rounded bg-zinc-800 border border-zinc-700 text-white text-xs text-center focus:outline-none focus:border-emerald-500"
-                      onMouseDown={e => e.stopPropagation()}
-                      onPointerDown={e => e.stopPropagation()}
-                    />
-                    <span className="text-zinc-500 text-xs">:</span>
-                    <input
-                      type="number"
-                      min="1"
-                      max="99"
-                      value={customH}
-                      onChange={e => setCustomH(e.target.value)}
-                      placeholder="H"
-                      className="w-10 h-7 rounded bg-zinc-800 border border-zinc-700 text-white text-xs text-center focus:outline-none focus:border-emerald-500"
-                      onMouseDown={e => e.stopPropagation()}
-                      onPointerDown={e => e.stopPropagation()}
-                      onKeyDown={e => { if (e.key === 'Enter') handleCustomConfirm(); }}
-                    />
-                    <button
-                      onClick={handleCustomConfirm}
-                      disabled={!customW || !customH || parseInt(customW) <= 0 || parseInt(customH) <= 0}
-                      className="w-7 h-7 flex items-center justify-center rounded bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                    >
-                      <Check className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                )}
               </PopoverContent>
             </Popover>
 
