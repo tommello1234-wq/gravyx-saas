@@ -96,13 +96,15 @@ serve(async (req) => {
       );
     }
 
-    // Validate aspect ratio
-    const validAspectRatios = ['1:1', '4:5', '16:9', '9:16'];
-    if (aspectRatio && !validAspectRatios.includes(aspectRatio)) {
-      return new Response(
-        JSON.stringify({ error: "Invalid aspect ratio" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    // Validate aspect ratio format: must be "N:N" with positive numbers
+    if (aspectRatio) {
+      const ratioParts = aspectRatio.split(':').map(Number);
+      if (ratioParts.length !== 2 || ratioParts.some((n: number) => isNaN(n) || n <= 0)) {
+        return new Response(
+          JSON.stringify({ error: "Invalid aspect ratio format. Use N:N (e.g. 5:4, 21:9)" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
     // Validate imageUrls
