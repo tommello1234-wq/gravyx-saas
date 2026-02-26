@@ -253,7 +253,7 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
 
   return (
     <>
-      <div className="bg-[#0a0a0a] border border-emerald-500/20 rounded-2xl w-[380px] shadow-2xl shadow-emerald-500/5 overflow-hidden">
+      <div className="bg-[#0a0a0a] border border-emerald-500/20 rounded-2xl w-[420px] shadow-2xl shadow-emerald-500/5 overflow-hidden">
         <Handle 
           type="target" 
           position={Position.Left} 
@@ -357,31 +357,33 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
 
         {/* Thumbnails */}
         {images.length > 1 && (
-          <div className="px-3 pb-2 nowheel nodrag" onWheel={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
-            <ScrollArea className="w-full nowheel" type="scroll">
-              <div className="flex gap-1.5 pb-1">
-                {images.map((image, index) => (
-                  <button
-                    key={`${image.url}-${index}`}
-                    onClick={() => handleImageClick(index)}
-                    className={cn(
-                      'flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all',
-                      selectedIndex === index
-                        ? 'border-emerald-500 shadow-lg shadow-emerald-500/30'
-                        : 'border-zinc-700/50 hover:border-zinc-600 opacity-70 hover:opacity-100'
-                    )}
-                  >
-                    <img 
-                      src={image.url} 
-                      alt={`Thumb ${index + 1}`} 
-                      className="w-full h-full object-cover"
-                      draggable={false}
-                    />
-                  </button>
-                ))}
-              </div>
-              <ScrollBar orientation="horizontal" className="h-1" />
-            </ScrollArea>
+          <div 
+            className="px-3 pb-2 nowheel nodrag overflow-x-auto" 
+            onWheel={e => e.stopPropagation()} 
+            onPointerDown={e => e.stopPropagation()}
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
+            <div className="flex gap-1.5 pb-1 w-max">
+              {images.map((image, index) => (
+                <button
+                  key={`${image.url}-${index}`}
+                  onClick={() => handleImageClick(index)}
+                  className={cn(
+                    'flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all',
+                    selectedIndex === index
+                      ? 'border-emerald-500 shadow-lg shadow-emerald-500/30'
+                      : 'border-zinc-700/50 hover:border-zinc-600 opacity-70 hover:opacity-100'
+                  )}
+                >
+                  <img 
+                    src={image.url} 
+                    alt={`Thumb ${index + 1}`} 
+                    className="w-full h-full object-cover"
+                    draggable={false}
+                  />
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
