@@ -167,6 +167,20 @@ Deno.serve(async (req: Request) => {
 
     const supabaseAdmin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
+    // --- Guard: block if user already has an active paid subscription ---
+    const { data: currentProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("tier, subscription_status, asaas_subscription_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (currentProfile && currentProfile.subscription_status === "active" && currentProfile.tier !== "free") {
+      log("Blocked duplicate subscription", { userId, currentTier: currentProfile.tier });
+      return new Response(JSON.stringify({
+        error: "Você já possui um plano ativo. Cancele o plano atual antes de assinar outro.",
+      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     // Fetch pricing from DB
     const pricing = await fetchPricing(supabaseAdmin, tier, cycle);
     const priceReais = pricing.price / 100; // centavos to reais
