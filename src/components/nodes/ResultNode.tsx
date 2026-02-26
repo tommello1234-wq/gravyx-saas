@@ -1,9 +1,10 @@
 import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react';
-import { Sparkles, Download, Pencil, RotateCcw, MoreVertical, Copy, Trash2, Loader2, ArrowRight } from 'lucide-react';
+import { Sparkles, Download, Pencil, RotateCcw, MoreVertical, Copy, Trash2, Loader2, Play, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { OutputImageModal, NodeImage } from './OutputImageModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -335,153 +336,110 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
           <div className="p-3 nowheel nodrag" onWheel={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
             {/* Main preview */}
             {previewImage ? (
-              <div className="relative group/preview rounded-xl overflow-hidden cursor-pointer border border-border/30 hover:border-emerald-500/50 transition-all mb-3 bg-black/60">
+              <div 
+                className="relative rounded-xl overflow-hidden cursor-pointer border border-emerald-500/20 hover:border-emerald-500/50 transition-all mb-3 bg-black"
+                onClick={() => handleImageClick(previewImage)}
+              >
                 <img 
                   src={previewImage.url} 
                   alt="Preview" 
                   className="w-full h-auto object-contain max-h-[400px]" 
-                  onClick={() => handleImageClick(previewImage)}
                 />
-                {/* Controls overlay on hover */}
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/70 to-transparent pt-12 pb-3 px-3 opacity-0 group-hover/preview:opacity-100 transition-opacity duration-300">
-                  {/* Quantity + Format row */}
-                  <div className="flex gap-2 mb-2">
-                    <div className="flex-1">
-                      <label className="text-[10px] font-medium text-white/60 mb-1 block">Quantidade</label>
-                      <div className="flex gap-1">
-                        {quantities.map(q => (
-                          <button
-                            key={q}
-                            onClick={(e) => { e.stopPropagation(); handleQuantityChange(q); }}
-                            className={cn(
-                              'flex-1 py-1 rounded-md text-[11px] font-semibold transition-all border',
-                              quantity === q
-                                ? 'bg-emerald-500/30 border-emerald-500/60 text-emerald-300'
-                                : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10'
-                            )}
-                          >
-                            {q}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex-1">
-                      <label className="text-[10px] font-medium text-white/60 mb-1 block">Formato</label>
-                      <div className="flex gap-1">
-                        {aspectRatios.map(ar => (
-                          <button
-                            key={ar}
-                            onClick={(e) => { e.stopPropagation(); handleAspectChange(ar); }}
-                            className={cn(
-                              'flex-1 py-1 rounded-md text-[11px] font-semibold transition-all border',
-                              aspectRatio === ar
-                                ? 'bg-emerald-500 border-emerald-500 text-white'
-                                : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10'
-                            )}
-                          >
-                            {ar}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Generate button */}
-                  <button
-                    className="w-full py-2.5 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-600 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/30 hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    onClick={(e) => { e.stopPropagation(); handleGenerate(); }}
-                    disabled={isDisabled}
-                  >
-                    {jobQueueState.hasProcessingJobs ? (
-                      <><Loader2 className="h-4 w-4 animate-spin" />Gerando {jobQueueState.totalPendingImages}...</>
-                    ) : jobQueueState.hasQueuedJobs ? (
-                      <><Loader2 className="h-4 w-4 animate-spin" />Na fila...</>
-                    ) : isGenerating ? (
-                      <><Loader2 className="h-4 w-4 animate-spin" />Enviando...</>
-                    ) : (
-                      <><Sparkles className="h-4 w-4" />Gerar {quantity} {quantity === 1 ? 'Imagem' : 'Imagens'}<ArrowRight className="h-4 w-4" /></>
-                    )}
-                  </button>
-                  <p className="text-center text-[10px] mt-1 text-white/40">
-                    {creditsNeeded} {creditsNeeded === 1 ? 'crédito' : 'créditos'} • {credits} disponíveis
-                  </p>
+                <div className="absolute inset-0 bg-black/30 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
+                  <span className="text-xs text-white font-medium">Clique para ampliar</span>
                 </div>
               </div>
             ) : (
-              <>
-                {/* Empty state with 1:1 preview */}
-                <div className="aspect-square rounded-xl border-2 border-dashed border-emerald-500/20 bg-black/40 flex flex-col items-center justify-center mb-3">
-                  <div className="w-14 h-14 rounded-full bg-emerald-500/10 flex items-center justify-center mb-3">
-                    <Sparkles className="h-7 w-7 text-emerald-500/40" />
-                  </div>
-                  <p className="text-xs text-muted-foreground">As imagens aparecerão aqui</p>
+              <div className="aspect-square rounded-xl border-2 border-dashed border-emerald-500/20 bg-black/40 flex flex-col items-center justify-center mb-3">
+                <div className="w-14 h-14 rounded-full bg-emerald-500/10 flex items-center justify-center mb-3">
+                  <Sparkles className="h-7 w-7 text-emerald-500/40" />
                 </div>
-
-                {/* Controls always visible when empty */}
-                <div className="flex gap-4 mb-3">
-                  <div className="flex-1">
-                    <label className="text-[11px] font-medium text-muted-foreground mb-1.5 block">Quantidade</label>
-                    <div className="flex gap-1">
-                      {quantities.map(q => (
-                        <button
-                          key={q}
-                          onClick={() => handleQuantityChange(q)}
-                          className={cn(
-                            'flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all border',
-                            quantity === q
-                              ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
-                              : 'bg-muted/20 border-border/30 text-muted-foreground hover:bg-muted/40'
-                          )}
-                        >
-                          {q}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex-1">
-                    <label className="text-[11px] font-medium text-muted-foreground mb-1.5 block">Formato</label>
-                    <div className="flex gap-1">
-                      {aspectRatios.map(ar => (
-                        <button
-                          key={ar}
-                          onClick={() => handleAspectChange(ar)}
-                          className={cn(
-                            'flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all border',
-                            aspectRatio === ar
-                              ? 'bg-emerald-500 border-emerald-500 text-white'
-                              : 'bg-muted/20 border-border/30 text-muted-foreground hover:bg-muted/40'
-                          )}
-                        >
-                          {ar}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Generate Button */}
-                <button
-                  className="w-full py-3 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-600 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  onClick={handleGenerate}
-                  disabled={isDisabled}
-                >
-                  {isGenerating ? (
-                    <><Loader2 className="h-4 w-4 animate-spin" />Enviando...</>
-                  ) : (
-                    <><Sparkles className="h-4 w-4" />Gerar {quantity} {quantity === 1 ? 'Imagem' : 'Imagens'}<ArrowRight className="h-4 w-4" /></>
-                  )}
-                </button>
-                <p className={cn(
-                  "text-center text-[11px] mt-2",
-                  !hasActiveSubscription ? "text-destructive" : hasEnoughCredits ? "text-muted-foreground" : "text-destructive"
-                )}>
-                  {!hasActiveSubscription 
-                    ? 'Assine um plano para gerar imagens' 
-                    : `${creditsNeeded} ${creditsNeeded === 1 ? 'crédito' : 'créditos'} • ${credits} disponíveis`}
-                </p>
-              </>
+                <p className="text-xs text-muted-foreground">As imagens aparecerão aqui</p>
+              </div>
             )}
+
+            {/* Bottom controls - always visible */}
+            <div className="flex items-center gap-1">
+              {/* Quantidade popover */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all">
+                    Quantidade
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent side="top" align="start" className="w-auto p-2 bg-[#1a1a1a] border-emerald-500/20">
+                  <div className="flex gap-1">
+                    {quantities.map(q => (
+                      <button
+                        key={q}
+                        onClick={() => handleQuantityChange(q)}
+                        className={cn(
+                          'px-4 py-2 rounded-lg text-sm font-semibold transition-all border',
+                          quantity === q
+                            ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
+                            : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10'
+                        )}
+                      >
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              {/* Formato popover */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all">
+                    Formato
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent side="top" align="center" className="w-auto p-2 bg-[#1a1a1a] border-emerald-500/20">
+                  <div className="flex gap-1">
+                    {aspectRatios.map(ar => (
+                      <button
+                        key={ar}
+                        onClick={() => handleAspectChange(ar)}
+                        className={cn(
+                          'px-3 py-2 rounded-lg text-sm font-semibold transition-all border',
+                          aspectRatio === ar
+                            ? 'bg-emerald-500 border-emerald-500 text-white'
+                            : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10'
+                        )}
+                      >
+                        {ar}
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              {/* Generate button */}
+              <button
+                className="ml-auto px-5 py-2 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-600 text-white font-semibold text-sm flex items-center gap-2 shadow-lg shadow-emerald-500/30 hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={handleGenerate}
+                disabled={isDisabled}
+              >
+                {jobQueueState.hasProcessingJobs ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" />Gerando {jobQueueState.totalPendingImages}...</>
+                ) : jobQueueState.hasQueuedJobs ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" />Na fila...</>
+                ) : isGenerating ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" />Enviando...</>
+                ) : (
+                  <>Gerar {quantity} {quantity === 1 ? 'Imagem' : 'Imagens'}<Play className="h-3.5 w-3.5 fill-current" /></>
+                )}
+              </button>
+            </div>
           </div>
+
+          <Handle 
+            type="source" 
+            position={Position.Right} 
+            className="!w-4 !h-4 !bg-gradient-to-br !from-emerald-500 !to-teal-600 !border-4 !border-card !-right-2 !shadow-lg" 
+          />
         </div>
 
         {/* Thumbnail strip */}
