@@ -1,37 +1,44 @@
 
 
-## Cupom Válido Apenas na Primeira Cobrança
+## Compra Avulsa de Créditos para Assinantes Ativos
 
-### Problema
-Atualmente, quando um cupom é aplicado a uma assinatura recorrente (CASE 2), a subscription no Asaas é criada com `value: finalValue` (valor já com desconto). Isso faz com que **todas** as cobranças futuras usem o mesmo valor descontado. O cupom deveria valer apenas na primeira cobrança.
-
-### Solução
-Criar a assinatura no Asaas sempre com o **valor cheio** (`priceReais`), e aplicar o desconto apenas na primeira cobrança usando a API de update do pagamento individual. Após a subscription ser criada e a primeira cobrança gerada, atualizamos o valor dessa primeira cobrança via `PUT /v3/payments/{id}` com o `finalValue`.
+### Contexto
+Usuários com plano ativo querem comprar créditos extras sem assinar novamente. Hoje o modal só mostra planos. Vamos adicionar uma seção abaixo dos cards de planos para compra avulsa, visível apenas para quem já tem plano ativo (`tier !== 'free'` e `subscription_status === 'active'`).
 
 ### Mudanças
 
-**`supabase/functions/process-asaas-payment/index.ts`** — Modificar CASE 2 (subscriptions)
+**1. Tabela `credit_packages` (já existe no banco)**
+- Usar os pacotes já cadastrados na tabela `credit_packages` para exibir as opções de compra avulsa.
+- Criar um hook `useCreditPackages` para buscar os pacotes ativos.
 
-1. Criar a subscription com `value: priceReais` (valor cheio) em vez de `finalValue`
-2. Após buscar a primeira cobrança (`/v3/subscriptions/{id}/payments`), se houver cupom aplicado, atualizar o valor dessa cobrança individual via `PUT /v3/payments/{firstPayment.id}` com `value: finalValue`
-3. A partir da segunda cobrança, o Asaas cobra automaticamente o `value` da subscription (valor cheio)
+**2. `src/hooks/useCreditPackages.ts` (novo)**
+- Query simples na tabela `credit_packages` ordenada por `credits`.
 
-Fluxo resultante:
-```text
-Subscription criada: value = R$79 (cheio)
-1ª cobrança: PUT value = R$63,20 (com cupom 20%)
-2ª cobrança em diante: R$79 (automático pelo Asaas)
-```
+**3. `src/components/BuyCreditsModal.tsx`**
+- Após o grid de planos, se `currentTier !== 'free'`, renderizar seção "Créditos Extras":
+  - Título com ícone: "Precisa de mais créditos?"
+  - Cards horizontais com os pacotes da `credit_packages` (nome, créditos, preço)
+  - Botão "Comprar" em cada pacote que abre o checkout transparente
+- Adicionar estado `selectedPackage` para controlar quando um pacote avulso é selecionado
+- Ao selecionar pacote, abrir `AsaasTransparentCheckout` adaptado para compra avulsa
 
-### Detalhes técnicos
+**4. `src/components/AsaasTransparentCheckout.tsx`**
+- Adicionar prop opcional `isOneOff?: boolean` (default false)
+- Quando `isOneOff`, enviar flag `oneOff: true` no body para a edge function
 
-A API do Asaas permite alterar o valor de um pagamento individual via `PUT /v3/payments/{id}` com `{ value: novoValor }`, desde que o pagamento ainda esteja pendente. Isso é seguro porque a primeira cobrança acaba de ser criada e ainda não foi paga.
-
-O CASE 1 (annual + credit card, cobrança avulsa) não precisa de alteração pois já é um pagamento único sem recorrência.
+**5. `supabase/functions/process-asaas-payment/index.ts`**
+- Adicionar CASE 3: compra avulsa (`oneOff: true`)
+  - Criar cobrança única no Asaas (`/v3/payments`) sem subscription
+  - Bypass do guard de "já tem plano ativo" quando `oneOff` é true
+  - Registrar em `credit_purchases` igual aos outros cases
+  - Não alterar tier/subscription do usuário, apenas adicionar créditos
 
 ### Arquivos
 
 | Arquivo | Ação |
 |---------|------|
-| `supabase/functions/process-asaas-payment/index.ts` | Modificar — subscription com valor cheio + desconto apenas na 1ª cobrança |
+| `src/hooks/useCreditPackages.ts` | Criar |
+| `src/components/BuyCreditsModal.tsx` | Modificar — adicionar seção de pacotes avulsos |
+| `src/components/AsaasTransparentCheckout.tsx` | Modificar — suportar modo oneOff |
+| `supabase/functions/process-asaas-payment/index.ts` | Modificar — CASE 3 cobrança avulsa |
 
