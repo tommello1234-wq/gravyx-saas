@@ -284,21 +284,24 @@ serve(async (req) => {
       fullPrompt = `${prompt}. Aspect ratio: ${aspectRatio}`;
     }
 
-    // Filter out SVG URLs
+    // Filter out SVG URLs and limit to 3 reference images to avoid memory issues
     const validImageUrls = imageUrls.filter(url => {
       const isSvg = url.toLowerCase().endsWith('.svg') || url.includes('.svg?');
       if (isSvg) {
         console.warn(`Skipping SVG image URL: ${url}`);
       }
       return !isSvg;
-    });
+    }).slice(0, 3);
+    
+    console.log(`Using ${validImageUrls.length} reference images (from ${imageUrls.length} provided)`);
 
     try {
-      const generationPromises = Array(quantity).fill(null).map((_, i) => 
-        generateSingleImage(GOOGLE_AI_API_KEY, fullPrompt, validImageUrls, supabaseAdmin, claimedJob.user_id, i)
-      );
-
-      const results = await Promise.all(generationPromises);
+      // Generate images SEQUENTIALLY to avoid memory limit exceeded
+      const results: (string | null)[] = [];
+      for (let i = 0; i < quantity; i++) {
+        const result = await generateSingleImage(GOOGLE_AI_API_KEY, fullPrompt, validImageUrls, supabaseAdmin, claimedJob.user_id, i);
+        results.push(result);
+      }
       const successfulImages = results.filter((url): url is string => url !== null);
 
       console.log(`Generated ${successfulImages.length}/${quantity} images for job ${claimedJob.id}`);
