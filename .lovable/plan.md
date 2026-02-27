@@ -1,37 +1,33 @@
 
 
-## Plan: Switch image-worker to use Google AI Studio API key directly
+## Diagnóstico: Job travado em `processing`
 
-The project currently routes image generation through the Lovable AI Gateway (`ai.gateway.lovable.dev`) using `LOVABLE_API_KEY`. The user wants to use their own Google AI Studio API key instead, calling Google's Generative Language API directly.
+O modelo `gemini-3.1-flash-image-preview` está correto e confirmado na documentação do Google. O problema é que há **1 job travado** no status `processing` (ID `35715632...`) que nunca terminou. Os jobs anteriores (com o modelo antigo) completaram normalmente em ~30s.
 
-### Important Security Note
-The API key shared in chat will be stored as a Supabase secret (never in code).
+O que provavelmente aconteceu: o deploy da função com o novo modelo ocorreu, mas a chamada à API do Google com `gemini-3.1-flash-image-preview` pode ter demorado mais que o timeout da Edge Function (~150s), ou houve um erro não capturado. O job ficou preso e o polling continua chamando o worker, mas `claim_next_job` não retorna nada novo porque não há outros jobs na fila.
 
-### Steps
+### Passos
 
-1. **Add the secret `GOOGLE_AI_API_KEY`** with the value provided by the user, stored securely in Supabase secrets.
+1. **Limpar o job travado** -- Executar uma migration SQL para marcar o job `35715632-380f-44bd-85ce-21092a46ebb8` como `failed` com erro `'Timeout - stuck in processing'` e `finished_at = now()`.
 
-2. **Update `supabase/functions/image-worker/index.ts`**:
-   - Replace the Lovable Gateway endpoint (`ai.gateway.lovable.dev/v1/chat/completions`) with Google's Generative Language API endpoint (`generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`)
-   - Use `GOOGLE_AI_API_KEY` instead of `LOVABLE_API_KEY`
-   - Adapt the request/response format from OpenAI-compatible to Google's native format (parts array, inline_data for images, responseModalities)
-   - Keep the same model (`gemini-2.0-flash-exp` or the current `gemini-3-pro-image-preview` — whichever is available on Google AI Studio)
-   - Maintain all existing retry, credit deduction, and storage upload logic unchanged
+2. **Adicionar proteção contra jobs travados** -- Atualizar o `image-worker` para, antes de chamar `claim_next_job`, verificar e resetar jobs que estão em `processing` há mais de 3 minutos (mudar status para `queued` para retry automático). Isso previne que jobs fiquem presos indefinidamente.
 
-### Technical Detail: API Format Change
+3. **Adicionar logging extra** -- Adicionar `console.log` antes e depois da chamada à Google API para diagnosticar se o problema é timeout, erro de modelo, ou outro.
 
-**Current (Lovable Gateway - OpenAI format):**
-```
-POST ai.gateway.lovable.dev/v1/chat/completions
-Authorization: Bearer LOVABLE_API_KEY
-{ model, messages: [{role, content}], modalities }
+4. **Testar a geração novamente** -- Após limpar o job travado e redeployar, testar uma nova geração para confirmar que o modelo `gemini-3.1-flash-image-preview` funciona corretamente via API.
+
+### Detalhe técnico
+
+O SQL para cleanup:
+```sql
+UPDATE jobs 
+SET status = 'failed', finished_at = now(), error = 'Timeout - stuck in processing'
+WHERE id = '35715632-380f-44bd-85ce-21092a46ebb8';
 ```
 
-**New (Google AI Studio - native format):**
+A proteção no worker (antes do `claim_next_job`):
+```sql
+UPDATE jobs SET status = 'queued', retries = retries + 1 
+WHERE status = 'processing' AND started_at < now() - interval '3 minutes';
 ```
-POST generativelanguage.googleapis.com/v1beta/models/MODEL:generateContent?key=API_KEY
-{ contents: [{parts: [{text}, {inline_data: {mime_type, data}}]}], generationConfig: {responseModalities: ["TEXT","IMAGE"]} }
-```
-
-Response parsing will change from `choices[0].message.images[0].image_url.url` to `candidates[0].content.parts[].inlineData`.
 
