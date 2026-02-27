@@ -19,10 +19,10 @@ function formatBRL(val: number) {
 }
 
 export function FinancialDashboard() {
-  const { period, tierFilter, customRange } = useAdminContext();
+  const { period, tierFilter, customRange, resolutionFilter } = useAdminContext();
   const { costs, updateCosts } = useCostConfig();
 
-  const data = useAdminDashboard(period, tierFilter, customRange, costs.costPerImage);
+  const data = useAdminDashboard(period, tierFilter, customRange, costs.costPerImage, resolutionFilter);
 
   const periodLabel = { today: 'hoje', '7d': '7d', '30d': '30d', '90d': '90d', custom: 'período' }[period];
 
@@ -89,6 +89,7 @@ export function FinancialDashboard() {
           profitMargin={profitMargin}
           churnRate={data.churnRate}
           periodLabel={periodLabel}
+          imagesByResolution={data.imagesByResolution}
         />
 
         {/* 2. Costs Manager (above chart) */}
@@ -100,7 +101,13 @@ export function FinancialDashboard() {
         />
 
         {/* 3. Chart + Pie side by side */}
-        <RevenueChart revenueByDay={revenueByDayWithCosts} planDistribution={data.planDistribution} />
+        <RevenueChart
+          revenueByDay={revenueByDayWithCosts}
+          planDistribution={data.planDistribution}
+          imagesByResolutionByDay={data.imagesByResolutionByDay}
+          usersByDay={data.usersByDay}
+          imagesByResolution={data.imagesByResolution}
+        />
 
         {/* 4. Recent Transactions */}
         <RecentTransactions purchases={data.purchases} />

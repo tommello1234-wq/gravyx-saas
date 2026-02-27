@@ -3,6 +3,7 @@ import { createContext, useContext, useState, type ReactNode } from 'react';
 export type AdminPeriod = 'today' | '7d' | '30d' | '90d' | 'custom';
 export type AdminTierFilter = 'all' | 'free' | 'starter' | 'premium' | 'enterprise';
 export type AdminSection = 'dashboard' | 'users' | 'library' | 'templates' | 'pricing' | 'settings';
+export type AdminResolutionFilter = 'all' | '1K' | '2K' | '4K';
 
 interface AdminContextValue {
   period: AdminPeriod;
@@ -15,6 +16,8 @@ interface AdminContextValue {
   setSearchQuery: (q: string) => void;
   activeSection: AdminSection;
   setActiveSection: (s: AdminSection) => void;
+  resolutionFilter: AdminResolutionFilter;
+  setResolutionFilter: (r: AdminResolutionFilter) => void;
 }
 
 const AdminContext = createContext<AdminContextValue | null>(null);
@@ -31,6 +34,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   const [tierFilter, setTierFilter] = useState<AdminTierFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSection, setActiveSection] = useState<AdminSection>('dashboard');
+  const [resolutionFilter, setResolutionFilter] = useState<AdminResolutionFilter>('all');
 
   return (
     <AdminContext.Provider value={{
@@ -39,6 +43,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       tierFilter, setTierFilter,
       searchQuery, setSearchQuery,
       activeSection, setActiveSection,
+      resolutionFilter, setResolutionFilter,
     }}>
       {children}
     </AdminContext.Provider>

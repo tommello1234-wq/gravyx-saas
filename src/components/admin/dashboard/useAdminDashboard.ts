@@ -3,7 +3,24 @@ import { supabase } from '@/integrations/supabase/client';
 import { useMemo } from 'react';
 import { subDays, subMonths, startOfDay, format, differenceInDays } from 'date-fns';
 import { ESTIMATED_COST_PER_IMAGE_USD, USD_TO_BRL_RATE, PLAN_LIMITS, type TierKey } from '@/lib/plan-limits';
-import type { AdminPeriod, AdminTierFilter } from '../AdminContext';
+import type { AdminPeriod, AdminTierFilter, AdminResolutionFilter } from '../AdminContext';
+
+const COST_PER_RESOLUTION_USD: Record<string, number> = {
+  '1K': 0.067,
+  '2K': 0.101,
+  '4K': 0.151,
+};
+
+function getResolutionFromPayload(payload: any): string {
+  if (!payload) return '1K';
+  const res = typeof payload === 'object' ? payload.resolution : null;
+  if (res === '2K' || res === '4K') return res;
+  return '1K';
+}
+
+function getImageCountFromJob(job: any): number {
+  return job.result_count && job.result_count > 0 ? job.result_count : 1;
+}
 
 export type Period = AdminPeriod;
 
@@ -91,6 +108,13 @@ export interface DashboardData {
   // Financial by day
   revenueByDay: { date: string; revenue: number; cost: number; profit: number }[];
 
+  // Resolution breakdown
+  imagesByResolution: { '1K': number; '2K': number; '4K': number };
+  imagesByResolutionByDay: { date: string; '1K': number; '2K': number; '4K': number }[];
+
+  // Users by day (for chart)
+  usersByDay: { date: string; newUsers: number; activeUsers: number }[];
+
   // Financial by plan
   financialByPlan: { plan: string; activeSubscriptions: number; newSubscriptions: number; cancellations: number; revenue: number; images: number; cost: number; profit: number; margin: number }[];
 
@@ -115,7 +139,8 @@ export function useAdminDashboard(
   period: AdminPeriod,
   tierFilter: AdminTierFilter = 'all',
   customRange?: { start: Date; end: Date },
-  costPerImage: number = 0.30
+  costPerImage: number = 0.30,
+  resolutionFilter: AdminResolutionFilter = 'all'
 ): DashboardData {
   const { start: periodStart, prevStart } = getPeriodRange(period, customRange);
 
@@ -159,7 +184,7 @@ export function useAdminDashboard(
       while (true) {
         const { data, error } = await supabase
           .from('jobs')
-          .select('id, user_id, status, error, created_at, started_at, finished_at')
+          .select('id, user_id, status, error, created_at, started_at, finished_at, payload, result_count')
           .range(from, from + pageSize - 1);
         if (error) throw error;
         all.push(...(data || []));
@@ -256,7 +281,30 @@ export function useAdminDashboard(
     const prevRevenue = prevPurchasesArr.reduce((s, p) => s + (p.amount_paid || 0), 0);
     const revenueGrowth = calcGrowth(periodRevenue, prevRevenue);
 
-    const periodCost = periodImages * costPerImage * 100; // in centavos
+    // Resolution-aware cost calculation from jobs
+    const completedJobsInPeriod = jobs.filter(j => j.status === 'completed' && new Date(j.created_at) >= periodStart);
+    const filteredJobsByRes = resolutionFilter === 'all'
+      ? completedJobsInPeriod
+      : completedJobsInPeriod.filter(j => getResolutionFromPayload(j.payload) === resolutionFilter);
+
+    // Images by resolution
+    const imagesByResolution = { '1K': 0, '2K': 0, '4K': 0 };
+    completedJobsInPeriod.forEach(j => {
+      const res = getResolutionFromPayload(j.payload);
+      const count = getImageCountFromJob(j);
+      imagesByResolution[res as keyof typeof imagesByResolution] += count;
+    });
+
+
+    // Resolution-aware cost calculation
+    const periodCostFromJobs = completedJobsInPeriod.reduce((sum, j) => {
+      const res = getResolutionFromPayload(j.payload);
+      const count = getImageCountFromJob(j);
+      const costUSD = COST_PER_RESOLUTION_USD[res] || COST_PER_RESOLUTION_USD['1K'];
+      return sum + (count * costUSD * USD_TO_BRL_RATE * 100); // centavos BRL
+    }, 0);
+
+    const periodCost = periodCostFromJobs;
     const operationalCost = totalImages * costPerImage * 100;
     const grossProfit = periodRevenue - periodCost;
     const margin = periodRevenue > 0 ? (grossProfit / periodRevenue) * 100 : 0;
@@ -296,6 +344,38 @@ export function useAdminDashboard(
     });
     dayMap.forEach((v, k) => activityByDay.push({ date: k, images: v.images, users: v.users.size, credits: v.credits }));
 
+    // Images by resolution by day
+    const resByDayMap = new Map<string, { '1K': number; '2K': number; '4K': number }>();
+    dayMap.forEach((_, k) => resByDayMap.set(k, { '1K': 0, '2K': 0, '4K': 0 }));
+    completedJobsInPeriod.forEach(j => {
+      const key = format(startOfDay(new Date(j.created_at)), 'yyyy-MM-dd');
+      const entry = resByDayMap.get(key);
+      if (entry) {
+        const res = getResolutionFromPayload(j.payload);
+        const count = getImageCountFromJob(j);
+        entry[res as keyof typeof entry] += count;
+      }
+    });
+    const imagesByResolutionByDay = Array.from(resByDayMap.entries()).map(([date, v]) => ({ date, ...v }));
+
+    // Users by day
+    const newUserByDayMap = new Map<string, number>();
+    const activeUserByDayMap = new Map<string, Set<string>>();
+    dayMap.forEach((_, k) => { newUserByDayMap.set(k, 0); activeUserByDayMap.set(k, new Set()); });
+    periodProfiles.forEach(p => {
+      const key = format(startOfDay(new Date(p.created_at)), 'yyyy-MM-dd');
+      if (newUserByDayMap.has(key)) newUserByDayMap.set(key, (newUserByDayMap.get(key) || 0) + 1);
+    });
+    periodGens.forEach(g => {
+      const key = format(startOfDay(new Date(g.created_at)), 'yyyy-MM-dd');
+      activeUserByDayMap.get(key)?.add(g.user_id);
+    });
+    const usersByDay = Array.from(newUserByDayMap.entries()).map(([date]) => ({
+      date,
+      newUsers: newUserByDayMap.get(date) || 0,
+      activeUsers: activeUserByDayMap.get(date)?.size || 0,
+    }));
+
     // Revenue by day
     const revenueByDay: { date: string; revenue: number; cost: number; profit: number }[] = [];
     const revDayMap = new Map<string, { revenue: number; cost: number }>();
@@ -305,9 +385,16 @@ export function useAdminDashboard(
       const entry = revDayMap.get(key);
       if (entry) entry.revenue += (p.amount_paid || 0);
     });
-    activityByDay.forEach(d => {
-      const entry = revDayMap.get(d.date);
-      if (entry) entry.cost = d.images * costPerImage * 100;
+    // Use resolution-aware costs per day
+    completedJobsInPeriod.forEach(j => {
+      const key = format(startOfDay(new Date(j.created_at)), 'yyyy-MM-dd');
+      const entry = revDayMap.get(key);
+      if (entry) {
+        const res = getResolutionFromPayload(j.payload);
+        const count = getImageCountFromJob(j);
+        const costUSD = COST_PER_RESOLUTION_USD[res] || COST_PER_RESOLUTION_USD['1K'];
+        entry.cost += count * costUSD * USD_TO_BRL_RATE * 100;
+      }
     });
     revDayMap.forEach((v, k) => revenueByDay.push({ date: k, revenue: v.revenue / 100, cost: v.cost / 100, profit: (v.revenue - v.cost) / 100 }));
 
@@ -423,9 +510,10 @@ export function useAdminDashboard(
       grossRevenue, periodRevenue, operationalCost, periodCost, grossProfit, margin, estimatedMRR, estimatedARR,
       estimatedOperationalCostUSD, estimatedOperationalCostBRL, profitMarginBRL,
       revenueByDay, financialByPlan, revenueByPlan,
+      imagesByResolution, imagesByResolutionByDay, usersByDay,
       totalJobs, jobErrors24h, jobSuccessRate,
       alerts, totalRevenue: grossRevenue, estimatedCreditsConsumed,
       isLoading,
     };
-  }, [profiles, generations, jobs, purchases, authUsers, period, tierFilter, customRange, costPerImage, isLoading]);
+  }, [profiles, generations, jobs, purchases, authUsers, period, tierFilter, customRange, costPerImage, resolutionFilter, isLoading]);
 }
