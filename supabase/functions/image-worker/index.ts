@@ -311,14 +311,14 @@ serve(async (req) => {
       fullPrompt = `${prompt}. Aspect ratio: ${aspectRatio}`;
     }
 
-    // Filter out SVG URLs and limit to 3 reference images to avoid memory issues
+    // Filter out SVG URLs and limit to 10 reference images
     const validImageUrls = imageUrls.filter(url => {
       const isSvg = url.toLowerCase().endsWith('.svg') || url.includes('.svg?');
       if (isSvg) {
         console.warn(`Skipping SVG image URL: ${url}`);
       }
       return !isSvg;
-    }).slice(0, 3);
+    }).slice(0, 10);
     
     console.log(`Using ${validImageUrls.length} reference images (from ${imageUrls.length} provided)`);
 
