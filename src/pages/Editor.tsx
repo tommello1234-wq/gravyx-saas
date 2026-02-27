@@ -1250,7 +1250,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
                 </p>
                 <ul className="text-xs text-yellow-400/60 space-y-0.5 mt-1">
                   <li>• Melhoria no node de Resultado</li>
-                  <li>• Atualização para a nova inteligência do Google (Nano Banana 2)</li>
+                  <li>• Atualização para o novo modelo Gemini 3.1 Flash</li>
                 </ul>
               </div>
             </div>
