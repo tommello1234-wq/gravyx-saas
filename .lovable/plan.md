@@ -1,21 +1,37 @@
 
 
-## Plano: Remover opção "Personalizado" do dropdown de formato
+## Plan: Switch image-worker to use Google AI Studio API key directly
 
-### `src/components/nodes/ResultNode.tsx`
+The project currently routes image generation through the Lovable AI Gateway (`ai.gateway.lovable.dev`) using `LOVABLE_API_KEY`. The user wants to use their own Google AI Studio API key instead, calling Google's Generative Language API directly.
 
-1. Remover a opção `{ value: 'custom', label: 'Personalizado' }` do array `formatOptions`
-2. Remover os estados `customW`, `customH`, `showCustomInput`
-3. Remover a função `handleCustomConfirm`
-4. Remover a lógica de `value === 'custom'` no `handleAspectChange`
-5. Remover o bloco de renderização condicional do input custom dentro do Popover
-6. Remover a lógica `isCustomRatio` do label do trigger
+### Important Security Note
+The API key shared in chat will be stored as a Supabase secret (never in code).
 
-### `src/pages/Editor.tsx`
+### Steps
 
-7. Restaurar o mapeamento de ratios desconhecidos para o preset mais próximo (fallback seguro)
+1. **Add the secret `GOOGLE_AI_API_KEY`** with the value provided by the user, stored securely in Supabase secrets.
 
-### `supabase/functions/generate-image/index.ts`
+2. **Update `supabase/functions/image-worker/index.ts`**:
+   - Replace the Lovable Gateway endpoint (`ai.gateway.lovable.dev/v1/chat/completions`) with Google's Generative Language API endpoint (`generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`)
+   - Use `GOOGLE_AI_API_KEY` instead of `LOVABLE_API_KEY`
+   - Adapt the request/response format from OpenAI-compatible to Google's native format (parts array, inline_data for images, responseModalities)
+   - Keep the same model (`gemini-2.0-flash-exp` or the current `gemini-3-pro-image-preview` — whichever is available on Google AI Studio)
+   - Maintain all existing retry, credit deduction, and storage upload logic unchanged
 
-8. Restaurar validação restritiva com whitelist dos 4 ratios válidos (`1:1`, `4:5`, `16:9`, `9:16`)
+### Technical Detail: API Format Change
+
+**Current (Lovable Gateway - OpenAI format):**
+```
+POST ai.gateway.lovable.dev/v1/chat/completions
+Authorization: Bearer LOVABLE_API_KEY
+{ model, messages: [{role, content}], modalities }
+```
+
+**New (Google AI Studio - native format):**
+```
+POST generativelanguage.googleapis.com/v1beta/models/MODEL:generateContent?key=API_KEY
+{ contents: [{parts: [{text}, {inline_data: {mime_type, data}}]}], generationConfig: {responseModalities: ["TEXT","IMAGE"]} }
+```
+
+Response parsing will change from `choices[0].message.images[0].image_url.url` to `candidates[0].content.parts[].inlineData`.
 
