@@ -132,14 +132,23 @@ function repairCanvasState(canvasState: { nodes?: Node[]; edges?: Edge[] }): { n
   return { nodes, edges: canvasState.edges || [] };
 }
 
+// Reference metadata for enriched payload
+interface ImageReference {
+  url: string;
+  label: string;
+  libraryPrompt?: string;
+  source: 'gravity' | 'local';
+  index: number;
+}
+
 // Helper: Collect context from a Gravity node
 function collectGravityContext(
   gravityId: string, 
   nodes: Node[], 
   edges: Edge[]
-): { prompts: string[]; medias: string[] } {
+): { prompts: string[]; medias: string[]; references: Omit<ImageReference, 'index'>[] } {
   const gravityNode = nodes.find(n => n.id === gravityId);
-  if (!gravityNode) return { prompts: [], medias: [] };
+  if (!gravityNode) return { prompts: [], medias: [], references: [] };
   
   const gravityData = gravityNode.data as unknown as GravityNodeData;
   
@@ -151,20 +160,43 @@ function collectGravityContext(
     .map(n => (n!.data as { value?: string }).value)
     .filter(Boolean) as string[];
   
-  // Medias connected to the Gravity
-  const connectedMedias = inputEdges
+  // Medias connected to the Gravity (with metadata)
+  const connectedMediaNodes = inputEdges
     .map(e => nodes.find(n => n.id === e.source && n.type === 'media'))
-    .filter(Boolean)
-    .map(n => (n!.data as { url?: string | null }).url)
+    .filter(Boolean) as Node[];
+  
+  const connectedMedias = connectedMediaNodes
+    .map(n => (n.data as { url?: string | null }).url)
     .filter(Boolean) as string[];
+
+  const connectedRefs: Omit<ImageReference, 'index'>[] = connectedMediaNodes
+    .filter(n => (n.data as { url?: string | null }).url)
+    .map(n => {
+      const d = n.data as { url?: string | null; label?: string; libraryPrompt?: string | null };
+      return {
+        url: d.url!,
+        label: d.label || 'Mídia',
+        libraryPrompt: d.libraryPrompt || undefined,
+        source: 'gravity' as const,
+      };
+    });
   
   // Internal data from the Gravity popup
   const internalPrompt = gravityData.internalPrompt || '';
   const internalMedias = gravityData.internalMediaUrls || [];
+
+  const internalRefs: Omit<ImageReference, 'index'>[] = internalMedias
+    .filter(Boolean)
+    .map(url => ({
+      url,
+      label: 'Gravity',
+      source: 'gravity' as const,
+    }));
   
   return {
     prompts: [...connectedPrompts, internalPrompt].filter(Boolean),
-    medias: [...connectedMedias, ...internalMedias]
+    medias: [...connectedMedias, ...internalMedias],
+    references: [...connectedRefs, ...internalRefs],
   };
 }
 
@@ -185,7 +217,7 @@ function collectLocalContext(
   resultId: string, 
   nodes: Node[], 
   edges: Edge[]
-): { prompts: string[]; medias: string[] } {
+): { prompts: string[]; medias: string[]; references: Omit<ImageReference, 'index'>[] } {
   const inputEdges = edges.filter(e => e.target === resultId);
   
   // Local prompts (not from gravity)
@@ -195,14 +227,28 @@ function collectLocalContext(
     .map(n => (n!.data as { value?: string }).value)
     .filter(Boolean) as string[];
   
-  // Local medias (not from gravity)
-  const localMedias = inputEdges
+  // Local media nodes (not from gravity)
+  const localMediaNodes = inputEdges
     .map(e => nodes.find(n => n.id === e.source && n.type === 'media'))
-    .filter(Boolean)
-    .map(n => (n!.data as { url?: string | null }).url)
+    .filter(Boolean) as Node[];
+
+  const localMedias = localMediaNodes
+    .map(n => (n.data as { url?: string | null }).url)
     .filter(Boolean) as string[];
+
+  const localRefs: Omit<ImageReference, 'index'>[] = localMediaNodes
+    .filter(n => (n.data as { url?: string | null }).url)
+    .map(n => {
+      const d = n.data as { url?: string | null; label?: string; libraryPrompt?: string | null };
+      return {
+        url: d.url!,
+        label: d.label || 'Mídia',
+        libraryPrompt: d.libraryPrompt || undefined,
+        source: 'local' as const,
+      };
+    });
   
-  return { prompts: localPrompts, medias: localMedias };
+  return { prompts: localPrompts, medias: localMedias, references: localRefs };
 }
 
 // Export sanitizeCanvasState for use in SaveAsTemplateModal
@@ -714,17 +760,20 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     // Collect context
     let allPrompts: string[] = [];
     let allMedias: string[] = [];
+    let allRefs: Omit<ImageReference, 'index'>[] = [];
     
     if (gravityId) {
       const gravityContext = collectGravityContext(gravityId, currentNodes, currentEdges);
       allPrompts = [...gravityContext.prompts];
       allMedias = [...gravityContext.medias];
+      allRefs = [...gravityContext.references];
     }
     
     // Add local context
     const localContext = collectLocalContext(resultId, currentNodes, currentEdges);
     allPrompts = [...allPrompts, ...localContext.prompts];
     allMedias = [...allMedias, ...localContext.medias];
+    allRefs = [...allRefs, ...localContext.references];
 
     if (allPrompts.length === 0) {
       toast({
@@ -736,6 +785,16 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     }
 
     const prompt = allPrompts.join(' ');
+
+    // Deduplicate references by URL, assign indexes (1-based), limit to 10
+    const seenUrls = new Set<string>();
+    const references: ImageReference[] = [];
+    for (const ref of allRefs) {
+      if (!seenUrls.has(ref.url) && references.length < 10) {
+        seenUrls.add(ref.url);
+        references.push({ ...ref, index: references.length + 1 });
+      }
+    }
     
     // Dispatch generating state
     window.dispatchEvent(new CustomEvent(RESULT_GENERATING_STATE_EVENT, { 
@@ -744,7 +803,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
 
     try {
       const { data, error } = await supabase.functions.invoke('generate-image', {
-        body: { prompt, aspectRatio, quantity, imageUrls: allMedias, projectId, resultId }
+        body: { prompt, aspectRatio, quantity, imageUrls: allMedias, references, projectId, resultId }
       });
 
       if (error) {
