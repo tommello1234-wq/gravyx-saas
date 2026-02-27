@@ -7,7 +7,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
-const CREDITS_PER_IMAGE = 1;
+function creditsForResolution(resolution: string): number {
+  switch (resolution) {
+    case '4K': return 4;
+    case '2K': return 2;
+    default: return 1; // 1K
+  }
+}
 const MAX_RETRIES = 3;
 const BACKOFF_DELAYS = [5000, 10000, 20000];
 
@@ -392,7 +398,7 @@ serve(async (req) => {
       const savedImages: string[] = [];
       for (const imageUrl of successfulImages) {
         try {
-          await supabaseAdmin.rpc('decrement_credits', { uid: claimedJob.user_id, amount: CREDITS_PER_IMAGE });
+          await supabaseAdmin.rpc('decrement_credits', { uid: claimedJob.user_id, amount: creditsForResolution(resolution) });
           savedImages.push(imageUrl);
         } catch (debitError) {
           console.error(`Failed to debit credit for image, skipping save:`, debitError);
