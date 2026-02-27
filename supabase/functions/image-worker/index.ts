@@ -318,7 +318,7 @@ serve(async (req) => {
         console.warn(`Skipping SVG image URL: ${url}`);
       }
       return !isSvg;
-    }).slice(0, 1);
+    }).slice(0, 3);
     
     console.log(`Using ${validImageUrls.length} reference images (from ${imageUrls.length} provided)`);
 
