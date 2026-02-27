@@ -18,6 +18,7 @@ interface UsersTableProps {
   onCreateUser: () => void;
   isResending: boolean;
   costPerImage?: number;
+  periodStart?: Date;
 }
 
 type SortKey = 'email' | 'tier' | 'credits' | 'images' | 'created_at' | 'received' | 'cost';
@@ -30,9 +31,10 @@ const formatBRL = (centavos: number) => {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
-export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser, onCreateUser, isResending, costPerImage = 0.30 }: UsersTableProps) {
+export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser, onCreateUser, isResending, costPerImage = 0.30, periodStart }: UsersTableProps) {
   const [search, setSearch] = useState('');
   const [tierFilter, setTierFilter] = useState<string>('all');
+  const [dateFilter, setDateFilter] = useState<'all' | 'period'>('all');
   const [sortKey, setSortKey] = useState<SortKey>('email');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [page, setPage] = useState(0);
@@ -53,6 +55,11 @@ export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser
       received: revenueByUser.get(p.user_id) || 0,
       cost: Math.round((p.total_generations || 0) * costPerImage * 100),
     }));
+
+    // Filter by period
+    if (dateFilter === 'period' && periodStart) {
+      users = users.filter(u => new Date(u.created_at) >= periodStart);
+    }
 
     if (search) {
       const q = search.toLowerCase();
@@ -78,7 +85,7 @@ export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser
     });
 
     return users;
-  }, [data.profiles, search, tierFilter, sortKey, sortDir, revenueByUser, costPerImage]);
+  }, [data.profiles, search, tierFilter, dateFilter, periodStart, sortKey, sortDir, revenueByUser, costPerImage]);
 
   const totalPages = Math.ceil(filteredUsers.length / PAGE_SIZE);
   const paginatedUsers = filteredUsers.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -153,6 +160,17 @@ export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser
               ))}
             </SelectContent>
           </Select>
+          {periodStart && (
+            <Select value={dateFilter} onValueChange={(v: 'all' | 'period') => { setDateFilter(v); setPage(0); }}>
+              <SelectTrigger className="w-40 h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas as datas</SelectItem>
+                <SelectItem value="period">No período</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
         </div>
       </CardHeader>
       <CardContent>
