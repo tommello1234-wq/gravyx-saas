@@ -57,19 +57,46 @@ async function uploadBase64ToStorage(
   }
 }
 
+// Max size for reference images (4MB raw = ~5.3MB base64)
+const MAX_REF_IMAGE_BYTES = 4 * 1024 * 1024;
+
 // Fetch an image URL and return base64-encoded data + mime type
 async function fetchImageAsBase64(url: string): Promise<{ base64: string; mimeType: string } | null> {
   try {
+    // HEAD request first to check size without downloading
+    try {
+      const headResp = await fetch(url, { method: "HEAD" });
+      const contentLength = headResp.headers.get("content-length");
+      if (contentLength) {
+        const sizeBytes = parseInt(contentLength, 10);
+        console.log(`Reference image size: ${(sizeBytes / 1024 / 1024).toFixed(2)}MB`);
+        if (sizeBytes > MAX_REF_IMAGE_BYTES) {
+          console.warn(`Skipping reference image (${(sizeBytes / 1024 / 1024).toFixed(2)}MB exceeds ${MAX_REF_IMAGE_BYTES / 1024 / 1024}MB limit): ${url}`);
+          return null;
+        }
+      }
+    } catch (headError) {
+      console.warn("HEAD request failed, proceeding with GET:", headError);
+    }
+
     const resp = await fetch(url);
     if (!resp.ok) {
       console.error(`Failed to fetch image ${url}: ${resp.status}`);
       return null;
     }
     const buffer = await resp.arrayBuffer();
+    
+    // Double-check actual size
+    if (buffer.byteLength > MAX_REF_IMAGE_BYTES) {
+      console.warn(`Skipping reference image after download (${(buffer.byteLength / 1024 / 1024).toFixed(2)}MB exceeds limit): ${url}`);
+      return null;
+    }
+    
     const bytes = new Uint8Array(buffer);
     const base64 = base64Encode(bytes);
     const contentType = resp.headers.get("content-type") || "image/png";
     const mimeType = contentType.split(";")[0].trim();
+    console.log(`Successfully fetched reference image: ${mimeType}, ${(buffer.byteLength / 1024).toFixed(0)}KB`);
     return { base64, mimeType };
   } catch (error) {
     console.error(`Error fetching image ${url}:`, error);
@@ -291,7 +318,7 @@ serve(async (req) => {
         console.warn(`Skipping SVG image URL: ${url}`);
       }
       return !isSvg;
-    }).slice(0, 3);
+    }).slice(0, 1);
     
     console.log(`Using ${validImageUrls.length} reference images (from ${imageUrls.length} provided)`);
 
