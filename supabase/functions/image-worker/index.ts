@@ -135,35 +135,24 @@ async function generateSingleImage(
     return await callGeminiAndUpload(apiKey, parts, supabaseAdmin, userId, index, resolution);
   }
 
-  // Build numbered multimodal parts
+  // Build parts: prompt + images, simple and direct
   const parts: Record<string, unknown>[] = [];
 
-  // System instruction: content-driven interpretation
-  const imageCount = refUrls.length;
-  let systemText = `You are receiving ${imageCount} reference image(s). `;
-  systemText += `Analyze the visual content of each reference image carefully. `;
-  systemText += `Match each image to the relevant part of the user's prompt based on what you see in it. `;
-  systemText += `For example: a photo of a person's face should be used as the identity/face reference; a landscape or scene should be used as the background/environment; a stylized artwork should be used as a style reference; a product photo should be used as the product to feature. `;
-  systemText += `If the user's prompt explicitly references images by number (e.g., "image 1", "imagem 1", "imagem 01", "foto 1"), respect that mapping. Otherwise, always infer the role from the visual content. `;
-  
+  // Build prompt text: user prompt + optional library hints
+  let promptText = prompt;
   if (useEnrichedRefs) {
-    systemText += `\nAdditional context for each image:\n`;
-    for (const ref of references) {
-      systemText += `- Image ${ref.index}: labeled "${ref.label}"`;
-      if (ref.libraryPrompt) systemText += ` (style hint: ${ref.libraryPrompt})`;
-      systemText += `\n`;
+    const hints = references
+      .filter(r => r.libraryPrompt)
+      .map(r => r.libraryPrompt);
+    if (hints.length > 0) {
+      promptText += `\n\nStyle reference: ${hints.join('; ')}`;
     }
   }
-  
-  systemText += `\nUser prompt: ${prompt}`;
-  parts.push({ text: systemText });
+  parts.push({ text: promptText });
 
-  // Add each reference image with a numbered label
+  // Add reference images directly, no verbose labels
   for (let i = 0; i < refUrls.length; i++) {
     const url = refUrls[i];
-    const imgLabel = useEnrichedRefs ? `Image ${references[i].index}: "${references[i].label}"` : `Image ${i + 1}`;
-    
-    parts.push({ text: imgLabel });
     
     if (url.startsWith("data:")) {
       const matches = url.match(/^data:(image\/\w+);base64,(.+)$/);
