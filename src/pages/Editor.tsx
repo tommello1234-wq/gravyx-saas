@@ -42,16 +42,16 @@ interface EditorCanvasProps {
 
 // Helper: Sanitize canvas state for persistence - removes images and transient fields
 function sanitizeCanvasState(nodes: Node[], edges: Edge[]): Json {
-  const cleanNodes = nodes.map(node => {
+  const cleanNodes = nodes.map((node) => {
     // Remove transient ReactFlow fields
     const { selected, dragging, measured, width, height, ...restNode } = node as Node & {
       selected?: boolean;
       dragging?: boolean;
-      measured?: { width: number; height: number };
+      measured?: {width: number;height: number;};
       width?: number;
       height?: number;
     };
-    
+
     // Clean data object - create a new object without function refs
     const cleanData: Record<string, unknown> = {};
     for (const key in restNode.data) {
@@ -59,76 +59,76 @@ function sanitizeCanvasState(nodes: Node[], edges: Edge[]): Json {
         cleanData[key] = restNode.data[key];
       }
     }
-    
+
     // For output/result nodes: remove images entirely (they come from generations table)
     if (node.type === 'output' || node.type === 'result') {
       delete cleanData.images;
     }
-    
+
     // For media nodes: remove base64 URLs (keep only storage URLs)
     if (node.type === 'media' && cleanData.url && typeof cleanData.url === 'string') {
       if ((cleanData.url as string).startsWith('data:image')) {
         cleanData.url = null;
       }
     }
-    
+
     return {
       id: restNode.id,
       type: restNode.type,
       position: restNode.position,
-      data: cleanData,
+      data: cleanData
     };
   });
-  
+
   // Clean edges too - only keep serializable properties
-  const cleanEdges = edges.map(edge => ({
+  const cleanEdges = edges.map((edge) => ({
     id: edge.id,
     source: edge.source,
     target: edge.target,
     sourceHandle: edge.sourceHandle,
-    targetHandle: edge.targetHandle,
+    targetHandle: edge.targetHandle
   }));
-  
+
   return { nodes: cleanNodes, edges: cleanEdges } as unknown as Json;
 }
 
 // Helper: Detect if canvas needs repair (contains base64 or is too large)
-function needsAutoRepair(canvasState: { nodes?: Node[]; edges?: Edge[] }): boolean {
+function needsAutoRepair(canvasState: {nodes?: Node[];edges?: Edge[];}): boolean {
   const serialized = JSON.stringify(canvasState);
-  
+
   // Check size
   if (serialized.length > MAX_CANVAS_SIZE) {
     return true;
   }
-  
+
   // Check for base64 images
   if (serialized.includes('data:image')) {
     return true;
   }
-  
+
   return false;
 }
 
 // Helper: Remove base64 and images from canvas state for repair
-function repairCanvasState(canvasState: { nodes?: Node[]; edges?: Edge[] }): { nodes: Node[]; edges: Edge[] } {
-  const nodes = (canvasState.nodes || []).map(node => {
+function repairCanvasState(canvasState: {nodes?: Node[];edges?: Edge[];}): {nodes: Node[];edges: Edge[];} {
+  const nodes = (canvasState.nodes || []).map((node) => {
     const cleanData = { ...node.data };
-    
+
     // Remove images from output/result nodes
     if (node.type === 'output' || node.type === 'result') {
       delete cleanData.images;
     }
-    
+
     // Remove base64 URLs from media nodes
     if (node.type === 'media' && cleanData.url && typeof cleanData.url === 'string') {
       if (cleanData.url.startsWith('data:image')) {
         cleanData.url = null;
       }
     }
-    
+
     return { ...node, data: cleanData };
   });
-  
+
   return { nodes, edges: canvasState.edges || [] };
 }
 
@@ -143,68 +143,68 @@ interface ImageReference {
 
 // Helper: Collect context from a Gravity node
 function collectGravityContext(
-  gravityId: string, 
-  nodes: Node[], 
-  edges: Edge[]
-): { prompts: string[]; medias: string[]; references: Omit<ImageReference, 'index'>[] } {
-  const gravityNode = nodes.find(n => n.id === gravityId);
+gravityId: string,
+nodes: Node[],
+edges: Edge[])
+: {prompts: string[];medias: string[];references: Omit<ImageReference, 'index'>[];} {
+  const gravityNode = nodes.find((n) => n.id === gravityId);
   if (!gravityNode) return { prompts: [], medias: [], references: [] };
-  
-  const gravityData = gravityNode.data as unknown as GravityNodeData;
-  
-  // Prompts connected to the Gravity
-  const inputEdges = edges.filter(e => e.target === gravityId);
-  const connectedPrompts = inputEdges
-    .map(e => nodes.find(n => n.id === e.source && n.type === 'prompt'))
-    .filter(Boolean)
-    .map(n => (n!.data as { value?: string }).value)
-    .filter(Boolean) as string[];
-  
-  // Medias connected to the Gravity (with metadata)
-  const connectedMediaNodes = inputEdges
-    .map(e => nodes.find(n => n.id === e.source && n.type === 'media'))
-    .filter(Boolean) as Node[];
-  
-  const connectedMedias = connectedMediaNodes
-    .map(n => (n.data as { url?: string | null }).url)
-    .filter(Boolean) as string[];
 
-  const connectedRefs: Omit<ImageReference, 'index'>[] = connectedMediaNodes
-    .filter(n => (n.data as { url?: string | null }).url)
-    .map(n => {
-      const d = n.data as { url?: string | null; label?: string; libraryPrompt?: string | null };
-      return {
-        url: d.url!,
-        label: d.label || 'Mídia',
-        libraryPrompt: d.libraryPrompt || undefined,
-        source: 'gravity' as const,
-      };
-    });
-  
+  const gravityData = gravityNode.data as unknown as GravityNodeData;
+
+  // Prompts connected to the Gravity
+  const inputEdges = edges.filter((e) => e.target === gravityId);
+  const connectedPrompts = inputEdges.
+  map((e) => nodes.find((n) => n.id === e.source && n.type === 'prompt')).
+  filter(Boolean).
+  map((n) => (n!.data as {value?: string;}).value).
+  filter(Boolean) as string[];
+
+  // Medias connected to the Gravity (with metadata)
+  const connectedMediaNodes = inputEdges.
+  map((e) => nodes.find((n) => n.id === e.source && n.type === 'media')).
+  filter(Boolean) as Node[];
+
+  const connectedMedias = connectedMediaNodes.
+  map((n) => (n.data as {url?: string | null;}).url).
+  filter(Boolean) as string[];
+
+  const connectedRefs: Omit<ImageReference, 'index'>[] = connectedMediaNodes.
+  filter((n) => (n.data as {url?: string | null;}).url).
+  map((n) => {
+    const d = n.data as {url?: string | null;label?: string;libraryPrompt?: string | null;};
+    return {
+      url: d.url!,
+      label: d.label || 'Mídia',
+      libraryPrompt: d.libraryPrompt || undefined,
+      source: 'gravity' as const
+    };
+  });
+
   // Internal data from the Gravity popup
   const internalPrompt = gravityData.internalPrompt || '';
   const internalMedias = gravityData.internalMediaUrls || [];
 
-  const internalRefs: Omit<ImageReference, 'index'>[] = internalMedias
-    .filter(Boolean)
-    .map(url => ({
-      url,
-      label: 'Gravity',
-      source: 'gravity' as const,
-    }));
-  
+  const internalRefs: Omit<ImageReference, 'index'>[] = internalMedias.
+  filter(Boolean).
+  map((url) => ({
+    url,
+    label: 'Gravity',
+    source: 'gravity' as const
+  }));
+
   return {
     prompts: [...connectedPrompts, internalPrompt].filter(Boolean),
     medias: [...connectedMedias, ...internalMedias],
-    references: [...connectedRefs, ...internalRefs],
+    references: [...connectedRefs, ...internalRefs]
   };
 }
 
 // Helper: Find if a Result node is connected to a Gravity
 function findConnectedGravity(resultId: string, nodes: Node[], edges: Edge[]): string | null {
-  const inputEdges = edges.filter(e => e.target === resultId);
+  const inputEdges = edges.filter((e) => e.target === resultId);
   for (const edge of inputEdges) {
-    const sourceNode = nodes.find(n => n.id === edge.source);
+    const sourceNode = nodes.find((n) => n.id === edge.source);
     if (sourceNode?.type === 'gravity') {
       return sourceNode.id;
     }
@@ -214,40 +214,40 @@ function findConnectedGravity(resultId: string, nodes: Node[], edges: Edge[]): s
 
 // Helper: Collect local context connected directly to a Result node
 function collectLocalContext(
-  resultId: string, 
-  nodes: Node[], 
-  edges: Edge[]
-): { prompts: string[]; medias: string[]; references: Omit<ImageReference, 'index'>[] } {
-  const inputEdges = edges.filter(e => e.target === resultId);
-  
+resultId: string,
+nodes: Node[],
+edges: Edge[])
+: {prompts: string[];medias: string[];references: Omit<ImageReference, 'index'>[];} {
+  const inputEdges = edges.filter((e) => e.target === resultId);
+
   // Local prompts (not from gravity)
-  const localPrompts = inputEdges
-    .map(e => nodes.find(n => n.id === e.source && n.type === 'prompt'))
-    .filter(Boolean)
-    .map(n => (n!.data as { value?: string }).value)
-    .filter(Boolean) as string[];
-  
+  const localPrompts = inputEdges.
+  map((e) => nodes.find((n) => n.id === e.source && n.type === 'prompt')).
+  filter(Boolean).
+  map((n) => (n!.data as {value?: string;}).value).
+  filter(Boolean) as string[];
+
   // Local media nodes (not from gravity)
-  const localMediaNodes = inputEdges
-    .map(e => nodes.find(n => n.id === e.source && n.type === 'media'))
-    .filter(Boolean) as Node[];
+  const localMediaNodes = inputEdges.
+  map((e) => nodes.find((n) => n.id === e.source && n.type === 'media')).
+  filter(Boolean) as Node[];
 
-  const localMedias = localMediaNodes
-    .map(n => (n.data as { url?: string | null }).url)
-    .filter(Boolean) as string[];
+  const localMedias = localMediaNodes.
+  map((n) => (n.data as {url?: string | null;}).url).
+  filter(Boolean) as string[];
 
-  const localRefs: Omit<ImageReference, 'index'>[] = localMediaNodes
-    .filter(n => (n.data as { url?: string | null }).url)
-    .map(n => {
-      const d = n.data as { url?: string | null; label?: string; libraryPrompt?: string | null };
-      return {
-        url: d.url!,
-        label: d.label || 'Mídia',
-        libraryPrompt: d.libraryPrompt || undefined,
-        source: 'local' as const,
-      };
-    });
-  
+  const localRefs: Omit<ImageReference, 'index'>[] = localMediaNodes.
+  filter((n) => (n.data as {url?: string | null;}).url).
+  map((n) => {
+    const d = n.data as {url?: string | null;label?: string;libraryPrompt?: string | null;};
+    return {
+      url: d.url!,
+      label: d.label || 'Mídia',
+      libraryPrompt: d.libraryPrompt || undefined,
+      source: 'local' as const
+    };
+  });
+
   return { prompts: localPrompts, medias: localMedias, references: localRefs };
 }
 
@@ -272,7 +272,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
   const pollingFallbackRef = useRef<NodeJS.Timeout | null>(null);
   const lastSyncedAtRef = useRef<string>('');
   const activeResultIdsRef = useRef<Set<string>>(new Set());
-  const pendingJobsRef = useRef<{ id: string; quantity: number; resultId?: string }[]>([]);
+  const pendingJobsRef = useRef<{id: string;quantity: number;resultId?: string;}[]>([]);
 
   // Keep refs in sync
   useEffect(() => {
@@ -281,16 +281,16 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
   }, [toast, setNodes]);
 
   // Job completed handler - add images to the SPECIFIC result/output node that started the job
-  const handleJobCompleted = useCallback((result: { jobId: string; resultUrls: string[]; resultCount: number; resultId?: string }) => {
+  const handleJobCompleted = useCallback((result: {jobId: string;resultUrls: string[];resultCount: number;resultId?: string;}) => {
     const currentNodes = nodesRef.current;
-    
+
     // Use resultId from the job to find the correct target node
     let targetNode: Node | undefined;
-    
+
     if (result.resultId) {
       targetNode = currentNodes.find((n) => n.id === result.resultId);
     }
-    
+
     // Fallback for legacy jobs without resultId
     if (!targetNode) {
       targetNode = currentNodes.find((n) => n.type === 'result');
@@ -298,7 +298,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
         targetNode = currentNodes.find((n) => n.type === 'output');
       }
     }
-    
+
     if (!targetNode) return;
 
     // Validate resultUrls before use
@@ -308,12 +308,12 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
       return;
     }
 
-    const newImages = urls.map(url => ({
+    const newImages = urls.map((url) => ({
       url,
       prompt: '',
       aspectRatio: '1:1',
       savedToGallery: true,
-      generatedAt: new Date().toISOString(),
+      generatedAt: new Date().toISOString()
     }));
 
     const targetId = targetNode.id;
@@ -321,16 +321,16 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     setNodesRef.current((nds) => {
       return nds.map((n) => {
         if (n.id === targetId) {
-          const existingImages = (n.data as { images?: Array<{ url?: string } | string> }).images || [];
+          const existingImages = (n.data as {images?: Array<{url?: string;} | string>;}).images || [];
           const safeExisting = Array.isArray(existingImages) ? existingImages : [];
-          const existingUrls = new Set(safeExisting.map(img => typeof img === 'string' ? img : img.url));
-          const uniqueNewImages = newImages.filter(img => !existingUrls.has(img.url));
+          const existingUrls = new Set(safeExisting.map((img) => typeof img === 'string' ? img : img.url));
+          const uniqueNewImages = newImages.filter((img) => !existingUrls.has(img.url));
           return {
             ...n,
             data: {
               ...n.data,
-              images: [...safeExisting, ...uniqueNewImages],
-            },
+              images: [...safeExisting, ...uniqueNewImages]
+            }
           };
         }
         return n;
@@ -338,21 +338,21 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     });
 
     // Detect partial failure: compare requested quantity vs delivered
-    const pendingJob = pendingJobsRef.current.find(j => j.id === result.jobId);
+    const pendingJob = pendingJobsRef.current.find((j) => j.id === result.jobId);
     const requestedQty = pendingJob?.quantity || result.resultCount;
     const failedCount = requestedQty - result.resultCount;
 
     if (failedCount > 0) {
       toastRef.current({
         title: `${result.resultCount} de ${requestedQty} imagens geradas`,
-        description: `${failedCount} ${failedCount === 1 ? 'crédito reembolsado' : 'créditos reembolsados'}.`,
+        description: `${failedCount} ${failedCount === 1 ? 'crédito reembolsado' : 'créditos reembolsados'}.`
       });
     } else {
-      toastRef.current({ 
-        title: `${result.resultCount} ${result.resultCount === 1 ? 'imagem gerada' : 'imagens geradas'} com sucesso!` 
+      toastRef.current({
+        title: `${result.resultCount} ${result.resultCount === 1 ? 'imagem gerada' : 'imagens geradas'} com sucesso!`
       });
     }
-    
+
     refreshProfile();
   }, [refreshProfile]);
 
@@ -363,17 +363,17 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
       description: error,
       variant: 'destructive'
     });
-    
+
     refreshProfile();
   }, [refreshProfile]);
 
   // Job queue hook
-  const { 
-    pendingJobs, 
-    addPendingJob, 
-    hasQueuedJobs, 
-    hasProcessingJobs, 
-    totalPendingImages 
+  const {
+    pendingJobs,
+    addPendingJob,
+    hasQueuedJobs,
+    hasProcessingJobs,
+    totalPendingImages
   } = useJobQueue({
     projectId,
     onJobCompleted: handleJobCompleted,
@@ -387,8 +387,8 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
 
   // Dispatch job queue state to SettingsNode (legacy)
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent(JOB_QUEUE_STATE_EVENT, { 
-      detail: { hasQueuedJobs, hasProcessingJobs, totalPendingImages } 
+    window.dispatchEvent(new CustomEvent(JOB_QUEUE_STATE_EVENT, {
+      detail: { hasQueuedJobs, hasProcessingJobs, totalPendingImages }
     }));
   }, [hasQueuedJobs, hasProcessingJobs, totalPendingImages]);
 
@@ -396,7 +396,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
   useEffect(() => {
     // Group jobs by resultId
     const jobsByResult = new Map<string, typeof pendingJobs>();
-    
+
     for (const job of pendingJobs) {
       if (job.resultId) {
         const jobs = jobsByResult.get(job.resultId) || [];
@@ -404,20 +404,20 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
         jobsByResult.set(job.resultId, jobs);
       }
     }
-    
+
     // Track which resultIds currently have jobs
     const currentActiveIds = new Set(jobsByResult.keys());
-    
+
     // Clear state for resultIds that no longer have pending jobs
     for (const prevResultId of activeResultIdsRef.current) {
       if (!currentActiveIds.has(prevResultId)) {
         // Reset job queue state
         window.dispatchEvent(new CustomEvent(RESULT_JOB_QUEUE_STATE_EVENT, {
-          detail: { 
-            resultId: prevResultId, 
-            hasQueuedJobs: false, 
-            hasProcessingJobs: false, 
-            totalPendingImages: 0 
+          detail: {
+            resultId: prevResultId,
+            hasQueuedJobs: false,
+            hasProcessingJobs: false,
+            totalPendingImages: 0
           }
         }));
         // Also reset generating state (important: this was missing!)
@@ -426,23 +426,23 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
         }));
       }
     }
-    
+
     // Dispatch event for each resultId with active jobs
     for (const [resultId, jobs] of jobsByResult) {
-      const hasQueuedJobsForResult = jobs.some(j => j.status === 'queued');
-      const hasProcessingJobsForResult = jobs.some(j => j.status === 'processing');
+      const hasQueuedJobsForResult = jobs.some((j) => j.status === 'queued');
+      const hasProcessingJobsForResult = jobs.some((j) => j.status === 'processing');
       const totalPendingImagesForResult = jobs.reduce((acc, j) => acc + j.quantity, 0);
-      
+
       window.dispatchEvent(new CustomEvent(RESULT_JOB_QUEUE_STATE_EVENT, {
-        detail: { 
-          resultId, 
-          hasQueuedJobs: hasQueuedJobsForResult, 
-          hasProcessingJobs: hasProcessingJobsForResult, 
-          totalPendingImages: totalPendingImagesForResult 
+        detail: {
+          resultId,
+          hasQueuedJobs: hasQueuedJobsForResult,
+          hasProcessingJobs: hasProcessingJobsForResult,
+          totalPendingImages: totalPendingImagesForResult
         }
       }));
     }
-    
+
     // Update the ref for next comparison
     activeResultIdsRef.current = currentActiveIds;
   }, [pendingJobs]);
@@ -455,11 +455,11 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
         return;
       }
       try {
-        const { data, error } = await supabase
-          .from('projects')
-          .select('name, canvas_state')
-          .eq('id', projectId)
-          .single();
+        const { data, error } = await supabase.
+        from('projects').
+        select('name, canvas_state').
+        eq('id', projectId).
+        single();
 
         if (error) {
           console.error('Load project error:', error);
@@ -471,52 +471,52 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
           setIsLoading(false);
           return;
         }
-        
+
         if (data) {
           setProjectName(data.name);
-          const canvasState = data.canvas_state as { nodes?: Node[]; edges?: Edge[] };
-          
+          const canvasState = data.canvas_state as {nodes?: Node[];edges?: Edge[];};
+
           const needsRepair = needsAutoRepair(canvasState);
-          
+
           let loadedNodes = canvasState?.nodes || [];
           let loadedEdges = canvasState?.edges || [];
-          
+
           if (needsRepair) {
             console.log('Auto-repair triggered: sanitizing canvas_state');
             const repaired = repairCanvasState(canvasState);
             loadedNodes = repaired.nodes;
             loadedEdges = repaired.edges;
-            
+
             const cleanState = sanitizeCanvasState(loadedNodes, loadedEdges);
-            const { error: updateError } = await supabase
-              .from('projects')
-              .update({
-                canvas_state: cleanState,
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', projectId);
-            
+            const { error: updateError } = await supabase.
+            from('projects').
+            update({
+              canvas_state: cleanState,
+              updated_at: new Date().toISOString()
+            }).
+            eq('id', projectId);
+
             if (updateError) {
               console.error('Auto-repair save error:', updateError);
             } else {
               console.log('Auto-repair completed successfully');
               toast({
                 title: 'Projeto otimizado',
-                description: 'Removemos imagens antigas do canvas para melhorar a performance.',
+                description: 'Removemos imagens antigas do canvas para melhorar a performance.'
               });
               lastSavedDataRef.current = JSON.stringify(cleanState);
             }
           }
-          
+
           // Load historical images from generations table WITH result_node_id
-          const { data: generations } = await supabase
-            .from('generations')
-            .select('image_url, prompt, aspect_ratio, created_at, result_node_id')
-            .eq('project_id', projectId)
-            .eq('status', 'completed')
-            .order('created_at', { ascending: false })
-            .limit(200);
-          
+          const { data: generations } = await supabase.
+          from('generations').
+          select('image_url, prompt, aspect_ratio, created_at, result_node_id').
+          eq('project_id', projectId).
+          eq('status', 'completed').
+          order('created_at', { ascending: false }).
+          limit(200);
+
           // Group images by result_node_id for isolated display per node
           if (generations && generations.length > 0) {
             type NodeImage = {
@@ -526,40 +526,40 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
               savedToGallery: boolean;
               generatedAt: string;
             };
-            
+
             const imagesByNode = new Map<string, NodeImage[]>();
-            
-            generations.forEach(gen => {
-              const nodeId = (gen as { result_node_id?: string | null }).result_node_id || '__shared__';
+
+            generations.forEach((gen) => {
+              const nodeId = (gen as {result_node_id?: string | null;}).result_node_id || '__shared__';
               const existing = imagesByNode.get(nodeId) || [];
               existing.push({
                 url: gen.image_url,
                 prompt: gen.prompt,
                 aspectRatio: gen.aspect_ratio,
                 savedToGallery: true,
-                generatedAt: gen.created_at,
+                generatedAt: gen.created_at
               });
               imagesByNode.set(nodeId, existing);
             });
-            
+
             // Legacy images (without result_node_id) go to the first Result Node
             const sharedImages = imagesByNode.get('__shared__') || [];
-            const resultNodes = loadedNodes.filter(n => n.type === 'result');
-            
-            loadedNodes = loadedNodes.map(node => {
+            const resultNodes = loadedNodes.filter((n) => n.type === 'result');
+
+            loadedNodes = loadedNodes.map((node) => {
               if (node.type === 'result') {
                 const nodeImages = imagesByNode.get(node.id) || [];
                 const isFirstResult = resultNodes.length > 0 && resultNodes[0].id === node.id;
                 // First Result Node gets legacy images too; reverse for chronological display
-                const finalImages = isFirstResult 
-                  ? [...nodeImages, ...sharedImages].reverse()
-                  : nodeImages.reverse();
+                const finalImages = isFirstResult ?
+                [...nodeImages, ...sharedImages].reverse() :
+                nodeImages.reverse();
                 return {
                   ...node,
                   data: {
                     ...node.data,
-                    images: finalImages,
-                  },
+                    images: finalImages
+                  }
                 };
               }
               // Legacy output nodes also get shared images
@@ -568,14 +568,14 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
                   ...node,
                   data: {
                     ...node.data,
-                    images: sharedImages.reverse(),
-                  },
+                    images: sharedImages.reverse()
+                  }
                 };
               }
               return node;
             });
           }
-          
+
           setNodes(loadedNodes);
           setEdges(loadedEdges);
         }
@@ -590,7 +590,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
   // Save function with sanitization
   const saveProject = useCallback(async (nodesToSave: Node[], edgesToSave: Edge[]) => {
     if (!projectId || !user || isLoading) return;
-    
+
     const cleanState = sanitizeCanvasState(nodesToSave, edgesToSave);
 
     let dataString: string;
@@ -612,13 +612,13 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
 
     setIsSaving(true);
     try {
-      const { error } = await supabase
-        .from('projects')
-        .update({
-          canvas_state: cleanState,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', projectId);
+      const { error } = await supabase.
+      from('projects').
+      update({
+        canvas_state: cleanState,
+        updated_at: new Date().toISOString()
+      }).
+      eq('id', projectId);
 
       if (error) {
         console.error('Save error:', error);
@@ -658,11 +658,11 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
   // Ref to store current nodes/edges for generation without causing re-renders
   const nodesRef = useRef<Node[]>(nodes);
   const edgesRef = useRef<Edge[]>(edges);
-  
+
   useEffect(() => {
     nodesRef.current = nodes;
   }, [nodes]);
-  
+
   useEffect(() => {
     edgesRef.current = edges;
   }, [edges]);
@@ -671,8 +671,8 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
   const generateForResult = useCallback(async (resultId: string) => {
     const currentNodes = nodesRef.current;
     const currentEdges = edgesRef.current;
-    
-    const resultNode = currentNodes.find(n => n.id === resultId && n.type === 'result');
+
+    const resultNode = currentNodes.find((n) => n.id === resultId && n.type === 'result');
     if (!resultNode) {
       toast({
         title: 'Erro',
@@ -690,35 +690,35 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
 
     // Resolve "auto" aspect ratio from connected media
     if (aspectRatio === 'auto') {
-      const inputEdges = currentEdges.filter(e => e.target === resultId);
-      const connectedMedia = inputEdges
-        .map(e => currentNodes.find(n => n.id === e.source && n.type === 'media'))
-        .filter(Boolean);
-      
+      const inputEdges = currentEdges.filter((e) => e.target === resultId);
+      const connectedMedia = inputEdges.
+      map((e) => currentNodes.find((n) => n.id === e.source && n.type === 'media')).
+      filter(Boolean);
+
       // Also check via gravity
       const gravityIdForAuto = findConnectedGravity(resultId, currentNodes, currentEdges);
       if (gravityIdForAuto) {
-        const gravityInputEdges = currentEdges.filter(e => e.target === gravityIdForAuto);
-        const gravityMedias = gravityInputEdges
-          .map(e => currentNodes.find(n => n.id === e.source && n.type === 'media'))
-          .filter(Boolean);
+        const gravityInputEdges = currentEdges.filter((e) => e.target === gravityIdForAuto);
+        const gravityMedias = gravityInputEdges.
+        map((e) => currentNodes.find((n) => n.id === e.source && n.type === 'media')).
+        filter(Boolean);
         connectedMedia.push(...gravityMedias);
       }
 
       // Try to detect aspect ratio from first connected media image
       const firstMedia = connectedMedia[0];
       if (firstMedia) {
-        const mediaUrl = (firstMedia.data as { url?: string }).url;
+        const mediaUrl = (firstMedia.data as {url?: string;}).url;
         if (mediaUrl) {
           try {
             const detectedRatio = await new Promise<string>((resolve) => {
               const img = new window.Image();
               img.onload = () => {
                 const r = img.naturalWidth / img.naturalHeight;
-                if (r > 1.6) resolve('16:9');
-                else if (r < 0.7) resolve('9:16');
-                else if (r < 0.85) resolve('4:5');
-                else resolve('1:1');
+                if (r > 1.6) resolve('16:9');else
+                if (r < 0.7) resolve('9:16');else
+                if (r < 0.85) resolve('4:5');else
+                resolve('1:1');
               };
               img.onerror = () => resolve('1:1');
               img.src = mediaUrl;
@@ -741,10 +741,10 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
       const parts = aspectRatio.split(':').map(Number);
       if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) {
         const r = parts[0] / parts[1];
-        if (r > 1.6) aspectRatio = '16:9';
-        else if (r < 0.7) aspectRatio = '9:16';
-        else if (r < 0.85) aspectRatio = '4:5';
-        else aspectRatio = '1:1';
+        if (r > 1.6) aspectRatio = '16:9';else
+        if (r < 0.7) aspectRatio = '9:16';else
+        if (r < 0.85) aspectRatio = '4:5';else
+        aspectRatio = '1:1';
       } else {
         aspectRatio = '1:1';
       }
@@ -757,19 +757,19 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
 
     // Check if connected to a Gravity
     const gravityId = findConnectedGravity(resultId, currentNodes, currentEdges);
-    
+
     // Collect context
     let allPrompts: string[] = [];
     let allMedias: string[] = [];
     let allRefs: Omit<ImageReference, 'index'>[] = [];
-    
+
     if (gravityId) {
       const gravityContext = collectGravityContext(gravityId, currentNodes, currentEdges);
       allPrompts = [...gravityContext.prompts];
       allMedias = [...gravityContext.medias];
       allRefs = [...gravityContext.references];
     }
-    
+
     // Add local context
     const localContext = collectLocalContext(resultId, currentNodes, currentEdges);
     allPrompts = [...allPrompts, ...localContext.prompts];
@@ -796,10 +796,10 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
         references.push({ ...ref, index: references.length + 1 });
       }
     }
-    
+
     // Dispatch generating state
-    window.dispatchEvent(new CustomEvent(RESULT_GENERATING_STATE_EVENT, { 
-      detail: { resultId, isGenerating: true } 
+    window.dispatchEvent(new CustomEvent(RESULT_GENERATING_STATE_EVENT, {
+      detail: { resultId, isGenerating: true }
     }));
 
     try {
@@ -813,28 +813,28 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
           try {
             const errBody = await error.context?.json();
             errorMsg = errBody?.error || errorMsg;
-          } catch { /* ignore parse errors */ }
+          } catch {/* ignore parse errors */}
         }
         throw new Error(errorMsg);
       }
 
       // Add job with resultId so we know where to deliver images
       addPendingJob(data.jobId, data.quantity, resultId);
-      
+
       // DON'T set isGenerating to false here - let job queue state control the UI
       // The ResultNode listens to RESULT_JOB_QUEUE_STATE_EVENT for its state
 
-      toast({ 
+      toast({
         title: 'Geração iniciada',
         description: `${quantity} ${quantity === 1 ? 'imagem está sendo gerada' : 'imagens estão sendo geradas'}...`
       });
 
       refreshProfile();
-      
+
     } catch (error) {
       console.error('Generation error:', error);
-      window.dispatchEvent(new CustomEvent(RESULT_GENERATING_STATE_EVENT, { 
-        detail: { resultId, isGenerating: false } 
+      window.dispatchEvent(new CustomEvent(RESULT_GENERATING_STATE_EVENT, {
+        detail: { resultId, isGenerating: false }
       }));
       toast({
         title: 'Erro na geração',
@@ -848,12 +848,12 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
   const generateAllFromGravity = useCallback(async (gravityId: string) => {
     const currentNodes = nodesRef.current;
     const currentEdges = edgesRef.current;
-    
+
     // Find all Result nodes connected to this Gravity
-    const outputEdges = currentEdges.filter(e => e.source === gravityId);
-    const connectedResults = outputEdges
-      .map(e => currentNodes.find(n => n.id === e.target && n.type === 'result'))
-      .filter(Boolean) as Node[];
+    const outputEdges = currentEdges.filter((e) => e.source === gravityId);
+    const connectedResults = outputEdges.
+    map((e) => currentNodes.find((n) => n.id === e.target && n.type === 'result')).
+    filter(Boolean) as Node[];
 
     if (connectedResults.length === 0) {
       toast({
@@ -865,13 +865,13 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     }
 
     // Dispatch generating state to Gravity
-    window.dispatchEvent(new CustomEvent(GRAVITY_GENERATING_STATE_EVENT, { 
-      detail: { 
-        gravityId, 
-        isGenerating: true, 
+    window.dispatchEvent(new CustomEvent(GRAVITY_GENERATING_STATE_EVENT, {
+      detail: {
+        gravityId,
+        isGenerating: true,
         totalResults: connectedResults.length,
-        completedResults: 0 
-      } 
+        completedResults: 0
+      }
     }));
 
     let completed = 0;
@@ -880,14 +880,14 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     for (const resultNode of connectedResults) {
       await generateForResult(resultNode.id);
       completed++;
-      
-      window.dispatchEvent(new CustomEvent(GRAVITY_GENERATING_STATE_EVENT, { 
-        detail: { 
-          gravityId, 
-          isGenerating: completed < connectedResults.length, 
+
+      window.dispatchEvent(new CustomEvent(GRAVITY_GENERATING_STATE_EVENT, {
+        detail: {
+          gravityId,
+          isGenerating: completed < connectedResults.length,
           totalResults: connectedResults.length,
-          completedResults: completed 
-        } 
+          completedResults: completed
+        }
       }));
     }
 
@@ -895,20 +895,20 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
 
   // Listen for Result generate events
   useEffect(() => {
-    const handler = (e: CustomEvent<{ resultId: string }>) => {
+    const handler = (e: CustomEvent<{resultId: string;}>) => {
       generateForResult(e.detail.resultId);
     };
-    
+
     window.addEventListener(GENERATE_FOR_RESULT_EVENT, handler as EventListener);
     return () => window.removeEventListener(GENERATE_FOR_RESULT_EVENT, handler as EventListener);
   }, [generateForResult]);
 
   // Listen for Gravity generate all events
   useEffect(() => {
-    const handler = (e: CustomEvent<{ gravityId: string }>) => {
+    const handler = (e: CustomEvent<{gravityId: string;}>) => {
       generateAllFromGravity(e.detail.gravityId);
     };
-    
+
     window.addEventListener(GENERATE_ALL_FROM_GRAVITY_EVENT, handler as EventListener);
     return () => window.removeEventListener(GENERATE_ALL_FROM_GRAVITY_EVENT, handler as EventListener);
   }, [generateAllFromGravity]);
@@ -930,7 +930,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
       return;
     }
 
-    const quantity = (settingsNode.data as { quantity?: number }).quantity || 1;
+    const quantity = (settingsNode.data as {quantity?: number;}).quantity || 1;
     const creditsNeeded = quantity;
 
     if (!profile || profile.credits < creditsNeeded) {
@@ -939,12 +939,12 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     }
 
     const inputEdges = currentEdges.filter((e) => e.target === settingsNode.id);
-    const promptNodes = inputEdges
-      .map((e) => currentNodes.find((n) => n.id === e.source && n.type === 'prompt'))
-      .filter(Boolean) as Node[];
-    const mediaNodes = inputEdges
-      .map((e) => currentNodes.find((n) => n.id === e.source && n.type === 'media'))
-      .filter(Boolean) as Node[];
+    const promptNodes = inputEdges.
+    map((e) => currentNodes.find((n) => n.id === e.source && n.type === 'prompt')).
+    filter(Boolean) as Node[];
+    const mediaNodes = inputEdges.
+    map((e) => currentNodes.find((n) => n.id === e.source && n.type === 'media')).
+    filter(Boolean) as Node[];
 
     if (promptNodes.length === 0) {
       toast({
@@ -955,11 +955,11 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
       return;
     }
 
-    const prompt = promptNodes.map((n) => (n.data as { value: string }).value).join(' ');
-    const aspectRatio = (settingsNode.data as { aspectRatio: string }).aspectRatio;
-    const imageUrls = mediaNodes
-      .map((n) => (n.data as { url: string | null }).url)
-      .filter(Boolean) as string[];
+    const prompt = promptNodes.map((n) => (n.data as {value: string;}).value).join(' ');
+    const aspectRatio = (settingsNode.data as {aspectRatio: string;}).aspectRatio;
+    const imageUrls = mediaNodes.
+    map((n) => (n.data as {url: string | null;}).url).
+    filter(Boolean) as string[];
 
     window.dispatchEvent(new CustomEvent(GENERATING_STATE_EVENT, { detail: { isGenerating: true } }));
 
@@ -974,7 +974,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
           try {
             const errBody = await error.context?.json();
             errorMsg = errBody?.error || errorMsg;
-          } catch { /* ignore parse errors */ }
+          } catch {/* ignore parse errors */}
         }
         throw new Error(errorMsg);
       }
@@ -982,13 +982,13 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
       addPendingJob(data.jobId, data.quantity);
       window.dispatchEvent(new CustomEvent(GENERATING_STATE_EVENT, { detail: { isGenerating: false } }));
 
-      toast({ 
+      toast({
         title: 'Geração iniciada',
         description: `${quantity} ${quantity === 1 ? 'imagem está sendo gerada' : 'imagens estão sendo geradas'}...`
       });
 
       refreshProfile();
-      
+
     } catch (error) {
       console.error('Generation error:', error);
       window.dispatchEvent(new CustomEvent(GENERATING_STATE_EVENT, { detail: { isGenerating: false } }));
@@ -1005,7 +1005,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     const handler = () => {
       handleGenerate();
     };
-    
+
     window.addEventListener(GENERATE_IMAGE_EVENT, handler);
     return () => window.removeEventListener(GENERATE_IMAGE_EVENT, handler);
   }, [handleGenerate]);
@@ -1022,13 +1022,13 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
 
     const checkForNewImages = async () => {
       try {
-        const { data: generations, error } = await supabase
-          .from('generations')
-          .select('image_url, prompt, aspect_ratio, created_at, result_node_id')
-          .eq('project_id', projectId)
-          .eq('status', 'completed')
-          .order('created_at', { ascending: false })
-          .limit(50);
+        const { data: generations, error } = await supabase.
+        from('generations').
+        select('image_url, prompt, aspect_ratio, created_at, result_node_id').
+        eq('project_id', projectId).
+        eq('status', 'completed').
+        order('created_at', { ascending: false }).
+        limit(50);
 
         if (error || !generations) return;
 
@@ -1045,41 +1045,41 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
             savedToGallery: boolean;
             generatedAt: string;
           };
-          
+
           const imagesByNode = new Map<string, NodeImage[]>();
-          
-          generations.forEach(gen => {
-            const nodeId = (gen as { result_node_id?: string | null }).result_node_id || '__shared__';
+
+          generations.forEach((gen) => {
+            const nodeId = (gen as {result_node_id?: string | null;}).result_node_id || '__shared__';
             const existing = imagesByNode.get(nodeId) || [];
             existing.push({
               url: gen.image_url,
               prompt: gen.prompt,
               aspectRatio: gen.aspect_ratio,
               savedToGallery: true,
-              generatedAt: gen.created_at,
+              generatedAt: gen.created_at
             });
             imagesByNode.set(nodeId, existing);
           });
-          
+
           const sharedImages = imagesByNode.get('__shared__') || [];
 
           setNodesRef.current((nds) => {
-            const resultNodes = nds.filter(n => n.type === 'result');
-            
+            const resultNodes = nds.filter((n) => n.type === 'result');
+
             return nds.map((n) => {
               if (n.type === 'result') {
                 const nodeImages = imagesByNode.get(n.id) || [];
                 const isFirstResult = resultNodes.length > 0 && resultNodes[0].id === n.id;
                 // First Result Node gets legacy images too; slice().reverse() to avoid mutation
-                const finalImages = isFirstResult 
-                  ? [...nodeImages, ...sharedImages].slice().reverse()
-                  : nodeImages.slice().reverse();
+                const finalImages = isFirstResult ?
+                [...nodeImages, ...sharedImages].slice().reverse() :
+                nodeImages.slice().reverse();
                 return {
                   ...n,
                   data: {
                     ...n.data,
-                    images: finalImages,
-                  },
+                    images: finalImages
+                  }
                 };
               }
               // Legacy output nodes only get shared images
@@ -1088,8 +1088,8 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
                   ...n,
                   data: {
                     ...n.data,
-                    images: sharedImages.slice().reverse(),
-                  },
+                    images: sharedImages.slice().reverse()
+                  }
                 };
               }
               return n;
@@ -1114,7 +1114,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
   }, [projectId, pendingJobs.length]);
 
   // Clipboard ref for copy/paste
-  const clipboardRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
+  const clipboardRef = useRef<{nodes: Node[];edges: Edge[];} | null>(null);
 
   // Copy/Paste keyboard shortcuts
   useEffect(() => {
@@ -1123,17 +1123,17 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
 
       if (e.ctrlKey || e.metaKey) {
         if (e.key === 'c') {
-          const selectedNodes = nodesRef.current.filter(n => n.selected);
+          const selectedNodes = nodesRef.current.filter((n) => n.selected);
           if (selectedNodes.length === 0) return;
 
-          const selectedNodeIds = new Set(selectedNodes.map(n => n.id));
+          const selectedNodeIds = new Set(selectedNodes.map((n) => n.id));
           const connectedEdges = edgesRef.current.filter(
-            e => selectedNodeIds.has(e.source) && selectedNodeIds.has(e.target)
+            (e) => selectedNodeIds.has(e.source) && selectedNodeIds.has(e.target)
           );
 
           clipboardRef.current = {
-            nodes: selectedNodes.map(n => ({ ...n, data: { ...n.data } })),
-            edges: connectedEdges.map(e => ({ ...e }))
+            nodes: selectedNodes.map((n) => ({ ...n, data: { ...n.data } })),
+            edges: connectedEdges.map((e) => ({ ...e }))
           };
 
           toastRef.current({ title: `${selectedNodes.length} nó${selectedNodes.length > 1 ? 's' : ''} copiado${selectedNodes.length > 1 ? 's' : ''}` });
@@ -1168,8 +1168,8 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
             target: idMap.get(edge.target) || edge.target
           }));
 
-          setNodes(nds => [...nds, ...newNodes]);
-          setEdges(eds => [...eds, ...newEdges]);
+          setNodes((nds) => [...nds, ...newNodes]);
+          setEdges((eds) => [...eds, ...newEdges]);
 
           toastRef.current({ title: `${newNodes.length} nó${newNodes.length > 1 ? 's' : ''} colado${newNodes.length > 1 ? 's' : ''}` });
         }
@@ -1222,8 +1222,8 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+      </div>);
+
   }
 
   return (
@@ -1234,24 +1234,24 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
       <div className="border-b border-border bg-card/50 backdrop-blur-sm px-4 py-2 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <h2 className="font-semibold">{projectName}</h2>
-          {isSaving && (
-            <span className="text-xs text-muted-foreground flex items-center gap-1">
+          {isSaving &&
+          <span className="text-xs text-muted-foreground flex items-center gap-1">
               <Loader2 className="h-3 w-3 animate-spin" />
               Salvando...
             </span>
-          )}
+          }
         </div>
-        {isAdmin && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowSaveTemplate(true)}
-            className="gap-2"
-          >
+        {isAdmin &&
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowSaveTemplate(true)}
+          className="gap-2">
+
             <LayoutTemplate className="h-4 w-4" />
             Salvar como Template
           </Button>
-        )}
+        }
       </div>
 
       {/* Canvas */}
@@ -1266,37 +1266,37 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
           nodeTypes={memoizedNodeTypes}
           deleteKeyCode={['Backspace', 'Delete']}
           fitView
-          className="bg-background"
-        >
+          className="bg-background">
+
           <Controls className="!bg-card/90 !backdrop-blur-sm !border-border !rounded-xl" />
           <MiniMap
             className="!bg-card/90 !backdrop-blur-sm !rounded-xl"
-            nodeColor={() => 'hsl(var(--primary))'}
-          />
+            nodeColor={() => 'hsl(var(--primary))'} />
+
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="hsl(var(--muted-foreground) / 0.2)" />
         </ReactFlow>
       </div>
       <BuyCreditsModal open={showBuyCredits} onOpenChange={setShowBuyCredits} />
-      {isAdmin && user && (
-        <SaveAsTemplateModal
-          open={showSaveTemplate}
-          onOpenChange={setShowSaveTemplate}
-          nodes={nodes}
-          edges={edges}
-          projectName={projectName}
-          userId={user.id}
-          sanitizeCanvasState={sanitizeCanvasState}
-        />
-      )}
+      {isAdmin && user &&
+      <SaveAsTemplateModal
+        open={showSaveTemplate}
+        onOpenChange={setShowSaveTemplate}
+        nodes={nodes}
+        edges={edges}
+        projectName={projectName}
+        userId={user.id}
+        sanitizeCanvasState={sanitizeCanvasState} />
+
+      }
 
       {/* Maintenance Banner */}
-      {showMaintenanceBanner && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-xl w-[90vw]">
+      {showMaintenanceBanner &&
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-xl w-[90vw]">
           <div className="relative bg-yellow-500/10 border border-yellow-500/30 backdrop-blur-xl rounded-xl px-5 py-4 shadow-lg">
             <button
-              onClick={() => setShowMaintenanceBanner(false)}
-              className="absolute top-3 right-3 text-yellow-400/70 hover:text-yellow-300 transition-colors"
-            >
+            onClick={() => setShowMaintenanceBanner(false)}
+            className="absolute top-3 right-3 text-yellow-400/70 hover:text-yellow-300 transition-colors">
+
               <X className="h-4 w-4" />
             </button>
             <div className="flex items-start gap-3 pr-6">
@@ -1306,7 +1306,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
                   Estamos em manutenção para melhor lhe atender
                 </p>
                 <p className="text-xs text-yellow-400/80">
-                  Não recomendamos que você gere imagens no momento.
+                  Mesmo estando em manutenção, você pode seguir gerando imagens normalmente, porém pode acontecer algumas incosistencias.               
                 </p>
                 <ul className="text-xs text-yellow-400/60 space-y-0.5 mt-1">
                   <li>• Melhoria no node de Resultado</li>
@@ -1316,9 +1316,9 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
             </div>
           </div>
         </div>
-      )}
-    </div>
-  );
+      }
+    </div>);
+
 }
 
 export default function Editor() {
@@ -1328,6 +1328,6 @@ export default function Editor() {
   return (
     <ReactFlowProvider>
       <EditorCanvas projectId={projectId} />
-    </ReactFlowProvider>
-  );
+    </ReactFlowProvider>);
+
 }
