@@ -1,19 +1,33 @@
 
 
-## Plano: Simplificar instrução do sistema para Gemini interpretar imagens por conteúdo
+## Plano: Adicionar seletor de resolução (1K, 2K, 4K) no nó de Resultado
 
-### Problema
-A instrução atual no `image-worker` enfatiza numeração ("Image 1", "Image 2"), mas o usuário não sabe qual número cada imagem recebeu. O Gemini deveria inferir o papel de cada imagem pelo conteúdo visual + contexto do prompt.
+### Como funciona na API
+O Gemini 3.1 Flash aceita `generationConfig.imageConfig.imageSize` com valores `"512px"`, `"1K"`, `"2K"`, `"4K"`. Basta adicionar esse campo no body da chamada ao endpoint REST.
 
 ### Alterações
 
-1. **`supabase/functions/image-worker/index.ts`** — reescrever o `systemText` na função `generateSingleImage`:
-   - Remover ênfase em numeração
-   - Instruir o Gemini a **analisar o conteúdo visual** de cada imagem e deduzir o papel (rosto, cena, estilo, etc.) baseado no prompt do usuário
-   - Manter numeração apenas como fallback caso o usuário mencione explicitamente "imagem 1" no prompt
-   - Instrução mais clara: "Analyze the visual content of each reference image. Match each image to the relevant part of the user's prompt based on what you see (e.g., a face photo should be used as the identity/face, a landscape should be used as the scene/background)."
+**1. `src/components/nodes/ResultNode.tsx`**
+- Adicionar `resolution` ao `ResultNodeData` (default `"1K"`)
+- Criar array de opções: `[{ value: "1K", label: "1K" }, { value: "2K", label: "2K" }, { value: "4K", label: "4K" }]`
+- Adicionar um novo Popover/dropdown compacto ao lado do seletor de formato, com o mesmo estilo visual (bg-zinc-900, border-zinc-800, etc.)
+- Persistir `resolution` no node data via `updateNodeData`
 
-2. **Deploy** do `image-worker`
+**2. `src/pages/Editor.tsx`**
+- Na função `generateForResult`, ler `resolution` do node data do ResultNode
+- Enviar `resolution` no body da chamada a `generate-image`
+
+**3. `supabase/functions/generate-image/index.ts`**
+- Aceitar `resolution` do request body
+- Validar valores permitidos: `["1K", "2K", "4K"]`
+- Persistir `resolution` no `jobs.payload`
+
+**4. `supabase/functions/image-worker/index.ts`**
+- Ler `payload.resolution` (default `"1K"`)
+- Adicionar `imageConfig: { imageSize: resolution }` dentro do `generationConfig` na chamada ao endpoint REST do Google
+
+**5. Deploy** de `generate-image` e `image-worker`
 
 ### Resultado
-O usuário simplesmente conecta as imagens e escreve o prompt descrevendo o que quer. O Gemini analisa visualmente cada imagem e decide como usá-la.
+O usuário verá um dropdown "1K" ao lado do seletor de formato. Ao clicar, pode escolher 2K ou 4K para gerar imagens em alta resolução.
+
