@@ -86,7 +86,7 @@ async function generateSingleImage(
   userId: string,
   index: number
 ): Promise<string | null> {
-  console.log(`Generating image ${index} with model: ${IMAGE_MODEL}`);
+  console.log(`[generateSingleImage] Starting image ${index} with model: ${IMAGE_MODEL}, prompt length: ${prompt.length}, ref images: ${imageUrls.length}`);
 
   // Build parts array for Google API
   const parts: Record<string, unknown>[] = [{ text: prompt }];
@@ -114,6 +114,8 @@ async function generateSingleImage(
 
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent?key=${apiKey}`;
 
+  console.log(`[generateSingleImage] Calling Google API for image ${index}...`);
+  const fetchStart = Date.now();
   const response = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -124,6 +126,8 @@ async function generateSingleImage(
       }
     }),
   });
+
+  console.log(`[generateSingleImage] Google API responded in ${Date.now() - fetchStart}ms, status: ${response.status}`);
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -228,6 +232,20 @@ serve(async (req) => {
   try {
     const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.49.1");
     const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // Auto-recover stuck jobs (processing > 3 minutes)
+    const { data: unstuckCount, error: unstuckError } = await supabaseAdmin
+      .from('jobs')
+      .update({ status: 'queued', error: 'Auto-recovered from stuck processing' })
+      .eq('status', 'processing')
+      .lt('started_at', new Date(Date.now() - 3 * 60 * 1000).toISOString())
+      .select('id');
+
+    if (unstuckError) {
+      console.error("Error recovering stuck jobs:", unstuckError);
+    } else if (unstuckCount && unstuckCount.length > 0) {
+      console.log(`Recovered ${unstuckCount.length} stuck job(s):`, unstuckCount.map(j => j.id));
+    }
 
     const { data: job, error: claimError } = await supabaseAdmin.rpc('claim_next_job', {
       p_worker_id: crypto.randomUUID()
