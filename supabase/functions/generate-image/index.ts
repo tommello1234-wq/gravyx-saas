@@ -68,7 +68,7 @@ serve(async (req) => {
       );
     }
 
-    const { prompt, aspectRatio, quantity = 1, imageUrls = [], projectId, resultId } = await req.json();
+    const { prompt, aspectRatio, quantity = 1, imageUrls = [], references = [], projectId, resultId } = await req.json();
 
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -124,8 +124,24 @@ serve(async (req) => {
     }
 
     // Validate quantity (1, 2, or 4)
-    const validQuantities = [1, 2, 4];
+    const validQuantities = [1, 2, 3, 4, 5];
     const safeQuantity = validQuantities.includes(quantity) ? quantity : 1;
+
+    // Validate references array (new enriched format)
+    if (!Array.isArray(references) || references.length > 10) {
+      return new Response(
+        JSON.stringify({ error: "references must be an array with max 10 items" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    for (const ref of references) {
+      if (!ref || typeof ref.url !== 'string' || !ref.url.startsWith('https://') || ref.url.length > 2048) {
+        return new Response(
+          JSON.stringify({ error: "Each reference must have a valid HTTPS url" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
 
     // Check credits
     const { data: profile, error: profileError } = await supabaseAdmin
@@ -149,7 +165,7 @@ serve(async (req) => {
       );
     }
 
-    console.log(`Enqueuing job for ${safeQuantity} image(s) for user ${user.id}, credits available: ${profile.credits}`);
+    console.log(`Enqueuing job for ${safeQuantity} image(s) for user ${user.id}, credits available: ${profile.credits}, references: ${references.length}`);
 
     // Insert job into queue
     const { data: job, error: insertError } = await supabaseAdmin
@@ -163,6 +179,12 @@ serve(async (req) => {
           aspectRatio: aspectRatio || '1:1',
           quantity: safeQuantity,
           imageUrls,
+          references: references.map((r: { url: string; label?: string; libraryPrompt?: string; index?: number }) => ({
+            url: r.url,
+            label: (r.label || 'Mídia').slice(0, 100),
+            libraryPrompt: r.libraryPrompt ? String(r.libraryPrompt).slice(0, 500) : undefined,
+            index: r.index,
+          })),
           resultId
         },
         max_retries: 3

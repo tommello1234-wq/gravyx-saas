@@ -104,44 +104,94 @@ async function fetchImageAsBase64(url: string): Promise<{ base64: string; mimeTy
   }
 }
 
+// Reference metadata from enriched payload
+interface ReferenceInfo {
+  url: string;
+  label: string;
+  libraryPrompt?: string;
+  index: number;
+}
+
 // Generate a single image via Google AI Studio native API
 async function generateSingleImage(
   apiKey: string,
   prompt: string,
   imageUrls: string[],
+  references: ReferenceInfo[],
   supabaseAdmin: ReturnType<typeof import("https://esm.sh/@supabase/supabase-js@2.49.1").createClient>,
   userId: string,
   index: number
 ): Promise<string | null> {
-  console.log(`[generateSingleImage] Starting image ${index} with model: ${IMAGE_MODEL}, prompt length: ${prompt.length}, ref images: ${imageUrls.length}`);
+  console.log(`[generateSingleImage] Starting image ${index} with model: ${IMAGE_MODEL}, prompt length: ${prompt.length}, references: ${references.length}, legacy imageUrls: ${imageUrls.length}`);
 
-  // Build parts array for Google API
-  const parts: Record<string, unknown>[] = [{ text: prompt }];
+  // Determine which reference source to use
+  const useEnrichedRefs = references.length > 0;
+  const refUrls = useEnrichedRefs ? references.map(r => r.url) : imageUrls;
 
-  // Add reference images as inline_data
-  for (const url of imageUrls) {
+  if (refUrls.length === 0) {
+    // No reference images - simple text-only generation
+    const parts: Record<string, unknown>[] = [{ text: prompt }];
+    return await callGeminiAndUpload(apiKey, parts, supabaseAdmin, userId, index);
+  }
+
+  // Build numbered multimodal parts
+  const parts: Record<string, unknown>[] = [];
+
+  // System instruction: tell Gemini how to interpret numbered images
+  const imageCount = refUrls.length;
+  let systemText = `You are receiving ${imageCount} reference image(s) numbered as "Image 1" through "Image ${imageCount}". `;
+  systemText += `The user's prompt may reference specific images by number (e.g., "image 1", "imagem 1", "imagem 01", "foto 1"). `;
+  systemText += `When the user references an image by number, use that specific image for the described purpose. `;
+  systemText += `When the user does not specify numbers, analyze the visual content of each image and infer the most appropriate role based on the prompt context. `;
+  
+  if (useEnrichedRefs) {
+    systemText += `\nReference image details:\n`;
+    for (const ref of references) {
+      systemText += `- Image ${ref.index}: "${ref.label}"`;
+      if (ref.libraryPrompt) systemText += ` (style hint: ${ref.libraryPrompt})`;
+      systemText += `\n`;
+    }
+  }
+  
+  systemText += `\nUser prompt: ${prompt}`;
+  parts.push({ text: systemText });
+
+  // Add each reference image with a numbered label
+  for (let i = 0; i < refUrls.length; i++) {
+    const url = refUrls[i];
+    const imgLabel = useEnrichedRefs ? `Image ${references[i].index}: "${references[i].label}"` : `Image ${i + 1}`;
+    
+    parts.push({ text: imgLabel });
+    
     if (url.startsWith("data:")) {
-      // Already base64 data URL
       const matches = url.match(/^data:(image\/\w+);base64,(.+)$/);
       if (matches) {
-        parts.push({
-          inline_data: { mime_type: matches[1], data: matches[2] }
-        });
+        parts.push({ inline_data: { mime_type: matches[1], data: matches[2] } });
       }
     } else {
-      // Fetch remote image and convert to base64
       const imgData = await fetchImageAsBase64(url);
       if (imgData) {
-        parts.push({
-          inline_data: { mime_type: imgData.mimeType, data: imgData.base64 }
-        });
+        parts.push({ inline_data: { mime_type: imgData.mimeType, data: imgData.base64 } });
+      } else {
+        console.warn(`Failed to fetch reference image ${i + 1}, skipping`);
       }
     }
   }
 
+  return await callGeminiAndUpload(apiKey, parts, supabaseAdmin, userId, index);
+}
+
+// Call Gemini API and upload result to storage
+async function callGeminiAndUpload(
+  apiKey: string,
+  parts: Record<string, unknown>[],
+  supabaseAdmin: ReturnType<typeof import("https://esm.sh/@supabase/supabase-js@2.49.1").createClient>,
+  userId: string,
+  index: number
+): Promise<string | null> {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent?key=${apiKey}`;
 
-  console.log(`[generateSingleImage] Calling Google API for image ${index}...`);
+  console.log(`[callGeminiAndUpload] Calling Google API for image ${index}, parts count: ${parts.length}`);
   const fetchStart = Date.now();
   const response = await fetch(endpoint, {
     method: "POST",
@@ -301,17 +351,18 @@ serve(async (req) => {
       aspectRatio: string;
       quantity: number;
       imageUrls: string[];
+      references?: ReferenceInfo[];
       resultId?: string;
     };
 
-    const { prompt, aspectRatio, quantity, imageUrls = [], resultId } = payload;
+    const { prompt, aspectRatio, quantity, imageUrls = [], references = [], resultId } = payload;
 
     let fullPrompt = prompt;
     if (aspectRatio) {
       fullPrompt = `${prompt}. Aspect ratio: ${aspectRatio}`;
     }
 
-    // Filter out SVG URLs and limit to 10 reference images
+    // Filter out SVG URLs from legacy imageUrls and limit to 10
     const validImageUrls = imageUrls.filter(url => {
       const isSvg = url.toLowerCase().endsWith('.svg') || url.includes('.svg?');
       if (isSvg) {
@@ -319,14 +370,21 @@ serve(async (req) => {
       }
       return !isSvg;
     }).slice(0, 10);
+
+    // Filter SVGs from enriched references too
+    const validReferences = references.filter(ref => {
+      const isSvg = ref.url.toLowerCase().endsWith('.svg') || ref.url.includes('.svg?');
+      if (isSvg) console.warn(`Skipping SVG reference: ${ref.url}`);
+      return !isSvg;
+    }).slice(0, 10);
     
-    console.log(`Using ${validImageUrls.length} reference images (from ${imageUrls.length} provided)`);
+    console.log(`Using ${validReferences.length} enriched references, ${validImageUrls.length} legacy imageUrls`);
 
     try {
       // Generate images SEQUENTIALLY to avoid memory limit exceeded
       const results: (string | null)[] = [];
       for (let i = 0; i < quantity; i++) {
-        const result = await generateSingleImage(GOOGLE_AI_API_KEY, fullPrompt, validImageUrls, supabaseAdmin, claimedJob.user_id, i);
+        const result = await generateSingleImage(GOOGLE_AI_API_KEY, fullPrompt, validImageUrls, validReferences, supabaseAdmin, claimedJob.user_id, i);
         results.push(result);
       }
       const successfulImages = results.filter((url): url is string => url !== null);
