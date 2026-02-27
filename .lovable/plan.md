@@ -1,23 +1,32 @@
 
 
-## Plano: Simplificar drasticamente o prompt do sistema
+## Plano: Custo de créditos por resolução (1K=1, 2K=2, 4K=4)
 
-### Problema
-O `systemText` atual envia um bloco enorme de instruções (análise de conteúdo visual, mapeamento de roles, exemplos, labels, etc.) antes do prompt do usuário. Isso provavelmente está confundindo o Gemini 3.1 e diluindo a intenção real. Quando o modelo recebia apenas "imagem + prompt direto", funcionava perfeitamente.
+### Alterações
 
-### Alteração
+**1. `supabase/functions/generate-image/index.ts`**
+- Substituir `CREDITS_PER_IMAGE = 1` por uma função que calcula com base na resolução:
+  - `1K` → 1 crédito
+  - `2K` → 2 créditos
+  - `4K` → 4 créditos
+- Atualizar o cálculo de `creditsNeeded` para usar `safeQuantity * creditsForResolution(safeResolution)`
+- Incluir a resolução no payload do job (já existe)
 
-**`supabase/functions/image-worker/index.ts`** — simplificar o `systemText` na função `generateSingleImage`:
+**2. `supabase/functions/image-worker/index.ts`**
+- Mesma função de cálculo de créditos por resolução
+- Na linha 395, trocar `CREDITS_PER_IMAGE` por `creditsForResolution(resolution)` ao debitar créditos por imagem gerada
 
-- Remover todo o bloco verboso de instruções sobre análise de conteúdo visual, roles, exemplos
-- Enviar apenas o prompt do usuário como texto principal
-- Se houver `libraryPrompt` em alguma referência, adicionar como hint curto (1 linha)
-- Manter a numeração explícita apenas se o usuário usar no prompt
-- Estrutura final dos `parts`: `[{ text: prompt }, imagem1, imagem2, ...]` — simples e direto, como se o usuário estivesse conversando no chat do Gemini
+**3. `src/lib/plan-limits.ts`**
+- Atualizar `ESTIMATED_COST_PER_IMAGE_USD` de `0.06` para `0.067` (custo real em 1K com Gemini 3.1 Flash)
 
-### Deploy
-- Deploy do `image-worker`
+### Detalhe técnico
 
-### Resultado
-O modelo recebe a imagem + prompt limpo, sem instruções confusas. Comportamento idêntico a usar o Gemini direto no chat.
+```text
+Resolução → Créditos
+1K (padrão)  → 1
+2K           → 2
+4K           → 4
+```
+
+A validação de saldo antes de enfileirar o job já usa `creditsNeeded = quantity * X`. Basta trocar X pela função que considera a resolução. O worker já recebe `resolution` no payload.
 
