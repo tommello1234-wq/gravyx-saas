@@ -5,7 +5,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
-const CREDITS_PER_IMAGE = 1;
+function creditsForResolution(resolution: string): number {
+  switch (resolution) {
+    case '4K': return 4;
+    case '2K': return 2;
+    default: return 1; // 1K
+  }
+}
 
 // In-memory rate limiting per user (max 15 requests per minute)
 const userRateLimits = new Map<string, { count: number; resetAt: number }>();
@@ -161,7 +167,7 @@ serve(async (req) => {
       );
     }
 
-    const creditsNeeded = safeQuantity * CREDITS_PER_IMAGE;
+    const creditsNeeded = safeQuantity * creditsForResolution(safeResolution);
     if (profile.credits < creditsNeeded) {
       return new Response(
         JSON.stringify({ error: "Insufficient credits", required: creditsNeeded, available: profile.credits }),
