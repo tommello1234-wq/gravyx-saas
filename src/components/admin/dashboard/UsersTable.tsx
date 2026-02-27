@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,10 +34,13 @@ const formatBRL = (centavos: number) => {
 export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser, onCreateUser, isResending, costPerImage = 0.30, periodStart }: UsersTableProps) {
   const [search, setSearch] = useState('');
   const [tierFilter, setTierFilter] = useState<string>('all');
-  const [dateFilter, setDateFilter] = useState<'all' | 'period'>('all');
   const [sortKey, setSortKey] = useState<SortKey>('email');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [page, setPage] = useState(0);
+
+  useEffect(() => {
+    setPage(0);
+  }, [periodStart]);
 
   // Build revenue map from purchases
   const revenueByUser = useMemo(() => {
@@ -56,8 +59,8 @@ export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser
       cost: Math.round((p.total_generations || 0) * costPerImage * 100),
     }));
 
-    // Filter by period
-    if (dateFilter === 'period' && periodStart) {
+    // Sempre filtra pelo período selecionado no topo
+    if (periodStart) {
       users = users.filter(u => new Date(u.created_at) >= periodStart);
     }
 
@@ -85,7 +88,7 @@ export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser
     });
 
     return users;
-  }, [data.profiles, search, tierFilter, dateFilter, periodStart, sortKey, sortDir, revenueByUser, costPerImage]);
+  }, [data.profiles, search, tierFilter, periodStart, sortKey, sortDir, revenueByUser, costPerImage]);
 
   const totalPages = Math.ceil(filteredUsers.length / PAGE_SIZE);
   const paginatedUsers = filteredUsers.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -160,17 +163,6 @@ export function UsersTable({ data, onUpdateCredits, onResendInvite, onDeleteUser
               ))}
             </SelectContent>
           </Select>
-          {periodStart && (
-            <Select value={dateFilter} onValueChange={(v: 'all' | 'period') => { setDateFilter(v); setPage(0); }}>
-              <SelectTrigger className="w-40 h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas as datas</SelectItem>
-                <SelectItem value="period">No período</SelectItem>
-              </SelectContent>
-            </Select>
-          )}
         </div>
       </CardHeader>
       <CardContent>
