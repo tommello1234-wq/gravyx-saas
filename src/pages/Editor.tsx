@@ -1303,10 +1303,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
               <AlertTriangle className="h-5 w-5 text-yellow-400 shrink-0 mt-0.5" />
               <div className="space-y-1.5">
                 <p className="text-sm font-medium text-yellow-300">
-                  Estamos em manutenção para melhor lhe atender
-                </p>
-                <p className="text-xs text-yellow-400/80">
-                  Mesmo estando em manutenção, você pode seguir gerando imagens normalmente, porém podem ocorrer algumas inconsistências.               
+                  Mesmo estando em manutenção, você pode seguir gerando imagens normalmente, porém podem ocorrer algumas inconsistências.
                 </p>
                 <ul className="text-xs text-yellow-400/60 space-y-0.5 mt-1">
                   <li>• Melhoria no node de Resultado</li>
