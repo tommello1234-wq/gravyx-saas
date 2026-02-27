@@ -688,66 +688,10 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     const resolution = resultData.resolution || '1K';
     const creditsNeeded = quantity;
 
-    // Resolve "auto" aspect ratio from connected media
+    // Auto mode: send empty string so Gemini decides aspect ratio from context
+    // This matches Google AI Studio behavior
     if (aspectRatio === 'auto') {
-      const inputEdges = currentEdges.filter((e) => e.target === resultId);
-      const connectedMedia = inputEdges.
-      map((e) => currentNodes.find((n) => n.id === e.source && n.type === 'media')).
-      filter(Boolean);
-
-      // Also check via gravity
-      const gravityIdForAuto = findConnectedGravity(resultId, currentNodes, currentEdges);
-      if (gravityIdForAuto) {
-        const gravityInputEdges = currentEdges.filter((e) => e.target === gravityIdForAuto);
-        const gravityMedias = gravityInputEdges.
-        map((e) => currentNodes.find((n) => n.id === e.source && n.type === 'media')).
-        filter(Boolean);
-        connectedMedia.push(...gravityMedias);
-      }
-
-      // Try to detect aspect ratio from first connected media image
-      const firstMedia = connectedMedia[0];
-      if (firstMedia) {
-        const mediaUrl = (firstMedia.data as {url?: string;}).url;
-        if (mediaUrl) {
-          try {
-            const detectedRatio = await new Promise<string>((resolve) => {
-              const img = new window.Image();
-              img.onload = () => {
-                const r = img.naturalWidth / img.naturalHeight;
-                if (r > 1.6) resolve('16:9');else
-                if (r < 0.7) resolve('9:16');else
-                if (r < 0.85) resolve('4:5');else
-                resolve('1:1');
-              };
-              img.onerror = () => resolve('1:1');
-              img.src = mediaUrl;
-            });
-            aspectRatio = detectedRatio;
-          } catch {
-            aspectRatio = '1:1';
-          }
-        } else {
-          aspectRatio = '1:1';
-        }
-      } else {
-        aspectRatio = '1:1'; // no media connected
-      }
-    }
-
-    // Map to closest supported preset
-    const knownRatios = ['1:1', '4:5', '16:9', '9:16'];
-    if (!knownRatios.includes(aspectRatio)) {
-      const parts = aspectRatio.split(':').map(Number);
-      if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) {
-        const r = parts[0] / parts[1];
-        if (r > 1.6) aspectRatio = '16:9';else
-        if (r < 0.7) aspectRatio = '9:16';else
-        if (r < 0.85) aspectRatio = '4:5';else
-        aspectRatio = '1:1';
-      } else {
-        aspectRatio = '1:1';
-      }
+      aspectRatio = '';
     }
 
     if (!profile || profile.credits < creditsNeeded) {
