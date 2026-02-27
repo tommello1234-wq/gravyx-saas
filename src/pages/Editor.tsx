@@ -1306,7 +1306,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
                   Estamos em manutenção para melhor lhe atender
                 </p>
                 <p className="text-xs text-yellow-400/80">
-                  Mesmo estando em manutenção, você pode seguir gerando imagens normalmente, porém pode acontecer algumas incosistencias.               
+                  Mesmo estando em manutenção, você pode seguir gerando imagens normalmente, porém podem ocorrer algumas inconsistências.               
                 </p>
                 <ul className="text-xs text-yellow-400/60 space-y-0.5 mt-1">
                   <li>• Melhoria no node de Resultado</li>
