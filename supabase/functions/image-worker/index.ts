@@ -127,6 +127,7 @@ async function generateSingleImage(
   supabaseAdmin: ReturnType<typeof import("https://esm.sh/@supabase/supabase-js@2.49.1").createClient>,
   userId: string,
   index: number,
+  aspectRatio: string = '',
   resolution: string = '1K'
 ): Promise<string | null> {
   console.log(`[generateSingleImage] Starting image ${index} with model: ${IMAGE_MODEL}, prompt length: ${prompt.length}, references: ${references.length}, legacy imageUrls: ${imageUrls.length}`);
@@ -138,7 +139,7 @@ async function generateSingleImage(
   if (refUrls.length === 0) {
     // No reference images - simple text-only generation
     const parts: Record<string, unknown>[] = [{ text: prompt }];
-    return await callGeminiAndUpload(apiKey, parts, supabaseAdmin, userId, index, resolution);
+    return await callGeminiAndUpload(apiKey, parts, supabaseAdmin, userId, index, aspectRatio, resolution);
   }
 
   // Build parts: prompt + images, simple and direct
@@ -175,7 +176,7 @@ async function generateSingleImage(
     }
   }
 
-  return await callGeminiAndUpload(apiKey, parts, supabaseAdmin, userId, index, resolution);
+  return await callGeminiAndUpload(apiKey, parts, supabaseAdmin, userId, index, aspectRatio, resolution);
 }
 
 // Call Gemini API and upload result to storage
@@ -185,11 +186,19 @@ async function callGeminiAndUpload(
   supabaseAdmin: ReturnType<typeof import("https://esm.sh/@supabase/supabase-js@2.49.1").createClient>,
   userId: string,
   index: number,
+  aspectRatio: string = '',
   resolution: string = '1K'
 ): Promise<string | null> {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent?key=${apiKey}`;
 
-  console.log(`[callGeminiAndUpload] Calling Google API for image ${index}, parts count: ${parts.length}`);
+  // Build imageConfig: use aspectRatio via API (not in prompt text)
+  // When aspectRatio is empty (Auto mode), omit it so Gemini decides from context
+  const imageConfig: Record<string, string> = {};
+  if (aspectRatio) {
+    imageConfig.aspectRatio = aspectRatio;
+  }
+
+  console.log(`[callGeminiAndUpload] Calling Google API for image ${index}, parts count: ${parts.length}, aspectRatio: ${aspectRatio || 'auto (omitted)'}`);
   const fetchStart = Date.now();
   const response = await fetch(endpoint, {
     method: "POST",
@@ -198,7 +207,7 @@ async function callGeminiAndUpload(
       contents: [{ parts }],
       generationConfig: {
         responseModalities: ["TEXT", "IMAGE"],
-        imageConfig: { imageSize: resolution }
+        imageConfig
       }
     }),
   });
@@ -357,10 +366,8 @@ serve(async (req) => {
 
     const { prompt, aspectRatio, quantity, imageUrls = [], references = [], resultId, resolution = '1K' } = payload;
 
-    let fullPrompt = prompt;
-    if (aspectRatio) {
-      fullPrompt = `${prompt}. Aspect ratio: ${aspectRatio}`;
-    }
+    // Prompt stays clean - aspect ratio is passed via API imageConfig, not in text
+    const fullPrompt = prompt;
 
     // Filter out SVG URLs from legacy imageUrls and limit to 10
     const validImageUrls = imageUrls.filter(url => {
@@ -384,7 +391,7 @@ serve(async (req) => {
       // Generate images SEQUENTIALLY to avoid memory limit exceeded
       const results: (string | null)[] = [];
       for (let i = 0; i < quantity; i++) {
-        const result = await generateSingleImage(GOOGLE_AI_API_KEY, fullPrompt, validImageUrls, validReferences, supabaseAdmin, claimedJob.user_id, i, resolution);
+        const result = await generateSingleImage(GOOGLE_AI_API_KEY, fullPrompt, validImageUrls, validReferences, supabaseAdmin, claimedJob.user_id, i, aspectRatio, resolution);
         results.push(result);
       }
       const successfulImages = results.filter((url): url is string => url !== null);
@@ -410,7 +417,7 @@ serve(async (req) => {
           user_id: claimedJob.user_id,
           project_id: claimedJob.project_id,
           prompt: prompt,
-          aspect_ratio: aspectRatio || '1:1',
+          aspect_ratio: aspectRatio || 'auto',
           image_url: imageUrl,
           status: 'completed',
           saved_to_gallery: true,

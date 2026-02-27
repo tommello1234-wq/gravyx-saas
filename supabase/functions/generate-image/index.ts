@@ -102,8 +102,9 @@ serve(async (req) => {
       );
     }
 
-    // Validate aspect ratio
-    const validAspectRatios = ['1:1', '4:5', '16:9', '9:16'];
+    // Validate aspect ratio - all formats supported by Gemini 3.1
+    // Empty/null = Auto mode (model decides from context)
+    const validAspectRatios = ['1:1', '3:2', '2:3', '3:4', '4:1', '4:3', '4:5', '5:4', '8:1', '9:16', '16:9', '21:9'];
     if (aspectRatio && !validAspectRatios.includes(aspectRatio)) {
       return new Response(
         JSON.stringify({ error: "Invalid aspect ratio" }),
@@ -186,7 +187,7 @@ serve(async (req) => {
         status: 'queued',
         payload: {
           prompt,
-          aspectRatio: aspectRatio || '1:1',
+          aspectRatio: aspectRatio || '',
           quantity: safeQuantity,
           imageUrls,
           references: references.map((r: { url: string; label?: string; libraryPrompt?: string; index?: number }) => ({
