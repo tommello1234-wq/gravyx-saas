@@ -1,20 +1,18 @@
 
 
-## Atualizar modelo de geração para `gemini-3.1-flash-image-preview`
+## Plano: Permitir múltiplas imagens de referência na geração
 
-### Contexto
-O worker não usa SDK do Google — faz chamadas REST diretas para `https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent`. Portanto, não há problema de SDK desatualizado. Basta trocar o nome do modelo na constante.
+### Problema
+No `image-worker/index.ts`, linha que filtra imagens de referência usa `.slice(0, 1)`, descartando todas as imagens além da primeira. Quando o usuário conecta 2 nós de Mídia (cena + rosto), apenas a primeira imagem é enviada ao Gemini.
 
 ### Implementação
 
-1. **Alterar constante `IMAGE_MODEL` em `supabase/functions/image-worker/index.ts`**:
-   - De: `"gemini-3-pro-image-preview"`
-   - Para: `"gemini-3.1-flash-image-preview"`
+1. **Alterar `supabase/functions/image-worker/index.ts`**:
+   - Mudar `.slice(0, 1)` para `.slice(0, 3)` — permitir até 3 imagens de referência
+   - Isso garante que tanto a imagem da cena quanto a do rosto sejam enviadas ao modelo
 
-2. **Atualizar texto do banner de manutenção em `src/pages/Editor.tsx`** para refletir o novo nome do modelo (Nano Banana 2 → referência ao novo modelo)
+2. **Deploy do image-worker** para aplicar a mudança
 
-3. **Deploy do image-worker** para aplicar a mudança
-
-### Observação técnica
-Como usamos a API REST direta do Google (`generativelanguage.googleapis.com/v1beta`), não há dependência de SDK. O endpoint aceita qualquer modelo disponível na API — basta que o nome esteja correto e o modelo esteja habilitado na chave de API.
+### Detalhe técnico
+O Gemini já recebe as imagens como `inline_data` parts no request — a lógica de montagem do array `parts` já itera sobre todas as URLs. O único gargalo é o `.slice(0, 1)` que limita artificialmente a quantidade.
 
