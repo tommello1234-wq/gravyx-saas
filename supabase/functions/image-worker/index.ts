@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { decode as base64Decode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
+import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -8,9 +9,10 @@ const corsHeaders = {
 
 const CREDITS_PER_IMAGE = 1;
 const MAX_RETRIES = 3;
-
-// Backoff delays in milliseconds: 5s, 10s, 20s
 const BACKOFF_DELAYS = [5000, 10000, 20000];
+
+const IMAGE_MODEL = "gemini-2.0-flash-exp";
+const FRIENDLY_ERROR_MSG = "Estamos enfrentando uma instabilidade temporária nos servidores da API do Google. Aguarde um instante e tente novamente mais tarde.";
 
 // Helper: Upload base64 image to Supabase Storage and return public URL
 async function uploadBase64ToStorage(
@@ -55,35 +57,77 @@ async function uploadBase64ToStorage(
   }
 }
 
-const IMAGE_MODEL = "google/gemini-3-pro-image-preview";
+// Fetch an image URL and return base64-encoded data + mime type
+async function fetchImageAsBase64(url: string): Promise<{ base64: string; mimeType: string } | null> {
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      console.error(`Failed to fetch image ${url}: ${resp.status}`);
+      return null;
+    }
+    const buffer = await resp.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    const base64 = base64Encode(bytes);
+    const contentType = resp.headers.get("content-type") || "image/png";
+    const mimeType = contentType.split(";")[0].trim();
+    return { base64, mimeType };
+  } catch (error) {
+    console.error(`Error fetching image ${url}:`, error);
+    return null;
+  }
+}
 
-const FRIENDLY_ERROR_MSG = "Estamos enfrentando uma instabilidade temporária nos servidores da API do Google. Aguarde um instante e tente novamente mais tarde.";
-
-// Generate a single image via AI Gateway
+// Generate a single image via Google AI Studio native API
 async function generateSingleImage(
-  LOVABLE_API_KEY: string,
-  messageContent: { type: string; text?: string; image_url?: { url: string } }[],
+  apiKey: string,
+  prompt: string,
+  imageUrls: string[],
   supabaseAdmin: ReturnType<typeof import("https://esm.sh/@supabase/supabase-js@2.49.1").createClient>,
   userId: string,
   index: number
 ): Promise<string | null> {
   console.log(`Generating image ${index} with model: ${IMAGE_MODEL}`);
-  const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+
+  // Build parts array for Google API
+  const parts: Record<string, unknown>[] = [{ text: prompt }];
+
+  // Add reference images as inline_data
+  for (const url of imageUrls) {
+    if (url.startsWith("data:")) {
+      // Already base64 data URL
+      const matches = url.match(/^data:(image\/\w+);base64,(.+)$/);
+      if (matches) {
+        parts.push({
+          inline_data: { mime_type: matches[1], data: matches[2] }
+        });
+      }
+    } else {
+      // Fetch remote image and convert to base64
+      const imgData = await fetchImageAsBase64(url);
+      if (imgData) {
+        parts.push({
+          inline_data: { mime_type: imgData.mimeType, data: imgData.base64 }
+        });
+      }
+    }
+  }
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent?key=${apiKey}`;
+
+  const response = await fetch(endpoint, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${LOVABLE_API_KEY}`,
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: IMAGE_MODEL,
-      messages: [{ role: "user", content: messageContent }],
-      modalities: ["image", "text"]
+      contents: [{ parts }],
+      generationConfig: {
+        responseModalities: ["TEXT", "IMAGE"]
+      }
     }),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error(`AI Gateway error:`, response.status, errorText);
+    console.error(`Google AI API error:`, response.status, errorText);
     
     if (response.status === 429) {
       throw new Error("RATE_LIMIT");
@@ -97,15 +141,33 @@ async function generateSingleImage(
   }
 
   const data = await response.json();
-  const base64Url = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-  
-  if (!base64Url) {
-    console.error("No image URL in response");
+
+  // Extract image from Google's response format
+  const candidates = data.candidates;
+  if (!candidates || candidates.length === 0) {
+    console.error("No candidates in Google AI response");
     return null;
   }
 
+  const responseParts = candidates[0]?.content?.parts;
+  if (!responseParts) {
+    console.error("No parts in candidate response");
+    return null;
+  }
+
+  // Find the first image part
+  const imagePart = responseParts.find((p: { inlineData?: { mimeType: string; data: string } }) => p.inlineData);
+  if (!imagePart || !imagePart.inlineData) {
+    console.error("No image data in response parts");
+    return null;
+  }
+
+  const { mimeType, data: imageBase64 } = imagePart.inlineData;
+  const extension = mimeType.split("/")[1] || "png";
+  const base64DataUrl = `data:${mimeType};base64,${imageBase64}`;
+
   const fileName = `${Date.now()}-${index}-${Math.random().toString(36).substring(7)}`;
-  const publicUrl = await uploadBase64ToStorage(supabaseAdmin, base64Url, userId, fileName);
+  const publicUrl = await uploadBase64ToStorage(supabaseAdmin, base64DataUrl, userId, fileName);
   
   if (!publicUrl) {
     console.error("Failed to upload image to storage");
@@ -127,12 +189,10 @@ serve(async (req) => {
 
   let isAuthenticated = false;
 
-  // Check worker secret first
   if (WORKER_SECRET && token === WORKER_SECRET) {
     isAuthenticated = true;
   }
 
-  // Fallback: validate as user JWT
   if (!isAuthenticated && token) {
     const { createClient: createAuthClient } = await import("https://esm.sh/@supabase/supabase-js@2.49.1");
     const supabaseAuth = createAuthClient(
@@ -153,12 +213,12 @@ serve(async (req) => {
     );
   }
 
-  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+  const GOOGLE_AI_API_KEY = Deno.env.get("GOOGLE_AI_API_KEY");
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-  if (!LOVABLE_API_KEY) {
-    console.error("LOVABLE_API_KEY is not configured");
+  if (!GOOGLE_AI_API_KEY) {
+    console.error("GOOGLE_AI_API_KEY is not configured");
     return new Response(
       JSON.stringify({ error: "Server configuration error" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -169,7 +229,6 @@ serve(async (req) => {
     const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.49.1");
     const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Claim the next available job
     const { data: job, error: claimError } = await supabaseAdmin.rpc('claim_next_job', {
       p_worker_id: crypto.randomUUID()
     });
@@ -182,7 +241,6 @@ serve(async (req) => {
       );
     }
 
-    // No job available
     if (!job || (Array.isArray(job) && job.length === 0)) {
       return new Response(
         JSON.stringify({ message: "No jobs available" }),
@@ -190,12 +248,9 @@ serve(async (req) => {
       );
     }
 
-    // Handle array response (claim_next_job returns SETOF)
     const claimedJob = Array.isArray(job) ? job[0] : job;
-    
     console.log(`Processing job ${claimedJob.id} for user ${claimedJob.user_id}`);
 
-    // Extract payload
     const payload = claimedJob.payload as {
       prompt: string;
       aspectRatio: string;
@@ -206,17 +261,12 @@ serve(async (req) => {
 
     const { prompt, aspectRatio, quantity, imageUrls = [], resultId } = payload;
 
-    // Build message content for AI
     let fullPrompt = prompt;
     if (aspectRatio) {
       fullPrompt = `${prompt}. Aspect ratio: ${aspectRatio}`;
     }
 
-    const messageContent: { type: string; text?: string; image_url?: { url: string } }[] = [
-      { type: "text", text: fullPrompt }
-    ];
-    
-    // Filter out SVG URLs - AI APIs don't support SVG format
+    // Filter out SVG URLs
     const validImageUrls = imageUrls.filter(url => {
       const isSvg = url.toLowerCase().endsWith('.svg') || url.includes('.svg?');
       if (isSvg) {
@@ -225,17 +275,9 @@ serve(async (req) => {
       return !isSvg;
     });
 
-    for (const url of validImageUrls) {
-      messageContent.push({
-        type: "image_url",
-        image_url: { url }
-      });
-    }
-
     try {
-      // Generate all images in parallel
       const generationPromises = Array(quantity).fill(null).map((_, i) => 
-        generateSingleImage(LOVABLE_API_KEY, messageContent, supabaseAdmin, claimedJob.user_id, i)
+        generateSingleImage(GOOGLE_AI_API_KEY, fullPrompt, validImageUrls, supabaseAdmin, claimedJob.user_id, i)
       );
 
       const results = await Promise.all(generationPromises);
@@ -243,12 +285,10 @@ serve(async (req) => {
 
       console.log(`Generated ${successfulImages.length}/${quantity} images for job ${claimedJob.id}`);
 
-      // If all failed, handle as error (will retry without touching credits)
       if (successfulImages.length === 0) {
         throw new Error("All image generations failed");
       }
 
-      // Debit 1 credit per successful image and save only if debit succeeds
       const savedImages: string[] = [];
       for (const imageUrl of successfulImages) {
         try {
@@ -260,7 +300,6 @@ serve(async (req) => {
       }
 
       if (savedImages.length > 0) {
-        // Save successful generations to database
         const generationInserts = savedImages.map(imageUrl => ({
           user_id: claimedJob.user_id,
           project_id: claimedJob.project_id,
@@ -274,7 +313,6 @@ serve(async (req) => {
 
         await supabaseAdmin.from('generations').insert(generationInserts);
 
-        // Increment permanent total_generations counter for each saved image
         for (let i = 0; i < savedImages.length; i++) {
           try {
             await supabaseAdmin.rpc('increment_total_generations', { uid: claimedJob.user_id });
@@ -284,7 +322,6 @@ serve(async (req) => {
         }
       }
 
-      // Mark job as completed with results
       const { error: completeError } = await supabaseAdmin.rpc('complete_job_with_result', {
         p_job_id: claimedJob.id,
         p_result_urls: savedImages,
@@ -295,7 +332,7 @@ serve(async (req) => {
         console.error("Error completing job:", completeError);
       }
 
-      console.log(`Job ${claimedJob.id} completed: ${savedImages.length} images saved, ${successfulImages.length - savedImages.length} skipped (no credits)`);
+      console.log(`Job ${claimedJob.id} completed: ${savedImages.length} images saved`);
 
       return new Response(
         JSON.stringify({ 
@@ -314,7 +351,6 @@ serve(async (req) => {
       const maxRetries = claimedJob.max_retries || MAX_RETRIES;
 
       if (currentRetries < maxRetries) {
-        // Schedule retry with exponential backoff
         const backoffMs = BACKOFF_DELAYS[currentRetries] || BACKOFF_DELAYS[BACKOFF_DELAYS.length - 1];
         const nextRunAt = new Date(Date.now() + backoffMs).toISOString();
 
@@ -341,7 +377,6 @@ serve(async (req) => {
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       } else {
-        // Max retries exceeded - mark as failed (no credits to refund - they were never deducted)
         await supabaseAdmin
           .from('jobs')
           .update({
