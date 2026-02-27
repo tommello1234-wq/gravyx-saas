@@ -120,7 +120,8 @@ async function generateSingleImage(
   references: ReferenceInfo[],
   supabaseAdmin: ReturnType<typeof import("https://esm.sh/@supabase/supabase-js@2.49.1").createClient>,
   userId: string,
-  index: number
+  index: number,
+  resolution: string = '1K'
 ): Promise<string | null> {
   console.log(`[generateSingleImage] Starting image ${index} with model: ${IMAGE_MODEL}, prompt length: ${prompt.length}, references: ${references.length}, legacy imageUrls: ${imageUrls.length}`);
 
@@ -131,7 +132,7 @@ async function generateSingleImage(
   if (refUrls.length === 0) {
     // No reference images - simple text-only generation
     const parts: Record<string, unknown>[] = [{ text: prompt }];
-    return await callGeminiAndUpload(apiKey, parts, supabaseAdmin, userId, index);
+    return await callGeminiAndUpload(apiKey, parts, supabaseAdmin, userId, index, resolution);
   }
 
   // Build numbered multimodal parts
@@ -179,7 +180,7 @@ async function generateSingleImage(
     }
   }
 
-  return await callGeminiAndUpload(apiKey, parts, supabaseAdmin, userId, index);
+  return await callGeminiAndUpload(apiKey, parts, supabaseAdmin, userId, index, resolution);
 }
 
 // Call Gemini API and upload result to storage
@@ -188,7 +189,8 @@ async function callGeminiAndUpload(
   parts: Record<string, unknown>[],
   supabaseAdmin: ReturnType<typeof import("https://esm.sh/@supabase/supabase-js@2.49.1").createClient>,
   userId: string,
-  index: number
+  index: number,
+  resolution: string = '1K'
 ): Promise<string | null> {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent?key=${apiKey}`;
 
@@ -200,7 +202,8 @@ async function callGeminiAndUpload(
     body: JSON.stringify({
       contents: [{ parts }],
       generationConfig: {
-        responseModalities: ["TEXT", "IMAGE"]
+        responseModalities: ["TEXT", "IMAGE"],
+        imageConfig: { imageSize: resolution }
       }
     }),
   });
@@ -354,9 +357,10 @@ serve(async (req) => {
       imageUrls: string[];
       references?: ReferenceInfo[];
       resultId?: string;
+      resolution?: string;
     };
 
-    const { prompt, aspectRatio, quantity, imageUrls = [], references = [], resultId } = payload;
+    const { prompt, aspectRatio, quantity, imageUrls = [], references = [], resultId, resolution = '1K' } = payload;
 
     let fullPrompt = prompt;
     if (aspectRatio) {
@@ -385,7 +389,7 @@ serve(async (req) => {
       // Generate images SEQUENTIALLY to avoid memory limit exceeded
       const results: (string | null)[] = [];
       for (let i = 0; i < quantity; i++) {
-        const result = await generateSingleImage(GOOGLE_AI_API_KEY, fullPrompt, validImageUrls, validReferences, supabaseAdmin, claimedJob.user_id, i);
+        const result = await generateSingleImage(GOOGLE_AI_API_KEY, fullPrompt, validImageUrls, validReferences, supabaseAdmin, claimedJob.user_id, i, resolution);
         results.push(result);
       }
       const successfulImages = results.filter((url): url is string => url !== null);
