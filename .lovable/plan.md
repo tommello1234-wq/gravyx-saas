@@ -1,24 +1,20 @@
 
 
-## Plano: Banner de manutenção na página do Editor
+## Atualizar modelo de geração para `gemini-3.1-flash-image-preview`
 
-### O que será feito
-Adicionar um banner informativo fixo na parte inferior centralizada da página do Editor (`/app`), avisando sobre manutenção. O banner será dismissible (botão X) e não bloqueará a geração de imagens.
+### Contexto
+O worker não usa SDK do Google — faz chamadas REST diretas para `https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent`. Portanto, não há problema de SDK desatualizado. Basta trocar o nome do modelo na constante.
 
 ### Implementação
 
-1. **Adicionar banner no `src/pages/Editor.tsx`**:
-   - Componente inline com `useState` para controlar visibilidade (dismissible)
-   - Posicionado com `fixed bottom-6 left-1/2 -translate-x-1/2 z-50`
-   - Estilo: fundo amarelo/âmbar suave com glassmorphism (`bg-yellow-500/10 border-yellow-500/30 backdrop-blur-xl`), bordas arredondadas, ícone `AlertTriangle`
-   - Texto principal + lista de atualizações previstas
-   - Botão X para fechar
-   - Responsivo com `max-w-xl w-[90vw]`
+1. **Alterar constante `IMAGE_MODEL` em `supabase/functions/image-worker/index.ts`**:
+   - De: `"gemini-3-pro-image-preview"`
+   - Para: `"gemini-3.1-flash-image-preview"`
 
-### Texto do banner
-- **Título**: "⚠️ Estamos em manutenção para melhor lhe atender"
-- **Corpo**: "Não recomendamos que você gere imagens no momento."
-- **Atualizações previstas**:
-  - Melhoria no node de Resultado
-  - Atualização para a nova inteligência do Google (Nano Banana 2)
+2. **Atualizar texto do banner de manutenção em `src/pages/Editor.tsx`** para refletir o novo nome do modelo (Nano Banana 2 → referência ao novo modelo)
+
+3. **Deploy do image-worker** para aplicar a mudança
+
+### Observação técnica
+Como usamos a API REST direta do Google (`generativelanguage.googleapis.com/v1beta`), não há dependência de SDK. O endpoint aceita qualquer modelo disponível na API — basta que o nome esteja correto e o modelo esteja habilitado na chave de API.
 
