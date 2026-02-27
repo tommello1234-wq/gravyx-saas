@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { TemplatesTab } from '@/components/admin/TemplatesTab';
 import { PricingTab } from '@/components/admin/pricing/PricingTab';
 import { SubmissionsTab } from '@/components/admin/SubmissionsTab';
@@ -85,9 +85,21 @@ function AdminContent() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { activeSection, period, tierFilter, customRange } = useAdminContext();
+  const { activeSection, period, tierFilter, customRange, resolutionFilter } = useAdminContext();
   
-  const dashboardData = useAdminDashboard(period, tierFilter, customRange);
+  const dashboardData = useAdminDashboard(period, tierFilter, customRange, undefined, resolutionFilter);
+
+  // Compute period start for filtering
+  const periodStart = useMemo(() => {
+    const now = new Date();
+    switch (period) {
+      case 'today': return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      case '7d': return new Date(now.getTime() - 7 * 86400000);
+      case '30d': return new Date(now.getTime() - 30 * 86400000);
+      case '90d': return new Date(now.getTime() - 90 * 86400000);
+      case 'custom': return customRange.start;
+    }
+  }, [period, customRange]);
   
   // References state
   const [refDialogOpen, setRefDialogOpen] = useState(false);
@@ -324,6 +336,7 @@ function AdminContent() {
                 onDeleteUser={(userId, email) => { setUserToDelete({ id: userId, email }); setDeleteDialogOpen(true); }}
                 onCreateUser={() => setCreateUserDialogOpen(true)}
                 isResending={resendInviteMutation.isPending}
+                periodStart={periodStart}
               />
             </div>
           </>
