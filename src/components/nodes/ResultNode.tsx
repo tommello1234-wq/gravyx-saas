@@ -90,7 +90,11 @@ const formatOptions = [
 ];
 
 const MAX_QUANTITY = 5;
-const CREDITS_PER_IMAGE = 1;
+const CREDITS_PER_RESOLUTION: Record<string, number> = {
+  '1K': 1,
+  '2K': 2,
+  '4K': 4,
+};
 
 // Helper to normalize images to new format
 const normalizeImages = (images: NodeImage[] | string[] | undefined): NodeImage[] => {
@@ -291,7 +295,7 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
     }));
   };
 
-  const creditsNeeded = quantity * CREDITS_PER_IMAGE;
+  const creditsNeeded = quantity * (CREDITS_PER_RESOLUTION[resolution] || 1);
   const credits = profile?.credits || 0;
   const hasEnoughCredits = credits >= creditsNeeded;
   const hasActiveSubscription = isAdmin || profile?.subscription_status === 'active';
