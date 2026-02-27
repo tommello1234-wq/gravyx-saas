@@ -16,7 +16,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { useJobQueue } from '@/hooks/useJobQueue';
-import { Loader2, LayoutTemplate } from 'lucide-react';
+import { Loader2, LayoutTemplate, AlertTriangle, X } from 'lucide-react';
 import { BuyCreditsModal } from '@/components/BuyCreditsModal';
 import { SaveAsTemplateModal } from '@/components/SaveAsTemplateModal';
 import { Button } from '@/components/ui/button';
@@ -218,6 +218,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [showBuyCredits, setShowBuyCredits] = useState(false);
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [showMaintenanceBanner, setShowMaintenanceBanner] = useState(true);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedDataRef = useRef<string>('');
   const toastRef = useRef(toast);
@@ -1226,6 +1227,35 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
           userId={user.id}
           sanitizeCanvasState={sanitizeCanvasState}
         />
+      )}
+
+      {/* Maintenance Banner */}
+      {showMaintenanceBanner && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-xl w-[90vw]">
+          <div className="relative bg-yellow-500/10 border border-yellow-500/30 backdrop-blur-xl rounded-xl px-5 py-4 shadow-lg">
+            <button
+              onClick={() => setShowMaintenanceBanner(false)}
+              className="absolute top-3 right-3 text-yellow-400/70 hover:text-yellow-300 transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <div className="flex items-start gap-3 pr-6">
+              <AlertTriangle className="h-5 w-5 text-yellow-400 shrink-0 mt-0.5" />
+              <div className="space-y-1.5">
+                <p className="text-sm font-medium text-yellow-300">
+                  Estamos em manutenção para melhor lhe atender
+                </p>
+                <p className="text-xs text-yellow-400/80">
+                  Não recomendamos que você gere imagens no momento.
+                </p>
+                <ul className="text-xs text-yellow-400/60 space-y-0.5 mt-1">
+                  <li>• Melhoria no node de Resultado</li>
+                  <li>• Atualização para a nova inteligência do Google (Nano Banana 2)</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
