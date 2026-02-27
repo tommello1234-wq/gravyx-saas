@@ -1,116 +1,86 @@
 
 
-## Vulnerabilidade: `profiles_user_update` sem restrição de colunas
+## Diagnóstico: 3 Bugs na Chamada da API do Gemini
 
-### Como o atacante explorou
+Comparando o código do `image-worker` com a documentação oficial da API REST do Gemini 3.1, encontrei **3 problemas** que explicam tanto o texto duplicado quanto o formato errado:
 
-A policy `profiles_user_update` permite que qualquer usuário autenticado atualize **QUALQUER coluna** do próprio perfil:
+### Bug 1: Aspect ratio enviado como TEXTO no prompt, não via API
 
-```sql
--- POLICY ATUAL (VULNERÁVEL)
-Policy: profiles_user_update
-Command: UPDATE
-Using: (SELECT auth.uid() AS uid) = user_id
-With Check: (SELECT auth.uid() AS uid) = user_id
-```
-
-O atacante simplesmente abriu o console do navegador e executou:
-
+**Código atual (image-worker, linha 360-362):**
 ```javascript
-const { data, error } = await supabase
-  .from('profiles')
-  .update({ 
-    tier: 'enterprise', 
-    credits: 7180, 
-    subscription_status: 'active',
-    billing_cycle: 'annual'
-  })
-  .eq('user_id', '<seu-proprio-id>')
+let fullPrompt = prompt;
+if (aspectRatio) {
+  fullPrompt = `${prompt}. Aspect ratio: ${aspectRatio}`;
+}
 ```
 
-Sem nenhuma restrição de colunas na policy, o Postgres aceita o UPDATE normalmente.
+O aspect ratio está sendo concatenado como texto no prompt (ex: `"Troque o cara... Aspect ratio: 16:9"`). Isso **não é como a API funciona**. A documentação oficial mostra que o parâmetro correto é `generationConfig.imageConfig.aspectRatio`:
+
+```json
+"generationConfig": {
+  "imageConfig": {
+    "aspectRatio": "16:9"
+  }
+}
+```
+
+Colocar "Aspect ratio: 16:9" no texto do prompt confunde o modelo, causando formato errado e até interferindo na interpretação do prompt (texto duplicado).
+
+### Bug 2: `imageSize: "1K"` não existe na API
+
+**Código atual (image-worker, linha 199-202):**
+```javascript
+generationConfig: {
+  responseModalities: ["TEXT", "IMAGE"],
+  imageConfig: { imageSize: resolution }
+}
+```
+
+O parâmetro `imageSize` com valores "1K", "2K", "4K" **não existe na documentação da API REST do Gemini 3.1**. Está sendo silenciosamente ignorado. O aspect ratio real não está sendo definido em lugar nenhum via API.
+
+### Bug 3: Modo "Auto" faz detecção manual em vez de delegar ao modelo
+
+**Código atual (Editor.tsx, linhas 692-735):** Quando o usuário seleciona "Auto", o frontend carrega a imagem de referência, calcula `naturalWidth/naturalHeight`, e mapeia para presets fixos (1:1, 4:5, 16:9, 9:16). No Google AI Studio, "Auto" simplesmente **não envia nenhum aspect ratio**, e o modelo decide sozinho pelo contexto. O Gemini 3.1 suporta 12 aspect ratios: 1:1, 3:2, 2:3, 3:4, 4:1, 4:3, 4:5, 5:4, 8:1, 9:16, 16:9, 21:9.
+
+---
 
 ### Plano de Correção
 
-**1. Substituir a policy `profiles_user_update` para restringir colunas sensíveis**
+#### 1. `supabase/functions/image-worker/index.ts`
+- Remover a concatenação de aspect ratio no prompt (linhas 360-363)
+- Passar `aspectRatio` como parâmetro da função `callGeminiAndUpload`
+- No `generationConfig.imageConfig`, usar `aspectRatio` em vez de `imageSize`
+- Quando aspectRatio for vazio/null (modo Auto), omitir `aspectRatio` do `imageConfig`
 
-Criar uma nova policy que permite UPDATE apenas em colunas seguras (`display_name`, `avatar_url`, `has_seen_onboarding`), bloqueando `tier`, `credits`, `subscription_status`, `billing_cycle`, `max_projects`, `asaas_subscription_id`.
+```javascript
+// ANTES
+fullPrompt = `${prompt}. Aspect ratio: ${aspectRatio}`;
+// ...
+imageConfig: { imageSize: resolution }
 
-A abordagem: usar um trigger `BEFORE UPDATE` que rejeita mudanças em colunas protegidas quando o caller não é service_role.
-
-```sql
--- 1. Criar função que bloqueia alterações em campos sensíveis
-CREATE OR REPLACE FUNCTION public.protect_profile_fields()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-BEGIN
-  -- Se é service_role (auth.uid() IS NULL), permite tudo
-  IF auth.uid() IS NULL THEN
-    RETURN NEW;
-  END IF;
-
-  -- Se é admin, permite tudo
-  IF has_role(auth.uid(), 'admin') THEN
-    RETURN NEW;
-  END IF;
-
-  -- Bloqueia alterações em campos sensíveis para usuários normais
-  IF NEW.tier IS DISTINCT FROM OLD.tier THEN
-    RAISE EXCEPTION 'Cannot modify tier';
-  END IF;
-  IF NEW.credits IS DISTINCT FROM OLD.credits THEN
-    RAISE EXCEPTION 'Cannot modify credits';
-  END IF;
-  IF NEW.subscription_status IS DISTINCT FROM OLD.subscription_status THEN
-    RAISE EXCEPTION 'Cannot modify subscription_status';
-  END IF;
-  IF NEW.billing_cycle IS DISTINCT FROM OLD.billing_cycle THEN
-    RAISE EXCEPTION 'Cannot modify billing_cycle';
-  END IF;
-  IF NEW.max_projects IS DISTINCT FROM OLD.max_projects THEN
-    RAISE EXCEPTION 'Cannot modify max_projects';
-  END IF;
-  IF NEW.asaas_subscription_id IS DISTINCT FROM OLD.asaas_subscription_id THEN
-    RAISE EXCEPTION 'Cannot modify asaas_subscription_id';
-  END IF;
-  IF NEW.total_generations IS DISTINCT FROM OLD.total_generations THEN
-    RAISE EXCEPTION 'Cannot modify total_generations';
-  END IF;
-  IF NEW.trial_credits_given IS DISTINCT FROM OLD.trial_credits_given THEN
-    RAISE EXCEPTION 'Cannot modify trial_credits_given';
-  END IF;
-  IF NEW.trial_start_date IS DISTINCT FROM OLD.trial_start_date THEN
-    RAISE EXCEPTION 'Cannot modify trial_start_date';
-  END IF;
-  IF NEW.user_level IS DISTINCT FROM OLD.user_level THEN
-    RAISE EXCEPTION 'Cannot modify user_level';
-  END IF;
-  IF NEW.email IS DISTINCT FROM OLD.email THEN
-    RAISE EXCEPTION 'Cannot modify email';
-  END IF;
-
-  RETURN NEW;
-END;
-$$;
-
--- 2. Criar o trigger
-CREATE TRIGGER protect_profile_sensitive_fields
-  BEFORE UPDATE ON public.profiles
-  FOR EACH ROW
-  EXECUTE FUNCTION public.protect_profile_fields();
+// DEPOIS
+// Prompt fica limpo, sem aspect ratio
+fullPrompt = prompt;
+// ...
+imageConfig: aspectRatio ? { aspectRatio } : {}
 ```
 
-**2. Verificar se o usuário já foi deletado**
+#### 2. `supabase/functions/generate-image/index.ts`
+- Expandir `validAspectRatios` para incluir todos os formatos suportados pelo Gemini 3.1
+- Permitir aspectRatio vazio/null (para modo Auto)
+- Remover o `imageSize` do `resolution` mapping, já que não é um parâmetro válido da API
 
-Nos auth logs, o user `0fa55b32-b66a-4e99-9fdb-0685d87cd402` (lulu22@teacher.semar.edu.pl) já foi deletado via `user_deleted` action pelo admin. Confirmado.
+#### 3. `src/pages/Editor.tsx`
+- No `generateForResult`, quando `aspectRatio === 'auto'`, enviar string vazia (ou não enviar) em vez de tentar detectar
+- Remover toda a lógica de detecção manual de aspect ratio (linhas 692-735)
 
 ### Arquivos impactados
+| Arquivo | Alteração |
+|---|---|
+| `supabase/functions/image-worker/index.ts` | Corrigir `imageConfig` para usar `aspectRatio` via API, remover texto no prompt |
+| `supabase/functions/generate-image/index.ts` | Expandir aspect ratios válidos, permitir Auto (vazio) |
+| `src/pages/Editor.tsx` | Simplificar modo Auto: enviar vazio em vez de detectar |
 
-Nenhuma alteração de código frontend necessária. A correção é 100% no banco de dados (trigger).
+### Resultado esperado
+Após as correções, o comportamento será idêntico ao Google AI Studio: o aspect ratio é controlado pela API (não por texto no prompt), e no modo Auto o modelo decide sozinho pelo contexto das imagens de referência.
 
-### Resultado
-
-Após o trigger, qualquer tentativa de um usuário comum alterar `tier`, `credits`, `subscription_status` etc. via client SDK será rejeitada com erro. Apenas service_role (Edge Functions) e admins poderão modificar esses campos.
