@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
-import { useAdminContext, type AdminPeriod, type AdminTierFilter } from './AdminContext';
+import { useAdminContext, type AdminPeriod, type AdminTierFilter, type AdminResolutionFilter } from './AdminContext';
 import { useState } from 'react';
 import { format } from 'date-fns';
 
@@ -24,6 +24,13 @@ const tierOptions: { value: AdminTierFilter; label: string }[] = [
   { value: 'enterprise', label: 'Enterprise' },
 ];
 
+const resolutionOptions: { value: AdminResolutionFilter; label: string }[] = [
+  { value: 'all', label: 'Todas resoluções' },
+  { value: '1K', label: '1K' },
+  { value: '2K', label: '2K' },
+  { value: '4K', label: '4K' },
+];
+
 interface AdminTopbarProps {
   onExportCSV?: () => void;
   showExport?: boolean;
@@ -31,7 +38,7 @@ interface AdminTopbarProps {
 }
 
 export function AdminTopbar({ onExportCSV, showExport, title }: AdminTopbarProps) {
-  const { period, setPeriod, tierFilter, setTierFilter, searchQuery, setSearchQuery, customRange, setCustomRange } = useAdminContext();
+  const { period, setPeriod, tierFilter, setTierFilter, searchQuery, setSearchQuery, customRange, setCustomRange, resolutionFilter, setResolutionFilter } = useAdminContext();
   const [calendarOpen, setCalendarOpen] = useState(false);
 
   return (
@@ -94,6 +101,18 @@ export function AdminTopbar({ onExportCSV, showExport, title }: AdminTopbarProps
             </SelectTrigger>
             <SelectContent>
               {tierOptions.map(o => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Resolution filter */}
+          <Select value={resolutionFilter} onValueChange={(v) => setResolutionFilter(v as AdminResolutionFilter)}>
+            <SelectTrigger className="w-40 h-9">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {resolutionOptions.map(o => (
                 <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
               ))}
             </SelectContent>

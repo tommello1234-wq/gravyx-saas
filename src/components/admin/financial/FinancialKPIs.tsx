@@ -50,14 +50,18 @@ interface FinancialKPIsProps {
   profitMargin: number;
   churnRate: number;
   periodLabel: string;
+  imagesByResolution?: { '1K': number; '2K': number; '4K': number };
 }
 
 function formatBRL(val: number) {
   return `R$ ${val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-export function FinancialKPIs({ periodRevenue, revenueGrowth, mrr, totalCosts, netProfit, profitMargin, churnRate, periodLabel }: FinancialKPIsProps) {
+export function FinancialKPIs({ periodRevenue, revenueGrowth, mrr, totalCosts, netProfit, profitMargin, churnRate, periodLabel, imagesByResolution }: FinancialKPIsProps) {
+  const totalImages = imagesByResolution ? imagesByResolution['1K'] + imagesByResolution['2K'] + imagesByResolution['4K'] : 0;
+
   return (
+    <div className="space-y-3">
     <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
       <KpiHeroCard
         title={`Receita (${periodLabel})`}
@@ -95,6 +99,16 @@ export function FinancialKPIs({ periodRevenue, revenueGrowth, mrr, totalCosts, n
         icon={<UserMinus className={`h-4 w-4 ${churnRate > 5 ? 'text-red-400' : 'text-muted-foreground'}`} />}
         variant={churnRate > 5 ? 'cost' : 'default'}
       />
+    </div>
+    {imagesByResolution && totalImages > 0 && (
+      <div className="flex items-center gap-3 px-1">
+        <span className="text-xs text-muted-foreground">Imagens no período:</span>
+        <span className="text-xs font-semibold text-blue-400">1K: {imagesByResolution['1K']}</span>
+        <span className="text-xs font-semibold text-emerald-400">2K: {imagesByResolution['2K']}</span>
+        <span className="text-xs font-semibold text-orange-400">4K: {imagesByResolution['4K']}</span>
+        <span className="text-xs text-muted-foreground">| Total: {totalImages}</span>
+      </div>
+    )}
     </div>
   );
 }
