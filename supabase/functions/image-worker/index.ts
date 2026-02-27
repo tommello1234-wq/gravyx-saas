@@ -11,7 +11,7 @@ const CREDITS_PER_IMAGE = 1;
 const MAX_RETRIES = 3;
 const BACKOFF_DELAYS = [5000, 10000, 20000];
 
-const IMAGE_MODEL = "gemini-3-pro-image-preview";
+const IMAGE_MODEL = "gemini-3.1-flash-image-preview";
 const FRIENDLY_ERROR_MSG = "Estamos enfrentando uma instabilidade temporária nos servidores da API do Google. Aguarde um instante e tente novamente mais tarde.";
 
 // Helper: Upload base64 image to Supabase Storage and return public URL
