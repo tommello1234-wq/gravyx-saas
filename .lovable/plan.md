@@ -1,33 +1,23 @@
 
 
-## Plano: Adicionar seletor de resolução (1K, 2K, 4K) no nó de Resultado
+## Plano: Simplificar drasticamente o prompt do sistema
 
-### Como funciona na API
-O Gemini 3.1 Flash aceita `generationConfig.imageConfig.imageSize` com valores `"512px"`, `"1K"`, `"2K"`, `"4K"`. Basta adicionar esse campo no body da chamada ao endpoint REST.
+### Problema
+O `systemText` atual envia um bloco enorme de instruções (análise de conteúdo visual, mapeamento de roles, exemplos, labels, etc.) antes do prompt do usuário. Isso provavelmente está confundindo o Gemini 3.1 e diluindo a intenção real. Quando o modelo recebia apenas "imagem + prompt direto", funcionava perfeitamente.
 
-### Alterações
+### Alteração
 
-**1. `src/components/nodes/ResultNode.tsx`**
-- Adicionar `resolution` ao `ResultNodeData` (default `"1K"`)
-- Criar array de opções: `[{ value: "1K", label: "1K" }, { value: "2K", label: "2K" }, { value: "4K", label: "4K" }]`
-- Adicionar um novo Popover/dropdown compacto ao lado do seletor de formato, com o mesmo estilo visual (bg-zinc-900, border-zinc-800, etc.)
-- Persistir `resolution` no node data via `updateNodeData`
+**`supabase/functions/image-worker/index.ts`** — simplificar o `systemText` na função `generateSingleImage`:
 
-**2. `src/pages/Editor.tsx`**
-- Na função `generateForResult`, ler `resolution` do node data do ResultNode
-- Enviar `resolution` no body da chamada a `generate-image`
+- Remover todo o bloco verboso de instruções sobre análise de conteúdo visual, roles, exemplos
+- Enviar apenas o prompt do usuário como texto principal
+- Se houver `libraryPrompt` em alguma referência, adicionar como hint curto (1 linha)
+- Manter a numeração explícita apenas se o usuário usar no prompt
+- Estrutura final dos `parts`: `[{ text: prompt }, imagem1, imagem2, ...]` — simples e direto, como se o usuário estivesse conversando no chat do Gemini
 
-**3. `supabase/functions/generate-image/index.ts`**
-- Aceitar `resolution` do request body
-- Validar valores permitidos: `["1K", "2K", "4K"]`
-- Persistir `resolution` no `jobs.payload`
-
-**4. `supabase/functions/image-worker/index.ts`**
-- Ler `payload.resolution` (default `"1K"`)
-- Adicionar `imageConfig: { imageSize: resolution }` dentro do `generationConfig` na chamada ao endpoint REST do Google
-
-**5. Deploy** de `generate-image` e `image-worker`
+### Deploy
+- Deploy do `image-worker`
 
 ### Resultado
-O usuário verá um dropdown "1K" ao lado do seletor de formato. Ao clicar, pode escolher 2K ou 4K para gerar imagens em alta resolução.
+O modelo recebe a imagem + prompt limpo, sem instruções confusas. Comportamento idêntico a usar o Gemini direto no chat.
 
