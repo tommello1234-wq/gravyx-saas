@@ -685,6 +685,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
     const resultData = resultNode.data as unknown as ResultNodeData;
     const quantity = Math.min(resultData.quantity || 1, 5);
     let aspectRatio = resultData.aspectRatio || '1:1';
+    const resolution = resultData.resolution || '1K';
     const creditsNeeded = quantity;
 
     // Resolve "auto" aspect ratio from connected media
@@ -803,7 +804,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
 
     try {
       const { data, error } = await supabase.functions.invoke('generate-image', {
-        body: { prompt, aspectRatio, quantity, imageUrls: allMedias, references, projectId, resultId }
+        body: { prompt, aspectRatio, quantity, imageUrls: allMedias, references, projectId, resultId, resolution }
       });
 
       if (error) {

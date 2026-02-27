@@ -68,7 +68,7 @@ serve(async (req) => {
       );
     }
 
-    const { prompt, aspectRatio, quantity = 1, imageUrls = [], references = [], projectId, resultId } = await req.json();
+    const { prompt, aspectRatio, quantity = 1, imageUrls = [], references = [], projectId, resultId, resolution = '1K' } = await req.json();
 
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -126,6 +126,10 @@ serve(async (req) => {
     // Validate quantity (1, 2, or 4)
     const validQuantities = [1, 2, 3, 4, 5];
     const safeQuantity = validQuantities.includes(quantity) ? quantity : 1;
+
+    // Validate resolution
+    const validResolutions = ['1K', '2K', '4K'];
+    const safeResolution = validResolutions.includes(resolution) ? resolution : '1K';
 
     // Validate references array (new enriched format)
     if (!Array.isArray(references) || references.length > 10) {
@@ -185,7 +189,8 @@ serve(async (req) => {
             libraryPrompt: r.libraryPrompt ? String(r.libraryPrompt).slice(0, 500) : undefined,
             index: r.index,
           })),
-          resultId
+          resultId,
+          resolution: safeResolution
         },
         max_retries: 3
       })

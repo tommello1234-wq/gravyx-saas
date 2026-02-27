@@ -29,6 +29,7 @@ export interface ResultNodeData {
   label: string;
   aspectRatio: string;
   quantity: number;
+  resolution: string;
   images: NodeImage[] | string[];
 }
 
@@ -112,7 +113,9 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
   
   const [aspectRatio, setAspectRatio] = useState(nodeData.aspectRatio || '1:1');
   const [quantity, setQuantity] = useState(nodeData.quantity || 1);
+  const [resolution, setResolution] = useState(nodeData.resolution || '1K');
   const [label, setLabel] = useState(nodeData.label || 'Resultados');
+  const [resolutionOpen, setResolutionOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -179,6 +182,12 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
     setAspectRatio(value);
     updateNodeData({ aspectRatio: value });
     setFormatOpen(false);
+  }, [updateNodeData]);
+
+  const handleResolutionChange = useCallback((value: string) => {
+    setResolution(value);
+    updateNodeData({ resolution: value });
+    setResolutionOpen(false);
   }, [updateNodeData]);
 
   const handleQuantityChange = useCallback((delta: number) => {
@@ -477,6 +486,40 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
                       )}
                     >
                       <AspectIcon ratio={opt.value} />
+                      {opt.label}
+                    </button>
+                ))}
+              </PopoverContent>
+            </Popover>
+
+            {/* Resolution Dropdown */}
+            <Popover open={resolutionOpen} onOpenChange={setResolutionOpen}>
+              <PopoverTrigger asChild>
+                <button className="flex items-center gap-1 bg-zinc-900 border border-zinc-800 rounded-lg h-9 px-2 text-sm text-zinc-300 hover:text-white hover:border-zinc-700 transition-colors">
+                   <span className="font-medium text-white text-xs">{resolution}</span>
+                   <ChevronDown className="h-3 w-3 text-zinc-500" />
+                 </button>
+              </PopoverTrigger>
+              <PopoverContent 
+                className="w-28 p-1 bg-zinc-900 border-zinc-700" 
+                align="start"
+                onPointerDown={e => e.stopPropagation()}
+              >
+                {[
+                  { value: '1K', label: '1K' },
+                  { value: '2K', label: '2K' },
+                  { value: '4K', label: '4K' },
+                ].map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => handleResolutionChange(opt.value)}
+                      className={cn(
+                        'w-full flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors',
+                        resolution === opt.value
+                          ? 'bg-emerald-500/20 text-emerald-400'
+                          : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
+                      )}
+                    >
                       {opt.label}
                     </button>
                 ))}
