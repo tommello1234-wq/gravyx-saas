@@ -174,6 +174,7 @@ async function deleteGeminiFile(apiKey: string, fileUri: string): Promise<void> 
 interface ReferenceInfo {
   url: string;
   index: number;
+  label?: string;
 }
 
 // Generate a single image via Google AI Studio native API
@@ -189,9 +190,7 @@ async function generateSingleImage(
 ): Promise<string | null> {
   console.log(`[generateSingleImage] Starting image ${index} with model: ${IMAGE_MODEL}, prompt length: ${prompt.length}, references: ${references.length}`);
 
-  const refUrls = references.map(r => r.url);
-
-  if (refUrls.length === 0) {
+  if (references.length === 0) {
     const parts: Record<string, unknown>[] = [{ text: prompt }];
     return await callGeminiAndUpload(apiKey, parts, supabaseAdmin, userId, index, aspectRatio, resolution, []);
   }
@@ -201,24 +200,27 @@ async function generateSingleImage(
 
   parts.push({ text: prompt });
 
-  // Upload reference images via Gemini Files API
-  for (let i = 0; i < refUrls.length; i++) {
-    const url = refUrls[i];
+  // Upload reference images via Gemini Files API, with label context
+  for (let i = 0; i < references.length; i++) {
+    const ref = references[i];
+    const url = ref.url;
+    const label = ref.label || `Imagem ${i + 1}`;
+
+    // Insert text label before the image so Gemini knows which image is which
+    parts.push({ text: `[Imagem: ${label}]` });
 
     if (url.startsWith("data:")) {
-      // Inline data URLs are already small enough, use directly
       const matches = url.match(/^data:(image\/\w+);base64,(.+)$/);
       if (matches) {
         parts.push({ inline_data: { mime_type: matches[1], data: matches[2] } });
       }
     } else {
-      // Use Gemini Files API for URL-based references
       const fileInfo = await uploadToGeminiFiles(apiKey, url);
       if (fileInfo) {
         parts.push({ file_data: { file_uri: fileInfo.fileUri, mime_type: fileInfo.mimeType } });
         uploadedFileUris.push(fileInfo.fileUri);
       } else {
-        console.warn(`Failed to upload reference image ${i + 1} to Gemini Files API, skipping`);
+        console.warn(`Failed to upload reference image ${i + 1} (${label}) to Gemini Files API, skipping`);
       }
     }
   }

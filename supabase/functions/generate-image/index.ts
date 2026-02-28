@@ -171,9 +171,10 @@ serve(async (req) => {
           prompt,
           aspectRatio: aspectRatio || '',
           quantity: safeQuantity,
-          references: references.map((r: { url: string; index?: number }) => ({
+          references: references.map((r: { url: string; index?: number; label?: string }) => ({
             url: r.url,
             index: r.index,
+            label: (r.label || 'Mídia').slice(0, 100),
           })),
           resultId,
           resolution: safeResolution
