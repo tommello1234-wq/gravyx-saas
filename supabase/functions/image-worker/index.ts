@@ -19,6 +19,38 @@ const BACKOFF_DELAYS = [5000, 10000, 20000];
 const IMAGE_MODEL = "gemini-3.1-flash-image-preview";
 const FRIENDLY_ERROR_MSG = "Estamos enfrentando uma instabilidade temporária nos servidores da API do Google. Aguarde um instante e tente novamente mais tarde.";
 
+// Calculate output dimensions based on aspect ratio and resolution tier
+function getOutputDimensions(aspectRatio: string, resolution: string): { width: number; height: number } | null {
+  if (resolution === '1K' || !resolution) return null; // Use model default
+
+  const maxSide = resolution === '4K' ? 4096 : 2048;
+
+  const ratioMap: Record<string, [number, number]> = {
+    '1:1': [1, 1],
+    '16:9': [16, 9],
+    '9:16': [9, 16],
+    '4:3': [4, 3],
+    '3:4': [3, 4],
+    '3:2': [3, 2],
+    '2:3': [2, 3],
+  };
+
+  const ratio = ratioMap[aspectRatio];
+  if (!ratio) {
+    // No aspect ratio or unknown — square
+    return { width: maxSide, height: maxSide };
+  }
+
+  const [w, h] = ratio;
+  if (w >= h) {
+    // Landscape or square
+    return { width: maxSide, height: Math.round(maxSide * (h / w)) };
+  } else {
+    // Portrait
+    return { width: Math.round(maxSide * (w / h)), height: maxSide };
+  }
+}
+
 // Helper: Upload base64 image to Supabase Storage and return public URL
 async function uploadBase64ToStorage(
   supabaseAdmin: ReturnType<typeof import("https://esm.sh/@supabase/supabase-js@2.49.1").createClient>,
@@ -241,12 +273,20 @@ async function callGeminiAndUpload(
 ): Promise<string | null> {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent?key=${apiKey}`;
 
-  const imageConfig: Record<string, string> = {};
+  const imageConfig: Record<string, unknown> = {};
   if (aspectRatio) {
     imageConfig.aspectRatio = aspectRatio;
   }
 
-  console.log(`[callGeminiAndUpload] Calling Google API for image ${index}, parts count: ${parts.length}, aspectRatio: ${aspectRatio || 'auto (omitted)'}`);
+  // Add output dimensions for 2K/4K resolution
+  const dimensions = getOutputDimensions(aspectRatio, resolution);
+  if (dimensions) {
+    imageConfig.outputImageWidth = dimensions.width;
+    imageConfig.outputImageHeight = dimensions.height;
+    console.log(`[callGeminiAndUpload] Resolution ${resolution}: requesting ${dimensions.width}x${dimensions.height}`);
+  }
+
+  console.log(`[callGeminiAndUpload] Calling Google API for image ${index}, parts count: ${parts.length}, aspectRatio: ${aspectRatio || 'auto (omitted)'}, resolution: ${resolution}`);
   const fetchStart = Date.now();
 
   try {
