@@ -1,32 +1,24 @@
 
 
-## Plano: Incluir nomes dos nodes como contexto para o Gemini
+## Plano: Botão de lixeira nas edges (linhas de conexão)
 
 ### O que muda
-Enviar os nomes (labels) dos Media Nodes junto com as imagens, para que o usuário possa referenciar nodes pelo nome no prompt.
+Quando o usuário seleciona/clica numa edge, aparece um ícone de lixeira pequeno no meio da linha. Ao clicar no ícone, a edge é removida.
 
 ### Alterações
 
-**1. `src/pages/Editor.tsx`**
-- Nas funções `collectGravityContext` e `collectLocalContext`, incluir o label do Media Node no objeto `reference`: `{ url, index, label }`
-- O label já está disponível no node data (`node.data.label`)
+**1. Criar `src/components/edges/DeletableEdge.tsx`**
+- Componente custom edge usando `BaseEdge`, `EdgeLabelRenderer` e `getBezierPath` do `@xyflow/react`
+- Renderiza a linha normalmente (bezier)
+- Quando `selected === true`, mostra um botão pequeno (24x24) com ícone `Trash2` centralizado no ponto médio da edge
+- O botão chama `setEdges` para remover a edge pelo `id`
+- Estilo: fundo `bg-destructive`, ícone branco, `rounded-full`, com sombra sutil
 
-**2. `supabase/functions/generate-image/index.ts`**
-- Aceitar `label` no mapeamento de references: `{ url, index, label }`
+**2. Atualizar `src/pages/Editor.tsx`**
+- Importar `DeletableEdge`
+- Criar `edgeTypes = { default: DeletableEdge }` (memoizado)
+- Passar `edgeTypes={edgeTypes}` ao `<ReactFlow>`
 
-**3. `supabase/functions/image-worker/index.ts`**
-- Antes de cada `file_data` part, inserir um `text` part com o nome: `{ text: "[Imagem: Logo]" }`
-- Resultado final para o Gemini:
-```
-parts: [
-  { text: "Use a imagem Logo como marca d'água..." },
-  { text: "[Imagem: Logo]" },
-  { file_data: { file_uri, mime_type } },
-  { text: "[Imagem: Fundo]" },
-  { file_data: { file_uri, mime_type } }
-]
-```
-
-### Resultado
-O usuário pode referenciar nodes pelo nome no prompt e o Gemini entende qual imagem é qual.
+**3. Atualizar `src/pages/TemplateEditor.tsx`**
+- Mesma configuração de `edgeTypes` para consistência
 
