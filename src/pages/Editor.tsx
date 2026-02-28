@@ -136,6 +136,7 @@ function repairCanvasState(canvasState: {nodes?: Node[];edges?: Edge[];}): {node
 interface ImageReference {
   url: string;
   index: number;
+  label: string;
 }
 
 // Helper: Collect context from a Gravity node
@@ -169,8 +170,8 @@ edges: Edge[])
   const connectedRefs: Omit<ImageReference, 'index'>[] = connectedMediaNodes.
   filter((n) => (n.data as {url?: string | null;}).url).
   map((n) => {
-    const d = n.data as {url?: string | null;};
-    return { url: d.url! };
+    const d = n.data as {url?: string | null; label?: string;};
+    return { url: d.url!, label: d.label || 'Mídia' };
   });
 
   // Internal data from the Gravity popup
@@ -179,7 +180,7 @@ edges: Edge[])
 
   const internalRefs: Omit<ImageReference, 'index'>[] = internalMedias.
   filter(Boolean).
-  map((url) => ({ url }));
+  map((url) => ({ url, label: 'Mídia' }));
 
   return {
     prompts: [...connectedPrompts, internalPrompt].filter(Boolean),
@@ -227,8 +228,8 @@ edges: Edge[])
   const localRefs: Omit<ImageReference, 'index'>[] = localMediaNodes.
   filter((n) => (n.data as {url?: string | null;}).url).
   map((n) => {
-    const d = n.data as {url?: string | null;};
-    return { url: d.url! };
+    const d = n.data as {url?: string | null; label?: string;};
+    return { url: d.url!, label: d.label || 'Mídia' };
   });
 
   return { prompts: localPrompts, medias: localMedias, references: localRefs };
