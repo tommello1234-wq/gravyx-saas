@@ -376,7 +376,7 @@ export const ResultNode = memo(({ data, id }: NodeProps) => {
         <div className="p-3">
           <div 
             className="relative rounded-xl overflow-hidden bg-zinc-900/80 border border-zinc-800/50 cursor-pointer"
-            onDoubleClick={handleImageDoubleClick}
+            onClick={handleImageDoubleClick}
             onPointerDown={e => e.stopPropagation()}
           >
             {selectedImage ? (
