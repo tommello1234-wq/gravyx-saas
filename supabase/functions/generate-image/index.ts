@@ -112,24 +112,6 @@ serve(async (req) => {
       );
     }
 
-    // Validate imageUrls
-    if (!Array.isArray(imageUrls) || imageUrls.length > 10) {
-      return new Response(
-        JSON.stringify({ error: "imageUrls must be an array with max 10 items" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Validate each imageUrl item
-    for (const url of imageUrls) {
-      if (typeof url !== 'string' || url.length > 2048 || !url.startsWith('https://')) {
-        return new Response(
-          JSON.stringify({ error: "Each imageUrl must be a valid HTTPS URL (max 2048 chars)" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-    }
-
     // Validate quantity (1, 2, or 4)
     const validQuantities = [1, 2, 3, 4, 5];
     const safeQuantity = validQuantities.includes(quantity) ? quantity : 1;
@@ -189,11 +171,8 @@ serve(async (req) => {
           prompt,
           aspectRatio: aspectRatio || '',
           quantity: safeQuantity,
-          imageUrls,
-          references: references.map((r: { url: string; label?: string; libraryPrompt?: string; index?: number }) => ({
+          references: references.map((r: { url: string; index?: number }) => ({
             url: r.url,
-            label: (r.label || 'Mídia').slice(0, 100),
-            libraryPrompt: r.libraryPrompt ? String(r.libraryPrompt).slice(0, 500) : undefined,
             index: r.index,
           })),
           resultId,

@@ -180,7 +180,6 @@ interface ReferenceInfo {
 async function generateSingleImage(
   apiKey: string,
   prompt: string,
-  imageUrls: string[],
   references: ReferenceInfo[],
   supabaseAdmin: ReturnType<typeof import("https://esm.sh/@supabase/supabase-js@2.49.1").createClient>,
   userId: string,
@@ -188,10 +187,9 @@ async function generateSingleImage(
   aspectRatio: string = '',
   resolution: string = '1K'
 ): Promise<string | null> {
-  console.log(`[generateSingleImage] Starting image ${index} with model: ${IMAGE_MODEL}, prompt length: ${prompt.length}, references: ${references.length}, legacy imageUrls: ${imageUrls.length}`);
+  console.log(`[generateSingleImage] Starting image ${index} with model: ${IMAGE_MODEL}, prompt length: ${prompt.length}, references: ${references.length}`);
 
-  const useEnrichedRefs = references.length > 0;
-  const refUrls = useEnrichedRefs ? references.map(r => r.url) : imageUrls;
+  const refUrls = references.map(r => r.url);
 
   if (refUrls.length === 0) {
     const parts: Record<string, unknown>[] = [{ text: prompt }];
@@ -445,22 +443,14 @@ serve(async (req) => {
       prompt: string;
       aspectRatio: string;
       quantity: number;
-      imageUrls: string[];
       references?: ReferenceInfo[];
       resultId?: string;
       resolution?: string;
     };
 
-    const { prompt, aspectRatio, quantity, imageUrls = [], references = [], resultId, resolution = '1K' } = payload;
+    const { prompt, aspectRatio, quantity, references = [], resultId, resolution = '1K' } = payload;
 
     const fullPrompt = prompt;
-
-    // Filter out SVG URLs
-    const validImageUrls = imageUrls.filter(url => {
-      const isSvg = url.toLowerCase().endsWith('.svg') || url.includes('.svg?');
-      if (isSvg) console.warn(`Skipping SVG image URL: ${url}`);
-      return !isSvg;
-    }).slice(0, 10);
 
     const validReferences = references.filter(ref => {
       const isSvg = ref.url.toLowerCase().endsWith('.svg') || ref.url.includes('.svg?');
@@ -468,13 +458,13 @@ serve(async (req) => {
       return !isSvg;
     }).slice(0, 10);
     
-    console.log(`Using ${validReferences.length} enriched references, ${validImageUrls.length} legacy imageUrls`);
+    console.log(`Using ${validReferences.length} references`);
 
     try {
       // Generate images SEQUENTIALLY to avoid memory limit exceeded
       const results: (string | null)[] = [];
       for (let i = 0; i < quantity; i++) {
-        const result = await generateSingleImage(GOOGLE_AI_API_KEY, fullPrompt, validImageUrls, validReferences, supabaseAdmin, claimedJob.user_id, i, aspectRatio, resolution);
+        const result = await generateSingleImage(GOOGLE_AI_API_KEY, fullPrompt, validReferences, supabaseAdmin, claimedJob.user_id, i, aspectRatio, resolution);
         results.push(result);
       }
       const successfulImages = results.filter((url): url is string => url !== null);
