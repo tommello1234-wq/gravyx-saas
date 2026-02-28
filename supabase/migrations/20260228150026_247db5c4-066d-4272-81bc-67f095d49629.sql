@@ -1,0 +1,1 @@
+UPDATE jobs SET status = 'failed', error = 'Worker crashed - image too large for memory', finished_at = now() WHERE status = 'processing' AND started_at < now() - interval '3 minutes';
