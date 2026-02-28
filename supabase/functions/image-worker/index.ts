@@ -16,14 +16,8 @@ function creditsForResolution(resolution: string): number {
 const MAX_RETRIES = 3;
 const BACKOFF_DELAYS = [5000, 10000, 20000];
 
-const IMAGE_MODEL_FLASH = "gemini-3.1-flash-image-preview";
-const IMAGE_MODEL_PRO = "gemini-3-pro-image-preview";
+const IMAGE_MODEL = "gemini-3.1-flash-image-preview";
 const FRIENDLY_ERROR_MSG = "Estamos enfrentando uma instabilidade temporária nos servidores da API do Google. Aguarde um instante e tente novamente mais tarde.";
-
-// Select model based on resolution: Pro for 2K/4K, Flash for 1K
-function getModelForResolution(resolution: string): string {
-  return (resolution === '2K' || resolution === '4K') ? IMAGE_MODEL_PRO : IMAGE_MODEL_FLASH;
-}
 
 // Helper: Upload base64 image to Supabase Storage and return public URL
 async function uploadBase64ToStorage(
@@ -194,7 +188,7 @@ async function generateSingleImage(
   aspectRatio: string = '',
   resolution: string = '1K'
 ): Promise<string | null> {
-  console.log(`[generateSingleImage] Starting image ${index} with model: ${getModelForResolution(resolution)}, prompt length: ${prompt.length}, references: ${references.length}, resolution: ${resolution}`);
+  console.log(`[generateSingleImage] Starting image ${index} with model: ${IMAGE_MODEL}, prompt length: ${prompt.length}, references: ${references.length}, resolution: ${resolution}`);
 
   if (references.length === 0) {
     const parts: Record<string, unknown>[] = [{ text: prompt }];
@@ -245,21 +239,20 @@ async function callGeminiAndUpload(
   resolution: string = '1K',
   uploadedFileUris: string[] = []
 ): Promise<string | null> {
-  const model = getModelForResolution(resolution);
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent?key=${apiKey}`;
 
   const imageConfig: Record<string, unknown> = {};
   if (aspectRatio) {
     imageConfig.aspectRatio = aspectRatio;
   }
 
-  // Add imageSize for 2K/4K (only supported by Pro model)
+  // Add imageSize for 2K/4K
   if (resolution === '2K' || resolution === '4K') {
     imageConfig.imageSize = resolution;
-    console.log(`[callGeminiAndUpload] Using model ${model} with imageSize: ${resolution}`);
+    console.log(`[callGeminiAndUpload] Using imageSize: ${resolution}`);
   }
 
-  console.log(`[callGeminiAndUpload] Calling Google API for image ${index}, model: ${model}, parts count: ${parts.length}, aspectRatio: ${aspectRatio || 'auto (omitted)'}, resolution: ${resolution}`);
+  console.log(`[callGeminiAndUpload] Calling Google API for image ${index}, model: ${IMAGE_MODEL}, parts count: ${parts.length}, aspectRatio: ${aspectRatio || 'auto (omitted)'}, resolution: ${resolution}`);
   const fetchStart = Date.now();
 
   try {
