@@ -31,6 +31,7 @@ import { SettingsNode } from '@/components/nodes/SettingsNode';
 import { OutputNode } from '@/components/nodes/OutputNode';
 import { ResultNode } from '@/components/nodes/ResultNode';
 import { GravityNode } from '@/components/nodes/GravityNode';
+import { DeletableEdge } from '@/components/edges/DeletableEdge';
 import { ALL_TIERS, PLAN_LIMITS, type TierKey } from '@/lib/plan-limits';
 import {
   ArrowLeft,
@@ -331,6 +332,7 @@ function TemplateEditorCanvas({ templateIdParam }: TemplateEditorCanvasProps) {
   };
 
   const memoizedNodeTypes = useMemo(() => nodeTypes, []);
+  const memoizedEdgeTypes = useMemo(() => ({ default: DeletableEdge }), []);
 
   if (checkingAdmin || isLoading) {
     return (
@@ -488,6 +490,7 @@ function TemplateEditorCanvas({ templateIdParam }: TemplateEditorCanvasProps) {
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           nodeTypes={memoizedNodeTypes}
+          edgeTypes={memoizedEdgeTypes}
           fitView
           className="bg-background"
         >

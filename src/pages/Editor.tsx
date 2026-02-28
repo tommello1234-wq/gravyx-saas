@@ -12,6 +12,7 @@ import { OutputNode } from '@/components/nodes/OutputNode';
 import { ResultNode, GENERATE_FOR_RESULT_EVENT, RESULT_GENERATING_STATE_EVENT, RESULT_JOB_QUEUE_STATE_EVENT, ResultNodeData } from '@/components/nodes/ResultNode';
 import { GravityNode, GENERATE_ALL_FROM_GRAVITY_EVENT, GRAVITY_GENERATING_STATE_EVENT, GravityNodeData } from '@/components/nodes/GravityNode';
 import { NodeToolbar } from '@/components/editor/NodeToolbar';
+import { DeletableEdge } from '@/components/edges/DeletableEdge';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -1145,6 +1146,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
   );
 
   const memoizedNodeTypes = useMemo(() => nodeTypes, []);
+  const memoizedEdgeTypes = useMemo(() => ({ default: DeletableEdge }), []);
 
   if (isLoading) {
     return (
@@ -1192,6 +1194,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           nodeTypes={memoizedNodeTypes}
+          edgeTypes={memoizedEdgeTypes}
           deleteKeyCode={['Backspace', 'Delete']}
           fitView
           className="bg-background">
