@@ -731,7 +731,7 @@ function EditorCanvas({ projectId }: EditorCanvasProps) {
 
     try {
       const { data, error } = await supabase.functions.invoke('generate-image', {
-        body: { prompt, aspectRatio, quantity, imageUrls: allMedias, references, projectId, resultId, resolution }
+        body: { prompt, aspectRatio, quantity, references, projectId, resultId, resolution }
       });
 
       if (error) {
