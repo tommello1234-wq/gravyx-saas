@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { decode as base64Decode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
-import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,7 +10,7 @@ function creditsForResolution(resolution: string): number {
   switch (resolution) {
     case '4K': return 4;
     case '2K': return 2;
-    default: return 1; // 1K
+    default: return 1;
   }
 }
 const MAX_RETRIES = 3;
@@ -63,50 +62,111 @@ async function uploadBase64ToStorage(
   }
 }
 
-// Max size for reference images (20MB — Gemini inline_data limit)
+// Max size for reference images (20MB)
 const MAX_REF_IMAGE_BYTES = 20 * 1024 * 1024;
 
-// Fetch an image URL and return base64-encoded data + mime type
-async function fetchImageAsBase64(url: string): Promise<{ base64: string; mimeType: string } | null> {
+// Upload a file to Gemini Files API (streaming, no base64 in memory)
+async function uploadToGeminiFiles(
+  apiKey: string,
+  imageUrl: string
+): Promise<{ fileUri: string; mimeType: string } | null> {
   try {
-    // HEAD request first to check size without downloading
-    try {
-      const headResp = await fetch(url, { method: "HEAD" });
-      const contentLength = headResp.headers.get("content-length");
-      if (contentLength) {
-        const sizeBytes = parseInt(contentLength, 10);
-        console.log(`Reference image size: ${(sizeBytes / 1024 / 1024).toFixed(2)}MB`);
-        if (sizeBytes > MAX_REF_IMAGE_BYTES) {
-          console.warn(`Skipping reference image (${(sizeBytes / 1024 / 1024).toFixed(2)}MB exceeds ${MAX_REF_IMAGE_BYTES / 1024 / 1024}MB limit): ${url}`);
-          return null;
-        }
-      }
-    } catch (headError) {
-      console.warn("HEAD request failed, proceeding with GET:", headError);
+    // Fetch the image as a stream/buffer
+    const resp = await fetch(imageUrl);
+    if (!resp.ok) {
+      console.error(`Failed to fetch image ${imageUrl}: ${resp.status}`);
+      return null;
     }
 
-    const resp = await fetch(url);
-    if (!resp.ok) {
-      console.error(`Failed to fetch image ${url}: ${resp.status}`);
-      return null;
-    }
-    const buffer = await resp.arrayBuffer();
-    
-    // Double-check actual size
-    if (buffer.byteLength > MAX_REF_IMAGE_BYTES) {
-      console.warn(`Skipping reference image after download (${(buffer.byteLength / 1024 / 1024).toFixed(2)}MB exceeds limit): ${url}`);
-      return null;
-    }
-    
-    const bytes = new Uint8Array(buffer);
-    const base64 = base64Encode(bytes);
     const contentType = resp.headers.get("content-type") || "image/png";
     const mimeType = contentType.split(";")[0].trim();
-    console.log(`Successfully fetched reference image: ${mimeType}, ${(buffer.byteLength / 1024).toFixed(0)}KB`);
-    return { base64, mimeType };
+    const buffer = await resp.arrayBuffer();
+    const sizeBytes = buffer.byteLength;
+
+    console.log(`Reference image size: ${(sizeBytes / 1024 / 1024).toFixed(2)}MB`);
+
+    if (sizeBytes > MAX_REF_IMAGE_BYTES) {
+      console.warn(`Skipping reference image (${(sizeBytes / 1024 / 1024).toFixed(2)}MB exceeds limit): ${imageUrl}`);
+      return null;
+    }
+
+    // Upload to Gemini Files API using resumable upload
+    const startUploadResp = await fetch(
+      `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: {
+          "X-Goog-Upload-Protocol": "resumable",
+          "X-Goog-Upload-Command": "start",
+          "X-Goog-Upload-Header-Content-Length": String(sizeBytes),
+          "X-Goog-Upload-Header-Content-Type": mimeType,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          file: { displayName: `ref-${Date.now()}` },
+        }),
+      }
+    );
+
+    if (!startUploadResp.ok) {
+      const errText = await startUploadResp.text();
+      console.error("Gemini Files API start upload failed:", startUploadResp.status, errText);
+      return null;
+    }
+
+    const uploadUrl = startUploadResp.headers.get("X-Goog-Upload-URL");
+    if (!uploadUrl) {
+      console.error("No upload URL returned from Gemini Files API");
+      return null;
+    }
+
+    // Upload the actual bytes
+    const uploadResp = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: {
+        "Content-Length": String(sizeBytes),
+        "X-Goog-Upload-Offset": "0",
+        "X-Goog-Upload-Command": "upload, finalize",
+      },
+      body: buffer,
+    });
+
+    if (!uploadResp.ok) {
+      const errText = await uploadResp.text();
+      console.error("Gemini Files API upload failed:", uploadResp.status, errText);
+      return null;
+    }
+
+    const uploadResult = await uploadResp.json();
+    const fileUri = uploadResult.file?.uri;
+
+    if (!fileUri) {
+      console.error("No file URI in Gemini Files API response:", uploadResult);
+      return null;
+    }
+
+    console.log(`Uploaded reference to Gemini Files API: ${fileUri} (${(sizeBytes / 1024 / 1024).toFixed(2)}MB)`);
+    return { fileUri, mimeType };
   } catch (error) {
-    console.error(`Error fetching image ${url}:`, error);
+    console.error(`Error uploading to Gemini Files API:`, error);
     return null;
+  }
+}
+
+// Delete a file from Gemini Files API (best effort)
+async function deleteGeminiFile(apiKey: string, fileUri: string): Promise<void> {
+  try {
+    // fileUri format: https://generativelanguage.googleapis.com/v1beta/files/FILE_NAME
+    // We need the file name part for the delete endpoint
+    const fileName = fileUri.split("/").pop();
+    if (!fileName) return;
+
+    await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/files/${fileName}?key=${apiKey}`,
+      { method: "DELETE" }
+    );
+  } catch {
+    // Best effort cleanup
   }
 }
 
@@ -132,20 +192,18 @@ async function generateSingleImage(
 ): Promise<string | null> {
   console.log(`[generateSingleImage] Starting image ${index} with model: ${IMAGE_MODEL}, prompt length: ${prompt.length}, references: ${references.length}, legacy imageUrls: ${imageUrls.length}`);
 
-  // Determine which reference source to use
   const useEnrichedRefs = references.length > 0;
   const refUrls = useEnrichedRefs ? references.map(r => r.url) : imageUrls;
 
   if (refUrls.length === 0) {
-    // No reference images - simple text-only generation
     const parts: Record<string, unknown>[] = [{ text: prompt }];
-    return await callGeminiAndUpload(apiKey, parts, supabaseAdmin, userId, index, aspectRatio, resolution);
+    return await callGeminiAndUpload(apiKey, parts, supabaseAdmin, userId, index, aspectRatio, resolution, []);
   }
 
-  // Build parts: prompt + images, simple and direct
   const parts: Record<string, unknown>[] = [];
+  const uploadedFileUris: string[] = [];
 
-  // Build prompt text: user prompt + optional library hints
+  // Build prompt text with optional library hints
   let promptText = prompt;
   if (useEnrichedRefs) {
     const hints = references
@@ -157,31 +215,33 @@ async function generateSingleImage(
   }
   parts.push({ text: promptText });
 
-  // Add reference images with labels from node names
+  // Upload reference images via Gemini Files API (avoids base64 in memory)
   for (let i = 0; i < refUrls.length; i++) {
     const url = refUrls[i];
-    
-    // Add label if available from enriched references
+
     if (useEnrichedRefs && references[i]?.label) {
       parts.push({ text: `[Image: ${references[i].label}]` });
     }
-    
+
     if (url.startsWith("data:")) {
+      // Inline data URLs are already small enough, use directly
       const matches = url.match(/^data:(image\/\w+);base64,(.+)$/);
       if (matches) {
         parts.push({ inline_data: { mime_type: matches[1], data: matches[2] } });
       }
     } else {
-      const imgData = await fetchImageAsBase64(url);
-      if (imgData) {
-        parts.push({ inline_data: { mime_type: imgData.mimeType, data: imgData.base64 } });
+      // Use Gemini Files API for URL-based references
+      const fileInfo = await uploadToGeminiFiles(apiKey, url);
+      if (fileInfo) {
+        parts.push({ file_data: { file_uri: fileInfo.fileUri, mime_type: fileInfo.mimeType } });
+        uploadedFileUris.push(fileInfo.fileUri);
       } else {
-        console.warn(`Failed to fetch reference image ${i + 1}, skipping`);
+        console.warn(`Failed to upload reference image ${i + 1} to Gemini Files API, skipping`);
       }
     }
   }
 
-  return await callGeminiAndUpload(apiKey, parts, supabaseAdmin, userId, index, aspectRatio, resolution);
+  return await callGeminiAndUpload(apiKey, parts, supabaseAdmin, userId, index, aspectRatio, resolution, uploadedFileUris);
 }
 
 // Call Gemini API and upload result to storage
@@ -192,12 +252,11 @@ async function callGeminiAndUpload(
   userId: string,
   index: number,
   aspectRatio: string = '',
-  resolution: string = '1K'
+  resolution: string = '1K',
+  uploadedFileUris: string[] = []
 ): Promise<string | null> {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent?key=${apiKey}`;
 
-  // Build imageConfig: use aspectRatio via API (not in prompt text)
-  // When aspectRatio is empty (Auto mode), omit it so Gemini decides from context
   const imageConfig: Record<string, string> = {};
   if (aspectRatio) {
     imageConfig.aspectRatio = aspectRatio;
@@ -205,70 +264,75 @@ async function callGeminiAndUpload(
 
   console.log(`[callGeminiAndUpload] Calling Google API for image ${index}, parts count: ${parts.length}, aspectRatio: ${aspectRatio || 'auto (omitted)'}`);
   const fetchStart = Date.now();
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts }],
-      generationConfig: {
-        responseModalities: ["TEXT", "IMAGE"],
-        imageConfig
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: {
+          responseModalities: ["TEXT", "IMAGE"],
+          imageConfig
+        }
+      }),
+    });
+
+    console.log(`[generateSingleImage] Google API responded in ${Date.now() - fetchStart}ms, status: ${response.status}`);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Google AI API error:`, response.status, errorText);
+      
+      if (response.status === 429) {
+        throw new Error("RATE_LIMIT");
       }
-    }),
-  });
-
-  console.log(`[generateSingleImage] Google API responded in ${Date.now() - fetchStart}ms, status: ${response.status}`);
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`Google AI API error:`, response.status, errorText);
-    
-    if (response.status === 429) {
-      throw new Error("RATE_LIMIT");
+      
+      if (response.status >= 500) {
+        throw new Error(FRIENDLY_ERROR_MSG);
+      }
+      
+      return null;
     }
-    
-    if (response.status >= 500) {
-      throw new Error(FRIENDLY_ERROR_MSG);
+
+    const data = await response.json();
+
+    const candidates = data.candidates;
+    if (!candidates || candidates.length === 0) {
+      console.error("No candidates in Google AI response");
+      return null;
     }
+
+    const responseParts = candidates[0]?.content?.parts;
+    if (!responseParts) {
+      console.error("No parts in candidate response");
+      return null;
+    }
+
+    const imagePart = responseParts.find((p: { inlineData?: { mimeType: string; data: string } }) => p.inlineData);
+    if (!imagePart || !imagePart.inlineData) {
+      console.error("No image data in response parts");
+      return null;
+    }
+
+    const { mimeType, data: imageBase64 } = imagePart.inlineData;
+    const base64DataUrl = `data:${mimeType};base64,${imageBase64}`;
+
+    const fileName = `${Date.now()}-${index}-${Math.random().toString(36).substring(7)}`;
+    const publicUrl = await uploadBase64ToStorage(supabaseAdmin, base64DataUrl, userId, fileName);
     
-    return null;
+    if (!publicUrl) {
+      console.error("Failed to upload image to storage");
+      return null;
+    }
+
+    return publicUrl;
+  } finally {
+    // Clean up uploaded files from Gemini (best effort, non-blocking)
+    for (const uri of uploadedFileUris) {
+      deleteGeminiFile(apiKey, uri);
+    }
   }
-
-  const data = await response.json();
-
-  // Extract image from Google's response format
-  const candidates = data.candidates;
-  if (!candidates || candidates.length === 0) {
-    console.error("No candidates in Google AI response");
-    return null;
-  }
-
-  const responseParts = candidates[0]?.content?.parts;
-  if (!responseParts) {
-    console.error("No parts in candidate response");
-    return null;
-  }
-
-  // Find the first image part
-  const imagePart = responseParts.find((p: { inlineData?: { mimeType: string; data: string } }) => p.inlineData);
-  if (!imagePart || !imagePart.inlineData) {
-    console.error("No image data in response parts");
-    return null;
-  }
-
-  const { mimeType, data: imageBase64 } = imagePart.inlineData;
-  const extension = mimeType.split("/")[1] || "png";
-  const base64DataUrl = `data:${mimeType};base64,${imageBase64}`;
-
-  const fileName = `${Date.now()}-${index}-${Math.random().toString(36).substring(7)}`;
-  const publicUrl = await uploadBase64ToStorage(supabaseAdmin, base64DataUrl, userId, fileName);
-  
-  if (!publicUrl) {
-    console.error("Failed to upload image to storage");
-    return null;
-  }
-
-  return publicUrl;
 }
 
 serve(async (req) => {
@@ -324,17 +388,51 @@ serve(async (req) => {
     const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     // Auto-recover stuck jobs (processing > 3 minutes)
-    const { data: unstuckCount, error: unstuckError } = await supabaseAdmin
+    // Now properly increments retries and fails jobs that exceed max_retries
+    const { data: stuckJobs, error: stuckError } = await supabaseAdmin
       .from('jobs')
-      .update({ status: 'queued', error: 'Auto-recovered from stuck processing' })
+      .select('id, retries, max_retries')
       .eq('status', 'processing')
-      .lt('started_at', new Date(Date.now() - 3 * 60 * 1000).toISOString())
-      .select('id');
+      .lt('started_at', new Date(Date.now() - 3 * 60 * 1000).toISOString());
 
-    if (unstuckError) {
-      console.error("Error recovering stuck jobs:", unstuckError);
-    } else if (unstuckCount && unstuckCount.length > 0) {
-      console.log(`Recovered ${unstuckCount.length} stuck job(s):`, unstuckCount.map(j => j.id));
+    if (stuckError) {
+      console.error("Error finding stuck jobs:", stuckError);
+    } else if (stuckJobs && stuckJobs.length > 0) {
+      console.log(`Found ${stuckJobs.length} stuck job(s), recovering with retry tracking`);
+      
+      for (const stuck of stuckJobs) {
+        const currentRetries = (stuck.retries || 0) + 1;
+        const maxRetries = stuck.max_retries || MAX_RETRIES;
+
+        if (currentRetries >= maxRetries) {
+          // Exceeded max retries — fail permanently
+          await supabaseAdmin
+            .from('jobs')
+            .update({
+              status: 'failed',
+              finished_at: new Date().toISOString(),
+              error: 'Job failed after max retries (likely memory limit exceeded with large reference images)',
+              retries: currentRetries,
+            })
+            .eq('id', stuck.id);
+          console.log(`Stuck job ${stuck.id} failed permanently (retries: ${currentRetries}/${maxRetries})`);
+        } else {
+          // Re-queue with backoff
+          const backoffMs = BACKOFF_DELAYS[currentRetries - 1] || BACKOFF_DELAYS[BACKOFF_DELAYS.length - 1];
+          const nextRunAt = new Date(Date.now() + backoffMs).toISOString();
+          
+          await supabaseAdmin
+            .from('jobs')
+            .update({
+              status: 'queued',
+              retries: currentRetries,
+              next_run_at: nextRunAt,
+              error: `Auto-recovered from stuck processing (attempt ${currentRetries}/${maxRetries})`,
+            })
+            .eq('id', stuck.id);
+          console.log(`Stuck job ${stuck.id} re-queued (retry ${currentRetries}/${maxRetries}, next_run_at: ${nextRunAt})`);
+        }
+      }
     }
 
     const { data: job, error: claimError } = await supabaseAdmin.rpc('claim_next_job', {
@@ -371,19 +469,15 @@ serve(async (req) => {
 
     const { prompt, aspectRatio, quantity, imageUrls = [], references = [], resultId, resolution = '1K' } = payload;
 
-    // Prompt stays clean - aspect ratio is passed via API imageConfig, not in text
     const fullPrompt = prompt;
 
-    // Filter out SVG URLs from legacy imageUrls and limit to 10
+    // Filter out SVG URLs
     const validImageUrls = imageUrls.filter(url => {
       const isSvg = url.toLowerCase().endsWith('.svg') || url.includes('.svg?');
-      if (isSvg) {
-        console.warn(`Skipping SVG image URL: ${url}`);
-      }
+      if (isSvg) console.warn(`Skipping SVG image URL: ${url}`);
       return !isSvg;
     }).slice(0, 10);
 
-    // Filter SVGs from enriched references too
     const validReferences = references.filter(ref => {
       const isSvg = ref.url.toLowerCase().endsWith('.svg') || ref.url.includes('.svg?');
       if (isSvg) console.warn(`Skipping SVG reference: ${ref.url}`);
