@@ -173,8 +173,6 @@ async function deleteGeminiFile(apiKey: string, fileUri: string): Promise<void> 
 // Reference metadata from enriched payload
 interface ReferenceInfo {
   url: string;
-  label: string;
-  libraryPrompt?: string;
   index: number;
 }
 
@@ -203,25 +201,11 @@ async function generateSingleImage(
   const parts: Record<string, unknown>[] = [];
   const uploadedFileUris: string[] = [];
 
-  // Build prompt text with optional library hints
-  let promptText = prompt;
-  if (useEnrichedRefs) {
-    const hints = references
-      .filter(r => r.libraryPrompt)
-      .map(r => r.libraryPrompt);
-    if (hints.length > 0) {
-      promptText += `\n\nStyle reference: ${hints.join('; ')}`;
-    }
-  }
-  parts.push({ text: promptText });
+  parts.push({ text: prompt });
 
-  // Upload reference images via Gemini Files API (avoids base64 in memory)
+  // Upload reference images via Gemini Files API
   for (let i = 0; i < refUrls.length; i++) {
     const url = refUrls[i];
-
-    if (useEnrichedRefs && references[i]?.label) {
-      parts.push({ text: `[Image: ${references[i].label}]` });
-    }
 
     if (url.startsWith("data:")) {
       // Inline data URLs are already small enough, use directly

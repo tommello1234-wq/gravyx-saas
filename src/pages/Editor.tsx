@@ -135,9 +135,6 @@ function repairCanvasState(canvasState: {nodes?: Node[];edges?: Edge[];}): {node
 // Reference metadata for enriched payload
 interface ImageReference {
   url: string;
-  label: string;
-  libraryPrompt?: string;
-  source: 'gravity' | 'local';
   index: number;
 }
 
@@ -146,7 +143,7 @@ function collectGravityContext(
 gravityId: string,
 nodes: Node[],
 edges: Edge[])
-: {prompts: string[];medias: string[];references: Omit<ImageReference, 'index'>[];} {
+: {prompts: string[];medias: string[];references: Omit<ImageReference, 'index'>[];} {  
   const gravityNode = nodes.find((n) => n.id === gravityId);
   if (!gravityNode) return { prompts: [], medias: [], references: [] };
 
@@ -172,13 +169,8 @@ edges: Edge[])
   const connectedRefs: Omit<ImageReference, 'index'>[] = connectedMediaNodes.
   filter((n) => (n.data as {url?: string | null;}).url).
   map((n) => {
-    const d = n.data as {url?: string | null;label?: string;libraryPrompt?: string | null;};
-    return {
-      url: d.url!,
-      label: d.label || 'Mídia',
-      libraryPrompt: d.libraryPrompt || undefined,
-      source: 'gravity' as const
-    };
+    const d = n.data as {url?: string | null;};
+    return { url: d.url! };
   });
 
   // Internal data from the Gravity popup
@@ -187,11 +179,7 @@ edges: Edge[])
 
   const internalRefs: Omit<ImageReference, 'index'>[] = internalMedias.
   filter(Boolean).
-  map((url) => ({
-    url,
-    label: 'Gravity',
-    source: 'gravity' as const
-  }));
+  map((url) => ({ url }));
 
   return {
     prompts: [...connectedPrompts, internalPrompt].filter(Boolean),
@@ -239,13 +227,8 @@ edges: Edge[])
   const localRefs: Omit<ImageReference, 'index'>[] = localMediaNodes.
   filter((n) => (n.data as {url?: string | null;}).url).
   map((n) => {
-    const d = n.data as {url?: string | null;label?: string;libraryPrompt?: string | null;};
-    return {
-      url: d.url!,
-      label: d.label || 'Mídia',
-      libraryPrompt: d.libraryPrompt || undefined,
-      source: 'local' as const
-    };
+    const d = n.data as {url?: string | null;};
+    return { url: d.url! };
   });
 
   return { prompts: localPrompts, medias: localMedias, references: localRefs };
