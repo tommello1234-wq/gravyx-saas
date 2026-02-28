@@ -63,8 +63,8 @@ async function uploadBase64ToStorage(
   }
 }
 
-// Max size for reference images (4MB raw = ~5.3MB base64)
-const MAX_REF_IMAGE_BYTES = 4 * 1024 * 1024;
+// Max size for reference images (20MB — Gemini inline_data limit)
+const MAX_REF_IMAGE_BYTES = 20 * 1024 * 1024;
 
 // Fetch an image URL and return base64-encoded data + mime type
 async function fetchImageAsBase64(url: string): Promise<{ base64: string; mimeType: string } | null> {
