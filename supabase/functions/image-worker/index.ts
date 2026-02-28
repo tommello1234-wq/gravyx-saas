@@ -157,9 +157,14 @@ async function generateSingleImage(
   }
   parts.push({ text: promptText });
 
-  // Add reference images directly, no verbose labels
+  // Add reference images with labels from node names
   for (let i = 0; i < refUrls.length; i++) {
     const url = refUrls[i];
+    
+    // Add label if available from enriched references
+    if (useEnrichedRefs && references[i]?.label) {
+      parts.push({ text: `[Image: ${references[i].label}]` });
+    }
     
     if (url.startsWith("data:")) {
       const matches = url.match(/^data:(image\/\w+);base64,(.+)$/);
