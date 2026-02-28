@@ -1,20 +1,20 @@
 
 
-## Plano: Aumentar limite de imagens de referência para 20MB
+## Plano: Reverter compressão desnecessária no MediaNode
 
-### 1. `supabase/functions/image-worker/index.ts`
-- Alterar `MAX_REF_IMAGE_BYTES` de `4 * 1024 * 1024` para `20 * 1024 * 1024`
-- Atualizar mensagens de log para refletir o novo limite
+A compressão client-side (Canvas resize para 2048px + JPEG 85%) foi adicionada como workaround para o limite de 4MB que já foi corrigido no backend (agora 20MB). Ela degrada a qualidade da imagem de referência que a IA recebe, sem necessidade.
 
-### 2. `src/components/nodes/MediaNode.tsx`
-- No `handleFileSelect`, antes do upload, verificar se `file.size > 20 * 1024 * 1024`
-- Se exceder, mostrar toast de erro com mensagem indicando o limite de 20MB e retornar sem fazer upload
+### Alteração: `src/components/nodes/MediaNode.tsx`
 
-### Arquivos impactados
-| Arquivo | Alteração |
-|---|---|
-| `supabase/functions/image-worker/index.ts` | Constante 4MB → 20MB |
-| `src/components/nodes/MediaNode.tsx` | Validação de tamanho no upload com toast de erro |
+1. **Remover** a função `compressImage` inteira (linhas 49-77)
+2. **Reverter** o `handleFileSelect` para fazer upload do arquivo original sem compressão:
+   - Usar a extensão original do arquivo (não forçar `.jpeg`)
+   - Upload do `file` diretamente (não do `compressed`)
+   - Remover o toast de compressão (manter apenas "Imagem enviada")
+3. **Manter** a validação de 20MB e a rejeição de SVG (essas são úteis)
 
-Deploy do `image-worker` necessário (automático).
+### Resultado
+- Imagens de referência chegam ao Gemini na resolução e qualidade originais
+- Validação de 20MB continua protegendo contra arquivos excessivos
+- 1 arquivo alterado, sem deploy de edge function necessário
 
