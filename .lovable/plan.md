@@ -1,20 +1,41 @@
 
+Do I know what the issue is? Sim.
 
-## Plano: Reverter compressão desnecessária no MediaNode
+### Problema confirmado
+- `image-worker` está quebrando por **Memory limit exceeded** ao processar referências grandes (logs mostram 2.97MB + 10.12MB e erro 546).
+- Jobs ficam presos em `processing` e entram em loop porque o auto-recovery atual apenas volta para `queued` sem incrementar `retries`.
 
-A compressão client-side (Canvas resize para 2048px + JPEG 85%) foi adicionada como workaround para o limite de 4MB que já foi corrigido no backend (agora 20MB). Ela degrada a qualidade da imagem de referência que a IA recebe, sem necessidade.
+### Plano de implementação
 
-### Alteração: `src/components/nodes/MediaNode.tsx`
+1. **Parar o loop atual de jobs presos (DB)**
+   - Criar migração para finalizar como `failed` os jobs antigos em `processing` (threshold de segurança, ex. > 5 min), com mensagem de erro clara.
+   - Objetivo: limpar imediatamente o estado travado no editor.
 
-1. **Remover** a função `compressImage` inteira (linhas 49-77)
-2. **Reverter** o `handleFileSelect` para fazer upload do arquivo original sem compressão:
-   - Usar a extensão original do arquivo (não forçar `.jpeg`)
-   - Upload do `file` diretamente (não do `compressed`)
-   - Remover o toast de compressão (manter apenas "Imagem enviada")
-3. **Manter** a validação de 20MB e a rejeição de SVG (essas são úteis)
+2. **Corrigir recovery no `image-worker` para não loopar infinitamente**
+   - Arquivo: `supabase/functions/image-worker/index.ts`
+   - Trocar o bloco de auto-recovery para:
+     - incrementar `retries` quando recuperar job travado;
+     - aplicar `next_run_at` com backoff;
+     - marcar `failed` quando atingir `max_retries`.
+   - Garantir que qualquer recuperação já registre erro técnico (`timeout/memory`) no job.
 
-### Resultado
-- Imagens de referência chegam ao Gemini na resolução e qualidade originais
-- Validação de 20MB continua protegendo contra arquivos excessivos
-- 1 arquivo alterado, sem deploy de edge function necessário
+3. **Remover gargalo de memória sem compressão (manter qualidade original)**
+   - Arquivo: `supabase/functions/image-worker/index.ts`
+   - Substituir envio de referências via `inline_data` base64 por fluxo com **Gemini Files API** (`file_data`/`file_uri`) para evitar JSON gigante em memória.
+   - Manter upload original no frontend (sem resize/compressão), preservando fidelidade da imagem.
+   - Limpar arquivos temporários no Gemini após uso (best effort).
 
+4. **Evitar loading infinito na UI mesmo em falhas extremas**
+   - Arquivo: `src/hooks/useJobQueue.ts`
+   - Adicionar timeout de segurança no estado local de pending job (ex. 6–8 min): remove job da fila local e dispara `onJobFailed` com mensagem amigável.
+   - Em restauração inicial, ignorar jobs muito antigos já fora da janela operacional.
+
+5. **Validação final**
+   - Cenário A: 2 referências grandes (ex. ~3MB + ~10MB) → deve completar sem loop.
+   - Cenário B: arquivo >20MB no MediaNode → deve bloquear com toast de limite.
+   - Cenário C: erro real do worker → job deve virar `failed` (sem ficar reprocessando para sempre) e UI deve sair do loading.
+
+### Detalhes técnicos (arquivos impactados)
+- `supabase/functions/image-worker/index.ts`
+- `src/hooks/useJobQueue.ts`
+- `supabase/migrations/<timestamp>_fix_stuck_jobs_and_recovery.sql`
