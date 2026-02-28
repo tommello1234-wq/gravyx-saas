@@ -29,17 +29,23 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
   const [initialized, setInitialized] = useState(false);
   const { toast } = useToast();
 
+  // Safety timeout: jobs older than this are considered dead (7 minutes)
+  const JOB_TIMEOUT_MS = 7 * 60 * 1000;
+
   // On mount, fetch any existing pending jobs from the database to restore state
   useEffect(() => {
     if (!projectId || initialized) return;
 
     const fetchPendingJobs = async () => {
       try {
+        // Only restore jobs created within the operational window
+        const cutoff = new Date(Date.now() - JOB_TIMEOUT_MS).toISOString();
         const { data, error } = await supabase
           .from('jobs')
-          .select('id, status, payload')
+          .select('id, status, payload, created_at')
           .eq('project_id', projectId)
-          .in('status', ['queued', 'processing']);
+          .in('status', ['queued', 'processing'])
+          .gt('created_at', cutoff);
 
         if (error) {
           console.error('[useJobQueue] Error fetching pending jobs:', error);
@@ -52,7 +58,7 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
             id: job.id,
             status: job.status as 'queued' | 'processing',
             quantity: (job.payload as { quantity?: number })?.quantity || 1,
-            createdAt: new Date().toISOString(),
+            createdAt: job.created_at || new Date().toISOString(),
             resultId: (job.payload as { resultId?: string })?.resultId
           }));
           setPendingJobs(restoredJobs);
@@ -66,6 +72,39 @@ export function useJobQueue({ projectId, onJobCompleted, onJobFailed }: UseJobQu
 
     fetchPendingJobs();
   }, [projectId, initialized]);
+
+  // Safety timeout: automatically fail jobs that have been pending too long
+  useEffect(() => {
+    if (pendingJobs.length === 0) return;
+
+    const checkTimeouts = () => {
+      const now = Date.now();
+      const timedOut = pendingJobs.filter(
+        (job) => now - new Date(job.createdAt).getTime() > JOB_TIMEOUT_MS
+      );
+
+      if (timedOut.length > 0) {
+        console.warn('[useJobQueue] Timing out', timedOut.length, 'job(s) after safety timeout');
+        for (const job of timedOut) {
+          processedJobIdsRef.current.add(job.id);
+          callbacksRef.current.onJobFailed(
+            job.id,
+            'A geração demorou mais do que o esperado. Tente novamente com imagens de referência menores.'
+          );
+        }
+        setPendingJobs((prev) =>
+          prev.filter((j) => !timedOut.some((t) => t.id === j.id))
+        );
+      }
+    };
+
+    // Check every 30 seconds
+    const interval = setInterval(checkTimeouts, 30_000);
+    // Also check immediately
+    checkTimeouts();
+
+    return () => clearInterval(interval);
+  }, [pendingJobs]);
 
   // Polling that triggers the worker execution (keeps the queue moving)
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
