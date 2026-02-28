@@ -1,86 +1,50 @@
 
 
-## Diagnóstico: 3 Bugs na Chamada da API do Gemini
+## Diagnóstico
 
-Comparando o código do `image-worker` com a documentação oficial da API REST do Gemini 3.1, encontrei **3 problemas** que explicam tanto o texto duplicado quanto o formato errado:
+O label dos nós (ex: "Foto dos produtos", "Imagem de referencia") **é coletado** no Editor.tsx e enviado ao backend no array `references`, mas no `image-worker/index.ts` (linha 160) ele é **descartado** — as imagens são adicionadas ao prompt sem nenhuma identificação textual. O modelo recebe as imagens "cegas", sem saber qual é qual.
 
-### Bug 1: Aspect ratio enviado como TEXTO no prompt, não via API
+## Correção
 
-**Código atual (image-worker, linha 360-362):**
-```javascript
-let fullPrompt = prompt;
-if (aspectRatio) {
-  fullPrompt = `${prompt}. Aspect ratio: ${aspectRatio}`;
-}
-```
+**Arquivo:** `supabase/functions/image-worker/index.ts` (linhas 160-177)
 
-O aspect ratio está sendo concatenado como texto no prompt (ex: `"Troque o cara... Aspect ratio: 16:9"`). Isso **não é como a API funciona**. A documentação oficial mostra que o parâmetro correto é `generationConfig.imageConfig.aspectRatio`:
+Adicionar um label textual curto antes de cada imagem de referência, usando o nome do nó definido pelo usuário. Isso permite que o prompt diga "use a imagem do node de Imagem de referencia somente como referencia" e o modelo saiba exatamente a qual imagem se refere.
 
-```json
-"generationConfig": {
-  "imageConfig": {
-    "aspectRatio": "16:9"
+### Implementação
+
+Alterar o loop de referências (linha 160-177) para inserir um `text` part com o label antes de cada `inline_data`:
+
+```typescript
+// Add reference images with labels from node names
+for (let i = 0; i < refUrls.length; i++) {
+  const url = refUrls[i];
+  
+  // Add label if available from enriched references
+  if (useEnrichedRefs && references[i]?.label) {
+    parts.push({ text: `[Image: ${references[i].label}]` });
+  }
+  
+  if (url.startsWith("data:")) {
+    // ... existing base64 handling
+  } else {
+    // ... existing URL fetch handling
   }
 }
 ```
 
-Colocar "Aspect ratio: 16:9" no texto do prompt confunde o modelo, causando formato errado e até interferindo na interpretação do prompt (texto duplicado).
+Dessa forma, quando o usuário renomeia um nó para "Imagem de referencia" e outro para "Foto dos produtos", o modelo Gemini recebe:
 
-### Bug 2: `imageSize: "1K"` não existe na API
-
-**Código atual (image-worker, linha 199-202):**
-```javascript
-generationConfig: {
-  responseModalities: ["TEXT", "IMAGE"],
-  imageConfig: { imageSize: resolution }
-}
+```
+[Image: Foto dos produtos]
+<inline_data>
+[Image: Imagem de referencia]
+<inline_data>
 ```
 
-O parâmetro `imageSize` com valores "1K", "2K", "4K" **não existe na documentação da API REST do Gemini 3.1**. Está sendo silenciosamente ignorado. O aspect ratio real não está sendo definido em lugar nenhum via API.
+E o prompt "use a imagem do node de Imagem de referencia somente como referencia" faz sentido para o modelo.
 
-### Bug 3: Modo "Auto" faz detecção manual em vez de delegar ao modelo
-
-**Código atual (Editor.tsx, linhas 692-735):** Quando o usuário seleciona "Auto", o frontend carrega a imagem de referência, calcula `naturalWidth/naturalHeight`, e mapeia para presets fixos (1:1, 4:5, 16:9, 9:16). No Google AI Studio, "Auto" simplesmente **não envia nenhum aspect ratio**, e o modelo decide sozinho pelo contexto. O Gemini 3.1 suporta 12 aspect ratios: 1:1, 3:2, 2:3, 3:4, 4:1, 4:3, 4:5, 5:4, 8:1, 9:16, 16:9, 21:9.
-
----
-
-### Plano de Correção
-
-#### 1. `supabase/functions/image-worker/index.ts`
-- Remover a concatenação de aspect ratio no prompt (linhas 360-363)
-- Passar `aspectRatio` como parâmetro da função `callGeminiAndUpload`
-- No `generationConfig.imageConfig`, usar `aspectRatio` em vez de `imageSize`
-- Quando aspectRatio for vazio/null (modo Auto), omitir `aspectRatio` do `imageConfig`
-
-```javascript
-// ANTES
-fullPrompt = `${prompt}. Aspect ratio: ${aspectRatio}`;
-// ...
-imageConfig: { imageSize: resolution }
-
-// DEPOIS
-// Prompt fica limpo, sem aspect ratio
-fullPrompt = prompt;
-// ...
-imageConfig: aspectRatio ? { aspectRatio } : {}
-```
-
-#### 2. `supabase/functions/generate-image/index.ts`
-- Expandir `validAspectRatios` para incluir todos os formatos suportados pelo Gemini 3.1
-- Permitir aspectRatio vazio/null (para modo Auto)
-- Remover o `imageSize` do `resolution` mapping, já que não é um parâmetro válido da API
-
-#### 3. `src/pages/Editor.tsx`
-- No `generateForResult`, quando `aspectRatio === 'auto'`, enviar string vazia (ou não enviar) em vez de tentar detectar
-- Remover toda a lógica de detecção manual de aspect ratio (linhas 692-735)
-
-### Arquivos impactados
-| Arquivo | Alteração |
-|---|---|
-| `supabase/functions/image-worker/index.ts` | Corrigir `imageConfig` para usar `aspectRatio` via API, remover texto no prompt |
-| `supabase/functions/generate-image/index.ts` | Expandir aspect ratios válidos, permitir Auto (vazio) |
-| `src/pages/Editor.tsx` | Simplificar modo Auto: enviar vazio em vez de detectar |
-
-### Resultado esperado
-Após as correções, o comportamento será idêntico ao Google AI Studio: o aspect ratio é controlado pela API (não por texto no prompt), e no modo Auto o modelo decide sozinho pelo contexto das imagens de referência.
+### Impacto
+- 1 arquivo alterado: `supabase/functions/image-worker/index.ts`
+- Deploy da Edge Function necessário
+- Sem breaking changes — nós sem label customizado receberão o default "Mídia"
 
