@@ -1,31 +1,32 @@
 
 
-## Plano: Limpar pipeline de geração — caminho único e simples
+## Plano: Incluir nomes dos nodes como contexto para o Gemini
 
-### Problema atual
-Três pontos de atrito restantes:
-
-1. **`generate-image/index.ts`** (linha 192-198): Ainda mapeia `label` e `libraryPrompt` nos references do payload — campos que o frontend já não envia
-2. **`generate-image/index.ts`** (linha 192): Ainda salva `imageUrls` no payload do job — duplicação desnecessária
-3. **`image-worker/index.ts`** (linhas 193-194, 448-463, 471, 477): Ainda tem lógica de branching `useEnrichedRefs` e fallback para `imageUrls` — código morto que adiciona complexidade
+### O que muda
+Enviar os nomes (labels) dos Media Nodes junto com as imagens, para que o usuário possa referenciar nodes pelo nome no prompt.
 
 ### Alterações
 
-**1. `supabase/functions/generate-image/index.ts`**
-- Remover `imageUrls` do payload do job (linha 192)
-- Simplificar mapeamento de references para `{ url, index }` apenas (linhas 193-198)
-- Remover validação de `imageUrls` (linhas 119-129) — campo não mais utilizado
+**1. `src/pages/Editor.tsx`**
+- Nas funções `collectGravityContext` e `collectLocalContext`, incluir o label do Media Node no objeto `reference`: `{ url, index, label }`
+- O label já está disponível no node data (`node.data.label`)
 
-**2. `supabase/functions/image-worker/index.ts`**
-- Remover `imageUrls` do tipo do payload e da destructuring (linhas 448, 454)
-- Remover `useEnrichedRefs` e branching — usar sempre `references` (linhas 193-194)
-- Remover `validImageUrls` processing (linhas 459-463, 471)
-- Parâmetro `imageUrls` removido de `generateSingleImage` (linha 183)
+**2. `supabase/functions/generate-image/index.ts`**
+- Aceitar `label` no mapeamento de references: `{ url, index, label }`
 
-**3. `src/pages/Editor.tsx`**
-- Remover `imageUrls: allMedias` da chamada `invoke` (linha 734)
-- Simplificar: enviar apenas `references` como fonte única de URLs
+**3. `supabase/functions/image-worker/index.ts`**
+- Antes de cada `file_data` part, inserir um `text` part com o nome: `{ text: "[Imagem: Logo]" }`
+- Resultado final para o Gemini:
+```
+parts: [
+  { text: "Use a imagem Logo como marca d'água..." },
+  { text: "[Imagem: Logo]" },
+  { file_data: { file_uri, mime_type } },
+  { text: "[Imagem: Fundo]" },
+  { file_data: { file_uri, mime_type } }
+]
+```
 
 ### Resultado
-Caminho único: `references: [{url, index}]` → Gemini Files API → `[text, file_data, ...]` → imagem gerada.
+O usuário pode referenciar nodes pelo nome no prompt e o Gemini entende qual imagem é qual.
 
