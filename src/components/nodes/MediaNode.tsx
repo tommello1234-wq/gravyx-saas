@@ -50,6 +50,8 @@ export const MediaNode = memo(({ data, id }: NodeProps) => {
     const file = e.target.files?.[0]; if (!file || !user) return;
     const fileExt = file.name.split('.').pop()?.toLowerCase();
     if (fileExt === 'svg') { toast({ title: t('editor.format_not_supported'), description: t('editor.svg_not_supported'), variant: 'destructive' }); return; }
+    const MAX_FILE_SIZE = 20 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) { toast({ title: t('editor.file_too_large') || 'Arquivo muito grande', description: `${(file.size / 1024 / 1024).toFixed(1)}MB — máximo permitido: 20MB`, variant: 'destructive' }); return; }
     setIsUploading(true);
     try {
       const fileName = `${user.id}/${Date.now()}.${fileExt}`;
