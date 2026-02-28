@@ -46,33 +46,6 @@ export const MediaNode = memo(({ data, id }: NodeProps) => {
     toast({ title: t('editor.image_selected'), description: t('editor.use_copy_button') });
   };
 
-  const compressImage = useCallback(async (file: File, maxSide = 2048, quality = 0.85): Promise<Blob> => {
-    return new Promise((resolve, reject) => {
-      const img = new window.Image();
-      img.onload = () => {
-        let { width, height } = img;
-        if (width > maxSide || height > maxSide) {
-          const ratio = Math.min(maxSide / width, maxSide / height);
-          width = Math.round(width * ratio);
-          height = Math.round(height * ratio);
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) { reject(new Error('Canvas not supported')); return; }
-        ctx.drawImage(img, 0, 0, width, height);
-        canvas.toBlob(
-          (blob) => { if (blob) resolve(blob); else reject(new Error('Compression failed')); },
-          'image/jpeg',
-          quality
-        );
-      };
-      img.onerror = () => reject(new Error('Failed to load image'));
-      img.src = URL.createObjectURL(file);
-    });
-  }, []);
-
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file || !user) return;
     const fileExt = file.name.split('.').pop()?.toLowerCase();
@@ -81,16 +54,12 @@ export const MediaNode = memo(({ data, id }: NodeProps) => {
     if (file.size > MAX_FILE_SIZE) { toast({ title: t('editor.file_too_large') || 'Arquivo muito grande', description: `${(file.size / 1024 / 1024).toFixed(1)}MB — máximo permitido: 20MB`, variant: 'destructive' }); return; }
     setIsUploading(true);
     try {
-      // Compress image to max 2048px and JPEG 85% to prevent worker memory issues
-      const compressed = await compressImage(file);
-      const fileName = `${user.id}/${Date.now()}.jpeg`;
-      const { error: uploadError } = await supabase.storage.from('reference-images').upload(fileName, compressed, { contentType: 'image/jpeg' });
+      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+      const { error: uploadError } = await supabase.storage.from('reference-images').upload(fileName, file);
       if (uploadError) throw uploadError;
       const { data: urlData } = supabase.storage.from('reference-images').getPublicUrl(fileName);
       handleUrlChange(urlData.publicUrl);
-      const originalMB = (file.size / 1024 / 1024).toFixed(1);
-      const compressedMB = (compressed.size / 1024 / 1024).toFixed(1);
-      toast({ title: t('editor.image_uploaded'), description: file.size > 2 * 1024 * 1024 ? `Comprimida: ${originalMB}MB → ${compressedMB}MB` : undefined });
+      toast({ title: t('editor.image_uploaded') });
     } catch (error) { toast({ title: t('editor.upload_error'), description: (error as Error).message, variant: 'destructive' }); }
     finally { setIsUploading(false); }
   };
