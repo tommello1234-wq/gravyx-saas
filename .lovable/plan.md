@@ -1,24 +1,29 @@
 
 
-## Plano: Botão de lixeira nas edges (linhas de conexão)
+## Plano: Resolução real (2K/4K) na geração de imagens
 
-### O que muda
-Quando o usuário seleciona/clica numa edge, aparece um ícone de lixeira pequeno no meio da linha. Ao clicar no ícone, a edge é removida.
+### Contexto
+A API do Gemini suporta controle de resolução nativa via `outputImageWidth`/`outputImageHeight` no `imageConfig` do `generationConfig`. Atualmente o worker ignora o parâmetro `resolution` na chamada à API.
 
 ### Alterações
 
-**1. Criar `src/components/edges/DeletableEdge.tsx`**
-- Componente custom edge usando `BaseEdge`, `EdgeLabelRenderer` e `getBezierPath` do `@xyflow/react`
-- Renderiza a linha normalmente (bezier)
-- Quando `selected === true`, mostra um botão pequeno (24x24) com ícone `Trash2` centralizado no ponto médio da edge
-- O botão chama `setEdges` para remover a edge pelo `id`
-- Estilo: fundo `bg-destructive`, ícone branco, `rounded-full`, com sombra sutil
+**1. `supabase/functions/image-worker/index.ts` - `callGeminiAndUpload`**
+- Criar mapeamento de resolução para dimensões baseado no aspect ratio:
+  - `1K`: não definir (padrão do modelo, ~1024px)
+  - `2K`: lado maior = 2048
+  - `4K`: lado maior = 4096
+- Calcular `outputImageWidth` e `outputImageHeight` a partir do aspect ratio + resolução alvo
+- Adicionar esses campos ao `imageConfig` junto com `aspectRatio`
+- Para `4K`, usar modelo `gemini-2.0-flash-exp` ou `imagen-4-ultra` se `gemini-3.1-flash-image-preview` não suportar alta resolução (testar primeiro com o modelo atual)
 
-**2. Atualizar `src/pages/Editor.tsx`**
-- Importar `DeletableEdge`
-- Criar `edgeTypes = { default: DeletableEdge }` (memoizado)
-- Passar `edgeTypes={edgeTypes}` ao `<ReactFlow>`
+**2. Lógica de cálculo de dimensões**
+- Função helper `getOutputDimensions(aspectRatio, resolution)` que retorna `{ width, height }`
+- Exemplos:
+  - `16:9` + `4K` → `4096 x 2304`
+  - `1:1` + `4K` → `4096 x 4096`
+  - `9:16` + `2K` → `1152 x 2048`
+  - Sem aspect ratio + `4K` → `4096 x 4096` (quadrado por padrão)
 
-**3. Atualizar `src/pages/TemplateEditor.tsx`**
-- Mesma configuração de `edgeTypes` para consistência
+**3. Deploy**
+- Redeployar `image-worker` com as dimensões sendo passadas ao Gemini
 
